@@ -22,9 +22,9 @@ AM_CFLAGS   = -I. -I$(top_srcdir)/include -I$(top_srcdir)/src $(WARN_CFLAGS)
 LDADD       = $(top_builddir)/src/libredwg.la
 CPPCHECK    = @CPPCHECK@
 
-bin_PROGRAMS    = dwgread
+bin_PROGRAMS    = dwgread dwgprobe
 noinst_PROGRAMS =
-dist_man1_MANS  = $(srcdir)/dwgread.1
+dist_man1_MANS  = $(srcdir)/dwgread.1 $(srcdir)/dwgprobe.1
 if !DISABLE_DXF
 bin_PROGRAMS   += dwgbmp dwg2dxf dwg2SVG dwglayers dwggrep
 dist_bin_SCRIPTS = dwgfilter
@@ -43,6 +43,8 @@ endif
 endif
 
 dwgread_SOURCES    = dwgread.c
+dwgprobe_SOURCES   = dwgprobe.c
+dwgprobe_LDADD     = $(LDADD) $(PSAPI_LIBS)
 dwgbmp_SOURCES     = dwgbmp.c
 dwg2dxf_SOURCES    = dwg2dxf.c
 dwglayers_SOURCES  = dwglayers.c

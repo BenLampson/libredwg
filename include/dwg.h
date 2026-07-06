@@ -11504,12 +11504,58 @@ typedef enum RESBUF_VALUE_TYPE
   DWG_VT_INT64 = 11,   // RLL
 } Dwg_Resbuf_Value_Type;
 
+typedef enum DWG_STREAM_DECODE_MODE
+{
+  DWG_STREAM_DECODE_FULL = 0,
+  DWG_STREAM_DECODE_R2007_OBJECT_MAP = 1,
+  DWG_STREAM_DECODE_R2004_OBJECT_MAP = 2,
+} Dwg_Stream_Decode_Mode;
+
+typedef enum DWG_STREAM_INPUT_MODE
+{
+  DWG_STREAM_INPUT_HEAP = 0,
+  DWG_STREAM_INPUT_FILE_MAP = 1,
+} Dwg_Stream_Input_Mode;
+
+typedef struct _dwg_stream_object_info
+{
+  BITCODE_RL size;       /*!< in bytes */
+  size_t address;        /*!< byte offset in the file */
+  BITCODE_BS type;       /*!< fixed or variable (class - 500) */
+  BITCODE_RL index;      /*!< into dwg->object[] */
+  enum DWG_OBJECT_TYPE fixedtype;
+  const char *name;      /*!< public entity/object name */
+  const char *dxfname;   /*!< internal dxf classname */
+  Dwg_Object_Supertype supertype;
+  Dwg_Handle handle;
+  Dwg_Version_Type version;
+  Dwg_Stream_Decode_Mode decode_mode;
+  Dwg_Stream_Input_Mode input_mode;
+} Dwg_Stream_Object_Info;
+
+typedef int (*Dwg_Stream_Object_Callback)
+    (const Dwg_Stream_Object_Info *restrict info, void *restrict user);
+
+typedef enum DWG_STREAM_FLAGS
+{
+  DWG_STREAM_F_NO_FULL_FALLBACK = 1u << 0,
+} Dwg_Stream_Flags;
+
+typedef struct _dwg_stream_callbacks
+{
+  Dwg_Stream_Object_Callback object;
+  unsigned int flags;
+} Dwg_Stream_Callbacks;
+
 /*--------------------------------------------------
  * Exported Functions
  */
 
 EXPORT int dwg_read_file (const char *restrict filename,
                           Dwg_Data *restrict dwg);
+EXPORT int dwg_stream_file (const char *restrict filename,
+                            const Dwg_Stream_Callbacks *restrict callbacks,
+                            void *restrict user);
 EXPORT int dxf_read_file (const char *restrict filename,
                           Dwg_Data *restrict dwg);
 // You might need to probe for that.

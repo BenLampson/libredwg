@@ -102,6 +102,9 @@
 /* Define if you have the <sys/param.h> header file. */
 #cmakedefine HAVE_SYS_PARAM_H
 
+/* Define if you have the <sys/resource.h> header file. */
+#cmakedefine HAVE_SYS_RESOURCE_H
+
 /* Define to 1 if you have the <sys/time.h> header file. */
 #cmakedefine HAVE_SYS_TIME_H
 
@@ -135,6 +138,9 @@
 /* Define if you have the <getopt.h> header file. */
 #cmakedefine HAVE_GETOPT_H
 
+/* Define if you have the <fcntl.h> header file. */
+#cmakedefine HAVE_FCNTL_H
+
 /* Define if you have the `getopt_long' function. */
 #ifdef HAVE_GETOPT_H
 #  define HAVE_GETOPT_LONG 1
@@ -162,6 +168,9 @@
 
 /* Define if you have the <libps/pslib.h> header file. */
 #cmakedefine HAVE_LIBPS_PSLIB_H
+
+/* Define if you have the <sys/mman.h> header file. */
+#cmakedefine HAVE_SYS_MMAN_H
 
 /* Define if you have the <limits.h> header file. */
 #cmakedefine HAVE_LIMITS_H

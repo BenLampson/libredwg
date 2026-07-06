@@ -134,8 +134,8 @@ dnl Avoid rpl_malloc when cross-compiling. we don't need malloc.h
 dnl We just want to know if it's needed
 ac_cv_func_malloc_0_nonnull=yes
 ac_cv_func_realloc_0_nonnull=yes
-AC_CHECK_HEADERS([stdlib.h string.h stddef.h unistd.h malloc.h wchar.h ctype.h])
-AC_CHECK_HEADERS([wctype.h float.h limits.h sys/param.h direct.h libgen.h iconv.h sys/time.h])
+AC_CHECK_HEADERS([stdlib.h string.h stddef.h unistd.h fcntl.h sys/mman.h malloc.h wchar.h ctype.h])
+AC_CHECK_HEADERS([wctype.h float.h limits.h sys/param.h sys/resource.h direct.h libgen.h iconv.h sys/time.h])
 AC_CHECK_HEADERS([getopt.h alloca.h valgrind/valgrind.h])
 AC_CHECK_HEADERS([endian.h sys/endian.h machine/endian.h winsock2.h], [break])
 AC_CHECK_HEADERS([byteswap.h byteorder.h sys/byteorder.h], [break])
@@ -661,6 +661,8 @@ AC_SUBST(CLANG_TIDY)
 
 dnl Check for mingw, cross and wine
 AM_CONDITIONAL([HAVE_MINGW], [test "x$host_os" = "xmingw32" -o "x$host_os" = "xmingw64"])
+AS_CASE([$host_os], [mingw*|cygwin*], [PSAPI_LIBS="-lpsapi"], [PSAPI_LIBS=""])
+AC_SUBST([PSAPI_LIBS])
 AM_CONDITIONAL([HAVE_MINGW_CROSS],
         [test "x$host_os" = "xmingw32" -a "x$build_os" != "xmingw32"])
 if test "x$host_os" = "xmingw32" -a "x$build_os" != "xmingw32"; then

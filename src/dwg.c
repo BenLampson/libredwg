@@ -27,6 +27,22 @@
 #include <assert.h>
 #include <math.h>
 #include "../programs/my_stat.h"
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#  ifdef CP_UTF8
+#    undef CP_UTF8
+#  endif
+#endif
+#if !defined(_WIN32) && defined(HAVE_SYS_MMAN_H) && defined(HAVE_FCNTL_H)     \
+    && defined(HAVE_UNISTD_H)
+#  define DWG_HAVE_POSIX_MMAP 1
+#  include <fcntl.h>
+#  include <sys/mman.h>
+#  include <unistd.h>
+#endif
 // strings.h or string.h
 #ifdef AX_STRCASECMP_HEADER
 #  include AX_STRCASECMP_HEADER
@@ -84,6 +100,130 @@ void ordered_ref_add (Dwg_Data *dwg, Dwg_Object_Ref *ref);
 const Dwg_Object_Ref *ordered_ref_find (Dwg_Data *dwg, const BITCODE_RC code,
                                         const unsigned long absref);
 static void dwg_init_handseed (Dwg_Data *dwg);
+
+typedef struct _dwg_readonly_file_map
+{
+  bool mapped;
+#ifdef _WIN32
+  HANDLE file;
+  HANDLE mapping;
+#elif defined(DWG_HAVE_POSIX_MMAP)
+  int fd;
+#endif
+} Dwg_Readonly_File_Map;
+
+static void
+dwg_readonly_file_map_init (Dwg_Readonly_File_Map *restrict map)
+{
+  memset (map, 0, sizeof (*map));
+#ifdef _WIN32
+  map->file = INVALID_HANDLE_VALUE;
+  map->mapping = NULL;
+#elif defined(DWG_HAVE_POSIX_MMAP)
+  map->fd = -1;
+#endif
+}
+
+static int
+dwg_readonly_file_map_open (Dwg_Readonly_File_Map *restrict map,
+                            Bit_Chain *restrict dat,
+                            const char *restrict filename,
+                            const size_t size)
+{
+  dwg_readonly_file_map_init (map);
+#ifdef _WIN32
+  if (!size)
+    return DWG_ERR_NOTYETSUPPORTED;
+
+  map->file = CreateFileA (
+      filename, GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (map->file == INVALID_HANDLE_VALUE)
+    return DWG_ERR_NOTYETSUPPORTED;
+
+  map->mapping
+      = CreateFileMappingA (map->file, NULL, PAGE_READONLY, 0, 0, NULL);
+  if (!map->mapping)
+    {
+      CloseHandle (map->file);
+      map->file = INVALID_HANDLE_VALUE;
+      return DWG_ERR_NOTYETSUPPORTED;
+    }
+
+  dat->chain = (unsigned char *)MapViewOfFile (map->mapping, FILE_MAP_READ, 0,
+                                               0, 0);
+  if (!dat->chain)
+    {
+      CloseHandle (map->mapping);
+      CloseHandle (map->file);
+      map->mapping = NULL;
+      map->file = INVALID_HANDLE_VALUE;
+      return DWG_ERR_NOTYETSUPPORTED;
+    }
+
+  dat->size = size;
+  map->mapped = true;
+  return 0;
+#elif defined(DWG_HAVE_POSIX_MMAP)
+  void *view;
+
+  if (!size)
+    return DWG_ERR_NOTYETSUPPORTED;
+
+  map->fd = open (filename, O_RDONLY);
+  if (map->fd < 0)
+    return DWG_ERR_NOTYETSUPPORTED;
+
+  view = mmap (NULL, size, PROT_READ, MAP_PRIVATE, map->fd, 0);
+  if (view == MAP_FAILED)
+    {
+      close (map->fd);
+      map->fd = -1;
+      return DWG_ERR_NOTYETSUPPORTED;
+    }
+
+  dat->chain = (unsigned char *)view;
+  dat->size = size;
+  map->mapped = true;
+  return 0;
+#else
+  (void)dat;
+  (void)filename;
+  (void)size;
+  return DWG_ERR_NOTYETSUPPORTED;
+#endif
+}
+
+static void
+dwg_readonly_file_map_close (Dwg_Readonly_File_Map *restrict map,
+                             Bit_Chain *restrict dat)
+{
+  if (map->mapped)
+    {
+#ifdef _WIN32
+      if (dat->chain)
+        UnmapViewOfFile (dat->chain);
+      if (map->mapping)
+        CloseHandle (map->mapping);
+      if (map->file != INVALID_HANDLE_VALUE)
+        CloseHandle (map->file);
+#elif defined(DWG_HAVE_POSIX_MMAP)
+      if (dat->chain && dat->size)
+        munmap (dat->chain, dat->size);
+      if (map->fd >= 0)
+        close (map->fd);
+#endif
+      dat->chain = NULL;
+      dat->size = 0;
+      map->mapped = false;
+      return;
+    }
+
+  free (dat->chain);
+  dat->chain = NULL;
+  dat->size = 0;
+}
 
 /*------------------------------------------------------------------------------
  * Public functions
@@ -325,6 +465,137 @@ dwg_read_file (const char *restrict filename, Dwg_Data *restrict dwg)
   bit_chain.size = 0;
 
   dwg_fixup_viewport_ids (dwg);
+  return error;
+}
+
+/** dwg_stream_file
+ * returns 0 on success, or the first critical read/decode/callback error.
+ *
+ * Uses a lightweight object-map decoder when the DWG version supports it.
+ * Falls back to the full decoder for versions without a streaming path yet,
+ * unless DWG_STREAM_F_NO_FULL_FALLBACK is set.
+ */
+EXPORT int
+dwg_stream_file (const char *restrict filename,
+                 const Dwg_Stream_Callbacks *restrict callbacks,
+                 void *restrict user)
+{
+  FILE *fp;
+  struct_stat_t attrib;
+  Bit_Chain bit_chain = { 0 };
+  Dwg_Readonly_File_Map file_map;
+  Dwg_Data dwg = { 0 };
+  Dwg_Stream_Input_Mode input_mode = DWG_STREAM_INPUT_HEAP;
+  int error;
+
+  dwg_readonly_file_map_init (&file_map);
+  if (!filename || !callbacks)
+    return DWG_ERR_INTERNALERROR;
+
+  if (strEQc (filename, "-"))
+    {
+      fp = stdin;
+      error = dat_read_stream (&bit_chain, fp);
+      fclose (fp);
+    }
+  else
+    {
+      if (stat (filename, &attrib))
+        {
+          LOG_ERROR ("File not found: %s\n", filename);
+          return DWG_ERR_IOERROR;
+        }
+      if (!(S_ISREG (attrib.st_mode)
+#ifndef _WIN32
+            || S_ISLNK (attrib.st_mode)
+#endif
+                ))
+        {
+          LOG_ERROR ("Illegal input file %s\n", filename);
+          return DWG_ERR_IOERROR;
+        }
+      bit_chain.size = attrib.st_size;
+      error = dwg_readonly_file_map_open (&file_map, &bit_chain, filename,
+                                          bit_chain.size);
+      if (error == DWG_ERR_NOTYETSUPPORTED)
+        {
+          fp = fopen (filename, "rb");
+          if (!fp)
+            {
+              LOG_ERROR ("Could not open file: %s\n", filename);
+              return DWG_ERR_IOERROR;
+            }
+          error = dat_read_file (&bit_chain, fp, filename);
+          fclose (fp);
+        }
+    }
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+
+  input_mode
+      = file_map.mapped ? DWG_STREAM_INPUT_FILE_MAP : DWG_STREAM_INPUT_HEAP;
+
+  if (bit_chain.size < 6)
+    {
+      dwg_readonly_file_map_close (&file_map, &bit_chain);
+      return DWG_ERR_INVALIDDWG;
+    }
+
+  error = dwg_decode_stream (&bit_chain, callbacks, input_mode, user);
+  if (!(error & DWG_ERR_NOTYETSUPPORTED))
+    {
+      dwg_readonly_file_map_close (&file_map, &bit_chain);
+      return error;
+    }
+  if (callbacks->flags & DWG_STREAM_F_NO_FULL_FALLBACK)
+    {
+      dwg_readonly_file_map_close (&file_map, &bit_chain);
+      return DWG_ERR_NOTYETSUPPORTED;
+    }
+
+  bit_chain.byte = 0;
+  bit_chain.bit = 0;
+  error = dwg_decode (&bit_chain, &dwg);
+  dwg_readonly_file_map_close (&file_map, &bit_chain);
+  if (error >= DWG_ERR_CRITICAL)
+    {
+      LOG_ERROR ("Failed to decode file: %s 0x%x", filename, error);
+      return error;
+    }
+
+  dwg_fixup_viewport_ids (&dwg);
+
+  if (callbacks->object)
+    {
+      for (BITCODE_BL i = 0; i < dwg.num_objects; i++)
+        {
+          const Dwg_Object *obj = &dwg.object[i];
+          Dwg_Stream_Object_Info info = { 0 };
+          int callback_error;
+
+          info.size = obj->size;
+          info.address = obj->address;
+          info.type = obj->type;
+          info.index = obj->index;
+          info.fixedtype = obj->fixedtype;
+          info.name = obj->name;
+          info.dxfname = obj->dxfname;
+          info.supertype = obj->supertype;
+          info.handle = obj->handle;
+          info.version = dwg.header.version;
+          info.decode_mode = DWG_STREAM_DECODE_FULL;
+          info.input_mode = input_mode;
+
+          callback_error = callbacks->object (&info, user);
+          if (callback_error)
+            {
+              dwg_free (&dwg);
+              return callback_error;
+            }
+        }
+    }
+
+  dwg_free (&dwg);
   return error;
 }
 

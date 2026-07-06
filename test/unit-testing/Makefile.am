@@ -31,6 +31,7 @@ bits_test_LDADD = $(LDADD) \
 	$(top_builddir)/src/bits.lo
 common_test_LDADD = $(LDADD) \
 	$(top_builddir)/src/codepages.lo
+stream_test_LDADD = $(LDADD)
 decode_test_LDADD = $(LDADD) \
 	$(top_builddir)/src/bits.lo \
 	$(top_builddir)/src/codepages.lo \
@@ -387,6 +388,7 @@ endif
 check_minimal = \
 	bits_test$(EXEEXT) \
 	common_test$(EXEEXT) \
+	stream_test$(EXEEXT) \
 	hash_test$(EXEEXT) \
 	dynapi_test$(EXEEXT) \
 	dxf_test$(EXEEXT)

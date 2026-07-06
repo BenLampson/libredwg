@@ -1,0 +1,40 @@
+.TH DWGPROBE "1" "July 2026" "dwgprobe 0.14" "User Commands"
+.SH NAME
+dwgprobe \- probe DWG object-map statistics
+.SH SYNOPSIS
+.B dwgprobe
+[\fI\,OPTION\/\fR]... \fI\,DWGFILE|DIR\/\fR...
+.SH DESCRIPTION
+Probes DWG files and prints a Markdown table with object counts, object
+record sizes, address ranges, the decode mode used by the probe, whether the
+input came from a file map or heap buffer, and sampled RSS when the platform
+exposes it. The table also includes the ratio between declared
+object record bytes and file bytes, plus a conservative precheck label for
+large object records, high object-byte expansion, or very high object counts.
+The command disables the full-decoder fallback so that unsupported DWG
+versions report as warnings instead of being fully expanded in memory.
+Unsupported DWG versions are reported in the table but do not make the command
+fail; missing files and critical read errors still do.
+.PP
+When a directory is passed, dwgprobe scans the directory itself for files
+ending in .dwg. It does not recurse into child directories.
+.TP
+\fB\-\-help\fR
+display this help and exit
+.TP
+\fB\-\-version\fR
+output version information and exit
+.PP
+GNU LibreDWG online manual: <https://www.gnu.org/software/libredwg/>
+.SH "SEE ALSO"
+The full documentation for
+.B dwgprobe
+is maintained as a Texinfo manual.  If the
+.B info
+and
+.B dwgprobe
+programs are properly installed at your site, the command
+.IP
+.B info LibreDWG
+.PP
+should give you access to the complete manual.

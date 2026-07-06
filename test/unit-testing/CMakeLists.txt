@@ -46,6 +46,18 @@ if(WIN32)
   set_tests_properties(common_test PROPERTIES FIXTURES_SETUP ${redwg}.dll)
 endif()
 
+add_executable(stream_test
+  stream_test.c
+  tests_common.h)
+target_link_libraries(stream_test ${redwg})
+add_test(stream_test ${TARGET_SYSTEM_EMULATOR} stream_test${CMAKE_EXECUTABLE_SUFFIX})
+set_tests_properties(stream_test PROPERTIES SKIP_RETURN_CODE 77)
+if(WIN32)
+  set_tests_properties(stream_test PROPERTIES
+    FIXTURES_SETUP ${redwg}.dll
+    SKIP_RETURN_CODE 77)
+endif()
+
 add_executable(decode_test
   decode_test.c
   ../../src/dwg.c
