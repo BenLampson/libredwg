@@ -148,7 +148,7 @@ static int test_stream_api_invalid_args (void);
 static int test_repository_stream_fixtures (void);
 static int test_repository_stream_sweep (int compare_refs);
 static int test_repository_unsupported_stream_fixtures (void);
-static int test_full_fallback_decoded_stream_file_ex (void);
+static int test_unsupported_stream_file_ex_rejects (void);
 static int test_generated_minsert_stream_fixture (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
                                     int test_abort_callbacks,
@@ -1663,6 +1663,7 @@ test_no_full_fallback (void)
 {
   char path[128];
   Stream_Stats stats = { 0 };
+  Stream_Stats default_stats = { 0 };
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   int error;
 
@@ -1678,6 +1679,21 @@ test_no_full_fallback (void)
   callbacks.object = stream_object_callback;
   callbacks.decoded_object = stream_decoded_object_callback;
   callbacks.decode_error = stream_decode_error_callback;
+  callbacks.flags = 0;
+  error = dwg_stream_file_ex (path, &callbacks, &default_stats);
+  if (error != DWG_ERR_NOTYETSUPPORTED || default_stats.num_objects
+      || default_stats.decoded_objects || default_stats.decode_error_objects)
+    {
+      remove (path);
+      printf ("default unsupported stream failed: error=0x%x expected=0x%x "
+              "objects=%lu decoded=%lu decode_errors=%lu\n",
+              error, DWG_ERR_NOTYETSUPPORTED,
+              (unsigned long)default_stats.num_objects,
+              (unsigned long)default_stats.decoded_objects,
+              (unsigned long)default_stats.decode_error_objects);
+      return 1;
+    }
+
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
   error = dwg_stream_file_ex (path, &callbacks, &stats);
   remove (path);
@@ -1763,7 +1779,7 @@ test_legacy_stream_file_api (void)
   char path[1024];
   char unsupported_path[1024];
   Stream_Stats stats = { 0 };
-  Stream_Stats fallback_stats = { 0 };
+  Stream_Stats unsupported_stats = { 0 };
   Stream_Stats no_fallback_stats = { 0 };
   Abort_Stats aborted = { 0 };
   Dwg_Stream_Callbacks callbacks = { 0 };
@@ -1778,7 +1794,7 @@ test_legacy_stream_file_api (void)
   if (!stream_test_source_path (unsupported_path, sizeof (unsupported_path),
                                 "test/test-data/example_2010.dwg"))
     {
-      printf ("legacy fallback fixture path too long\n");
+      printf ("legacy unsupported fixture path too long\n");
       return 1;
     }
 
@@ -1800,19 +1816,17 @@ test_legacy_stream_file_api (void)
 
   callbacks.object = stream_object_callback;
   callbacks.flags = 0;
-  error = dwg_stream_file (unsupported_path, &callbacks, &fallback_stats);
-  if (error >= DWG_ERR_CRITICAL || !fallback_stats.num_objects
-      || fallback_stats.full_decode_objects != fallback_stats.num_objects
-      || fallback_stats.lightweight_objects || fallback_stats.decoded_objects
-      || fallback_stats.decode_error_objects)
+  error = dwg_stream_file (unsupported_path, &callbacks, &unsupported_stats);
+  if (error != DWG_ERR_NOTYETSUPPORTED || unsupported_stats.num_objects
+      || unsupported_stats.full_decode_objects
+      || unsupported_stats.lightweight_objects)
     {
-      printf ("legacy full fallback failed: error=0x%x objects=%lu "
-              "full=%lu lightweight=%lu decoded=%lu decode_errors=%lu\n",
-              error, (unsigned long)fallback_stats.num_objects,
-              (unsigned long)fallback_stats.full_decode_objects,
-              (unsigned long)fallback_stats.lightweight_objects,
-              (unsigned long)fallback_stats.decoded_objects,
-              (unsigned long)fallback_stats.decode_error_objects);
+      printf ("legacy unsupported stream failed: error=0x%x expected=0x%x "
+              "objects=%lu full=%lu lightweight=%lu\n",
+              error, DWG_ERR_NOTYETSUPPORTED,
+              (unsigned long)unsupported_stats.num_objects,
+              (unsigned long)unsupported_stats.full_decode_objects,
+              (unsigned long)unsupported_stats.lightweight_objects);
       return 1;
     }
 
@@ -1850,19 +1864,18 @@ test_legacy_stream_file_api (void)
 }
 
 static int
-test_full_fallback_decoded_stream_file_ex (void)
+test_unsupported_stream_file_ex_rejects (void)
 {
   char path[1024];
   Stream_Stats combined = { 0 };
   Stream_Stats decoded_only = { 0 };
-  Abort_Stats aborted = { 0 };
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   int error;
 
   if (!stream_test_source_path (path, sizeof (path),
                                 "test/test-data/example_2010.dwg"))
     {
-      printf ("full fallback fixture path too long\n");
+      printf ("unsupported stream fixture path too long\n");
       return 1;
     }
 
@@ -1870,59 +1883,25 @@ test_full_fallback_decoded_stream_file_ex (void)
   callbacks.decoded_object = stream_decoded_object_callback;
   callbacks.decode_error = stream_decode_error_callback;
   error = dwg_stream_file_ex (path, &callbacks, &combined);
-  if (error >= DWG_ERR_CRITICAL || !combined.num_objects
-      || combined.full_decode_objects != combined.num_objects
-      || combined.lightweight_objects
-      || combined.decoded_objects != combined.num_objects
-      || combined.decoded_handle_mix != combined.handle_mix
-      || combined.decode_error_objects)
+  if (error != DWG_ERR_NOTYETSUPPORTED || combined.num_objects
+      || combined.full_decode_objects || combined.lightweight_objects
+      || combined.decoded_objects || combined.decode_error_objects)
     {
-      printf ("full fallback decoded API failed: error=0x%x\n", error);
-      print_stats ("full fallback decoded API", &combined);
+      printf ("unsupported decoded API failed: error=0x%x expected=0x%x\n",
+              error, DWG_ERR_NOTYETSUPPORTED);
+      print_stats ("unsupported decoded API", &combined);
       return 1;
     }
 
   callbacks.object = NULL;
   error = dwg_stream_file_ex (path, &callbacks, &decoded_only);
-  if (error >= DWG_ERR_CRITICAL || decoded_only.num_objects
-      || decoded_only.decoded_objects != combined.num_objects
-      || decoded_only.decoded_entities != combined.num_entities
-      || decoded_only.decoded_non_entities != combined.num_non_entities
-      || decoded_only.decoded_handle_mix != combined.handle_mix
-      || decoded_only.decode_error_objects)
+  if (error != DWG_ERR_NOTYETSUPPORTED || decoded_only.num_objects
+      || decoded_only.full_decode_objects || decoded_only.lightweight_objects
+      || decoded_only.decoded_objects || decoded_only.decode_error_objects)
     {
-      printf ("full fallback decoded-only API failed: error=0x%x\n", error);
-      print_stats ("full fallback decoded-only API", &decoded_only);
-      return 1;
-    }
-
-  aborted.limit = 3;
-  aborted.error = 34567;
-  callbacks.object = abort_object_callback;
-  callbacks.decoded_object = NULL;
-  callbacks.decode_error = NULL;
-  error = dwg_stream_file_ex (path, &callbacks, &aborted);
-  if (error != aborted.error || aborted.calls != aborted.limit)
-    {
-      printf ("full fallback object abort failed: error=0x%x expected=0x%x "
-              "calls=%lu expected_calls=%lu\n",
-              error, aborted.error, (unsigned long)aborted.calls,
-              (unsigned long)aborted.limit);
-      return 1;
-    }
-
-  aborted.calls = 0;
-  aborted.limit = 4;
-  aborted.error = 45678;
-  callbacks.object = NULL;
-  callbacks.decoded_object = abort_decoded_object_callback;
-  error = dwg_stream_file_ex (path, &callbacks, &aborted);
-  if (error != aborted.error || aborted.calls != aborted.limit)
-    {
-      printf ("full fallback decoded abort failed: error=0x%x expected=0x%x "
-              "calls=%lu expected_calls=%lu\n",
-              error, aborted.error, (unsigned long)aborted.calls,
-              (unsigned long)aborted.limit);
+      printf ("unsupported decoded-only API failed: error=0x%x expected=0x%x\n",
+              error, DWG_ERR_NOTYETSUPPORTED);
+      print_stats ("unsupported decoded-only API", &decoded_only);
       return 1;
     }
 
@@ -2604,8 +2583,8 @@ main (void)
   stream_trace_stage ("test_legacy_stream_file_api");
   if (test_legacy_stream_file_api ())
     return 1;
-  stream_trace_stage ("test_full_fallback_decoded_stream_file_ex");
-  if (test_full_fallback_decoded_stream_file_ex ())
+  stream_trace_stage ("test_unsupported_stream_file_ex_rejects");
+  if (test_unsupported_stream_file_ex_rejects ())
     return 1;
   stream_trace_stage ("test_emit_decoded_object_isolated_host_state");
   if (test_emit_decoded_object_isolated_host_state ())

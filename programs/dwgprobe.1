@@ -11,8 +11,8 @@ input came from a file map or heap buffer, and sampled RSS when the platform
 exposes it. The table also includes the ratio between declared
 object record bytes and file bytes, plus a conservative precheck label for
 large object records, high object-byte expansion, or very high object counts.
-The command disables the full-decoder fallback so that unsupported DWG
-versions report as warnings instead of being fully expanded in memory.
+The command reports unsupported stream versions directly, without expanding
+them through the full decoder.
 Unsupported DWG versions are reported in the table but do not make the command
 fail; missing files and critical read errors still do.
 .PP

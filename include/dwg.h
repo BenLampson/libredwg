@@ -11553,6 +11553,9 @@ typedef int (*Dwg_Stream_Decode_Error_Callback)
 
 typedef enum DWG_STREAM_FLAGS
 {
+  /* Deprecated compatibility flag. Stream APIs no longer fall back to the
+     full decoder; unsupported stream versions return DWG_ERR_NOTYETSUPPORTED
+     with or without this flag. */
   DWG_STREAM_F_NO_FULL_FALLBACK = 1u << 0,
 } Dwg_Stream_Flags;
 
