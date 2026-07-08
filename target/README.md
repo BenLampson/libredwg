@@ -104,8 +104,9 @@ cmake --build .\build-codex-stream-tdd --target stream_test
 # With no fixture environment variables, `stream_test.exe` runs the default
 # repository R13/R14/R2000/R2004/R2007/R2010/R2013/R2018 stream parity
 # fixtures, plus TS1.dwg for OLE/OLE2 entity classification coverage. It also
-# verifies that generated unsupported pre-R13 fixtures reject with
-# DWG_ERR_NOTYETSUPPORTED. Stream APIs do not fall back to full load.
+# verifies that generated unsupported R11 fixtures are readable by the blocking
+# path but reject in stream mode with DWG_ERR_NOTYETSUPPORTED. Stream APIs do
+# not fall back to full load.
 Remove-Item Env:LIBREDWG_STREAM_TEST_DWG -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_REFS -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_LARGE_DWG -ErrorAction SilentlyContinue
@@ -278,8 +279,9 @@ minserts=1 block_owned=3 entmode3=1
 Default unsupported-version guard:
 
 ```text
-Generated pre-R13 fixtures reject stream reading with DWG_ERR_NOTYETSUPPORTED
-and no object, decoded-object, or decode-error callbacks.
+Generated R11 LINE fixtures are readable by `dwg_read_file`, then reject stream
+reading with DWG_ERR_NOTYETSUPPORTED and no object, decoded-object, or
+decode-error callbacks.
 ```
 
 Current stream hardening:

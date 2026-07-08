@@ -150,6 +150,7 @@ static int test_repository_stream_sweep (int compare_refs);
 static int test_unsupported_stream_file_ex_rejects (void);
 static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
+static int test_generated_pre_r13_stream_rejects (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
                                     int test_abort_callbacks,
                                     const char *label, int skip_missing,
@@ -2497,8 +2498,8 @@ test_repository_stream_sweep (int compare_refs)
 }
 
 static int
-test_generated_minsert_stream_fixture (Dwg_Version_Type version,
-                                       const char *label)
+write_generated_minsert_fixture (Dwg_Version_Type version, const char *label,
+                                 char *path, size_t path_size)
 {
   Dwg_Data *dwg;
   Dwg_Object *mspace;
@@ -2507,13 +2508,11 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
   Dwg_Entity_LINE *block_line;
   dwg_point_3d pt1 = { 1.5, 2.5, 0.2 };
   dwg_point_3d pt2 = { 2.5, 1.5, 0.0 };
-  Stream_Semantic_Coverage coverage = { 0 };
-  char path[128];
   const char *tag;
   int error;
 
   tag = dwg_version_type (version);
-  snprintf (path, sizeof (path), "stream_minsert_%s_fixture_%ld_%ld.dwg",
+  snprintf (path, path_size, "stream_minsert_%s_fixture_%ld_%ld.dwg",
             tag, stream_test_process_id (), (long)time (NULL));
   dwg = dwg_new_Document (version, 0, 0);
   if (!dwg)
@@ -2535,7 +2534,7 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
       printf ("failed to create generated %s MINSERT block header\n", label);
       dwg_free (dwg);
       return 1;
-  }
+    }
   dwg_add_BLOCK (blk, "bloko");
   block_line = dwg_add_LINE (blk, &pt1, &pt2);
   if (!block_line || !block_line->parent)
@@ -2558,6 +2557,21 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
       remove (path);
       return 1;
     }
+  return 0;
+}
+
+static int
+test_generated_minsert_stream_fixture (Dwg_Version_Type version,
+                                       const char *label)
+{
+  Stream_Semantic_Coverage coverage = { 0 };
+  char path[128];
+  int error;
+
+  error = write_generated_minsert_fixture (version, label, path,
+                                           sizeof (path));
+  if (error)
+    return error;
 
   error = test_stream_file_parity (path, 1, 0, label, 0, &coverage);
   remove (path);
@@ -2576,6 +2590,84 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
               label,
               (unsigned long)coverage.block_owned_entities,
               (unsigned long)coverage.entmode3_entities);
+      return 1;
+    }
+  return 0;
+}
+
+static int
+test_generated_pre_r13_stream_rejects (void)
+{
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Stream_Stats stats = { 0 };
+  Dwg_Data dwg = { 0 };
+  Dwg_Data *gen;
+  Dwg_Object *mspace;
+  Dwg_Object_BLOCK_HEADER *hdr;
+  Dwg_Entity_LINE *line;
+  dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
+  dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
+  char path[128];
+  int error;
+
+  snprintf (path, sizeof (path), "stream_line_r11_fixture_%ld_%ld.dwg",
+            stream_test_process_id (), (long)time (NULL));
+  gen = dwg_new_Document (R_11, 0, 0);
+  if (!gen)
+    {
+      printf ("failed to create generated R11 LINE document\n");
+      return 1;
+    }
+  mspace = dwg_model_space_object (gen);
+  if (!mspace || !mspace->tio.object || !mspace->tio.object->tio.BLOCK_HEADER)
+    {
+      printf ("generated R11 LINE document has no model space\n");
+      dwg_free (gen);
+      return 1;
+    }
+  hdr = mspace->tio.object->tio.BLOCK_HEADER;
+  line = dwg_add_LINE (hdr, &pt1, &pt2);
+  if (!line)
+    {
+      printf ("failed to create generated R11 LINE\n");
+      dwg_free (gen);
+      return 1;
+    }
+  error = dwg_write_file (path, gen);
+  dwg_free (gen);
+  if (error >= DWG_ERR_CRITICAL)
+    {
+      printf ("failed to write generated R11 LINE fixture: error=0x%x\n",
+              error);
+      remove (path);
+      return 1;
+    }
+
+  error = dwg_read_file (path, &dwg);
+  if (error >= DWG_ERR_CRITICAL || !dwg.num_objects)
+    {
+      printf ("generated R11 blocking read failed: error=0x%x objects=%lu\n",
+              error, (unsigned long)dwg.num_objects);
+      dwg_free (&dwg);
+      remove (path);
+      return 1;
+    }
+  dwg_free (&dwg);
+
+  callbacks.object = stream_object_callback;
+  callbacks.decoded_object = stream_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
+  error = dwg_stream_file_ex (path, &callbacks, &stats);
+  remove (path);
+  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+      || stats.decoded_objects || stats.decode_error_objects)
+    {
+      printf ("generated R11 unsupported stream failed: error=0x%x "
+              "expected=0x%x objects=%lu decoded=%lu decode_errors=%lu\n",
+              error, DWG_ERR_NOTYETSUPPORTED,
+              (unsigned long)stats.num_objects,
+              (unsigned long)stats.decoded_objects,
+              (unsigned long)stats.decode_error_objects);
       return 1;
     }
   return 0;
@@ -2614,6 +2706,9 @@ main (void)
   stream_trace_stage ("test_generated_r2022_minsert_stream_fixture");
   if (test_generated_minsert_stream_fixture (
           R_2022b, "generated R2022 MINSERT stream parity ok"))
+    return 1;
+  stream_trace_stage ("test_generated_pre_r13_stream_rejects");
+  if (test_generated_pre_r13_stream_rejects ())
     return 1;
   stream_trace_stage ("test_large_stream_fixture");
   if (test_large_stream_fixture ())
