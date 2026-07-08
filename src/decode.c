@@ -340,7 +340,7 @@ dwg_decode_stream (Bit_Chain *restrict dat,
     }
 
   if (dwg.header.from_version >= R_2010b
-      && dwg.header.from_version <= R_2018)
+      && dwg.header.from_version <= R_2022b)
     {
       if (stream_supported)
         *stream_supported = 1;

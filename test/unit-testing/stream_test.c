@@ -148,7 +148,8 @@ static int test_stream_api_invalid_args (void);
 static int test_repository_stream_fixtures (void);
 static int test_repository_stream_sweep (int compare_refs);
 static int test_unsupported_stream_file_ex_rejects (void);
-static int test_generated_minsert_stream_fixture (void);
+static int test_generated_minsert_stream_fixture (
+    Dwg_Version_Type version, const char *label);
 static int test_stream_file_parity (const char *path, int compare_refs,
                                     int test_abort_callbacks,
                                     const char *label, int skip_missing,
@@ -2496,7 +2497,8 @@ test_repository_stream_sweep (int compare_refs)
 }
 
 static int
-test_generated_minsert_stream_fixture (void)
+test_generated_minsert_stream_fixture (Dwg_Version_Type version,
+                                       const char *label)
 {
   Dwg_Data *dwg;
   Dwg_Object *mspace;
@@ -2507,20 +2509,22 @@ test_generated_minsert_stream_fixture (void)
   dwg_point_3d pt2 = { 2.5, 1.5, 0.0 };
   Stream_Semantic_Coverage coverage = { 0 };
   char path[128];
+  const char *tag;
   int error;
 
-  snprintf (path, sizeof (path), "stream_minsert_fixture_%ld_%ld.dwg",
-            stream_test_process_id (), (long)time (NULL));
-  dwg = dwg_new_Document (R_2000, 0, 0);
+  tag = dwg_version_type (version);
+  snprintf (path, sizeof (path), "stream_minsert_%s_fixture_%ld_%ld.dwg",
+            tag, stream_test_process_id (), (long)time (NULL));
+  dwg = dwg_new_Document (version, 0, 0);
   if (!dwg)
     {
-      printf ("failed to create generated MINSERT document\n");
+      printf ("failed to create generated %s MINSERT document\n", label);
       return 1;
     }
   mspace = dwg_model_space_object (dwg);
   if (!mspace || !mspace->tio.object || !mspace->tio.object->tio.BLOCK_HEADER)
     {
-      printf ("generated MINSERT document has no model space\n");
+      printf ("generated %s MINSERT document has no model space\n", label);
       dwg_free (dwg);
       return 1;
     }
@@ -2528,7 +2532,7 @@ test_generated_minsert_stream_fixture (void)
   blk = dwg_add_BLOCK_HEADER (dwg, "bloko");
   if (!blk)
     {
-      printf ("failed to create generated MINSERT block header\n");
+      printf ("failed to create generated %s MINSERT block header\n", label);
       dwg_free (dwg);
       return 1;
   }
@@ -2536,7 +2540,7 @@ test_generated_minsert_stream_fixture (void)
   block_line = dwg_add_LINE (blk, &pt1, &pt2);
   if (!block_line || !block_line->parent)
     {
-      printf ("failed to create generated MINSERT block LINE\n");
+      printf ("failed to create generated %s MINSERT block LINE\n", label);
       dwg_free (dwg);
       return 1;
     }
@@ -2549,28 +2553,27 @@ test_generated_minsert_stream_fixture (void)
   dwg_free (dwg);
   if (error >= DWG_ERR_CRITICAL)
     {
-      printf ("failed to write generated MINSERT fixture: error=0x%x\n",
-              error);
+      printf ("failed to write generated %s MINSERT fixture: error=0x%x\n",
+              label, error);
       remove (path);
       return 1;
     }
 
-  error = test_stream_file_parity (path, 1, 0,
-                                   "generated MINSERT stream parity ok", 0,
-                                   &coverage);
+  error = test_stream_file_parity (path, 1, 0, label, 0, &coverage);
   remove (path);
   if (error)
     return error;
-  print_semantic_coverage ("generated MINSERT semantic coverage", &coverage);
+  print_semantic_coverage (label, &coverage);
   if (!coverage.minserts)
     {
-      printf ("generated MINSERT fixture did not cover MINSERT\n");
+      printf ("generated %s MINSERT fixture did not cover MINSERT\n", label);
       return 1;
     }
   if (!coverage.block_owned_entities || !coverage.entmode3_entities)
     {
-      printf ("generated MINSERT fixture did not cover block-owned entmode=3: "
+      printf ("generated %s MINSERT fixture did not cover block-owned entmode=3: "
               "block_owned=%lu entmode3=%lu\n",
+              label,
               (unsigned long)coverage.block_owned_entities,
               (unsigned long)coverage.entmode3_entities);
       return 1;
@@ -2605,7 +2608,12 @@ main (void)
   if (test_emit_decoded_object_isolated_host_state ())
     return 1;
   stream_trace_stage ("test_generated_minsert_stream_fixture");
-  if (test_generated_minsert_stream_fixture ())
+  if (test_generated_minsert_stream_fixture (
+          R_2000, "generated R2000 MINSERT stream parity ok"))
+    return 1;
+  stream_trace_stage ("test_generated_r2022_minsert_stream_fixture");
+  if (test_generated_minsert_stream_fixture (
+          R_2022b, "generated R2022 MINSERT stream parity ok"))
     return 1;
   stream_trace_stage ("test_large_stream_fixture");
   if (test_large_stream_fixture ())
