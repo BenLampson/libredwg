@@ -148,6 +148,7 @@ static int test_stream_api_invalid_args (void);
 static int test_repository_stream_fixtures (void);
 static int test_repository_stream_sweep (int compare_refs);
 static int test_unsupported_stream_file_ex_rejects (void);
+static int test_unsupported_pre_r13_versions_reject (void);
 static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
 static int test_generated_pre_r13_stream_rejects (void);
@@ -212,17 +213,46 @@ stream_trace_stage (const char *stage)
     }
 }
 
-static int
-write_unsupported_fixture (const char *path)
+typedef struct _unsupported_stream_fixture
 {
-  static const char magic[] = "AC1009";
+  const char *magic;
+  const char *label;
+} Unsupported_Stream_Fixture;
+
+static const Unsupported_Stream_Fixture unsupported_pre_r13_fixtures[] = {
+  { "AC1.50", "R_2_0b/R_2_0" },
+  { "AC2.10", "R_2_10" },
+  { "AC2.21", "R_2_21" },
+  { "AC2.22", "R_2_22" },
+  { "AC1001", "R_2_4" },
+  { "AC1002", "R_2_5" },
+  { "AC1003", "R_2_6" },
+  { "AC1004", "R_9" },
+  { "AC1005", "R_9c1" },
+  { "AC1006", "R_10" },
+  { "AC1007", "R_11b1" },
+  { "AC1008", "R_11b2" },
+  { "AC1009", "R_11/R_12" },
+};
+
+static int
+write_unsupported_fixture (const char *path, const char *magic)
+{
   unsigned char buffer[64] = { 0 };
   FILE *fp;
+  size_t len;
 
   fp = fopen (path, "wb");
   if (!fp)
     return 0;
-  memcpy (buffer, magic, sizeof (magic) - 1);
+  len = strlen (magic);
+  if (len > 10)
+    {
+      fclose (fp);
+      remove (path);
+      return 0;
+    }
+  memcpy (buffer, magic, len);
   if (fwrite (buffer, 1, sizeof (buffer), fp) != sizeof (buffer))
     {
       fclose (fp);
@@ -1668,10 +1698,10 @@ test_no_full_fallback (void)
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   int error;
 
-  snprintf (path, sizeof (path), "stream_unsupported_r11_fixture_%ld_%ld.dwg",
+  snprintf (path, sizeof (path), "stream_unsupported_prer13_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
 
-  if (!write_unsupported_fixture (path))
+  if (!write_unsupported_fixture (path, "AC1006"))
     {
       printf ("failed to create unsupported streaming fixture\n");
       return 1;
@@ -1856,9 +1886,9 @@ test_legacy_stream_file_api (void)
     }
 
   snprintf (unsupported_path, sizeof (unsupported_path),
-            "stream_legacy_unsupported_r11_fixture_%ld_%ld.dwg",
+            "stream_legacy_unsupported_prer13_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
-  if (!write_unsupported_fixture (unsupported_path))
+  if (!write_unsupported_fixture (unsupported_path, "AC1006"))
     {
       printf ("failed to create legacy unsupported streaming fixture\n");
       return 1;
@@ -1925,9 +1955,10 @@ test_unsupported_stream_file_ex_rejects (void)
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   int error;
 
-  snprintf (path, sizeof (path), "stream_ex_unsupported_r11_fixture_%ld_%ld.dwg",
+  snprintf (path, sizeof (path),
+            "stream_ex_unsupported_prer13_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
-  if (!write_unsupported_fixture (path))
+  if (!write_unsupported_fixture (path, "AC1006"))
     {
       printf ("failed to create stream_ex unsupported fixture\n");
       return 1;
@@ -1962,6 +1993,57 @@ test_unsupported_stream_file_ex_rejects (void)
     }
 
   remove (path);
+  return 0;
+}
+
+static int
+test_unsupported_pre_r13_versions_reject (void)
+{
+  size_t i;
+
+  for (i = 0; i < (sizeof (unsupported_pre_r13_fixtures)
+                   / sizeof (unsupported_pre_r13_fixtures[0]));
+       i++)
+    {
+      const Unsupported_Stream_Fixture *fixture
+          = &unsupported_pre_r13_fixtures[i];
+      Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+      Stream_Stats stats = { 0 };
+      char path[128];
+      int error;
+
+      snprintf (path, sizeof (path),
+                "stream_unsupported_prer13_%lu_%ld_%ld.dwg",
+                (unsigned long)i, stream_test_process_id (),
+                (long)time (NULL));
+      if (!write_unsupported_fixture (path, fixture->magic))
+        {
+          printf ("failed to create unsupported %s fixture\n",
+                  fixture->label);
+          return 1;
+        }
+
+      callbacks.object = stream_object_callback;
+      callbacks.decoded_object = stream_decoded_object_callback;
+      callbacks.decode_error = stream_decode_error_callback;
+      error = dwg_stream_file_ex (path, &callbacks, &stats);
+      remove (path);
+      if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+          || stats.full_decode_objects || stats.lightweight_objects
+          || stats.decoded_objects || stats.decode_error_objects)
+        {
+          printf ("unsupported %s stream failed: magic=%s error=0x%x "
+                  "expected=0x%x objects=%lu full=%lu lightweight=%lu "
+                  "decoded=%lu decode_errors=%lu\n",
+                  fixture->label, fixture->magic, error,
+                  DWG_ERR_NOTYETSUPPORTED, (unsigned long)stats.num_objects,
+                  (unsigned long)stats.full_decode_objects,
+                  (unsigned long)stats.lightweight_objects,
+                  (unsigned long)stats.decoded_objects,
+                  (unsigned long)stats.decode_error_objects);
+          return 1;
+        }
+    }
   return 0;
 }
 
@@ -2695,6 +2777,9 @@ main (void)
     return 1;
   stream_trace_stage ("test_unsupported_stream_file_ex_rejects");
   if (test_unsupported_stream_file_ex_rejects ())
+    return 1;
+  stream_trace_stage ("test_unsupported_pre_r13_versions_reject");
+  if (test_unsupported_pre_r13_versions_reject ())
     return 1;
   stream_trace_stage ("test_emit_decoded_object_isolated_host_state");
   if (test_emit_decoded_object_isolated_host_state ())

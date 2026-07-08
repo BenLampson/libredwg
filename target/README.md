@@ -104,9 +104,10 @@ cmake --build .\build-codex-stream-tdd --target stream_test
 # With no fixture environment variables, `stream_test.exe` runs the default
 # repository R13/R14/R2000/R2004/R2007/R2010/R2013/R2018 stream parity
 # fixtures, plus TS1.dwg for OLE/OLE2 entity classification coverage. It also
-# verifies that generated unsupported R11 fixtures are readable by the blocking
-# path but reject in stream mode with DWG_ERR_NOTYETSUPPORTED. Stream APIs do
-# not fall back to full load.
+# verifies that every currently unsupported pre-R13 header magic rejects in
+# stream mode with DWG_ERR_NOTYETSUPPORTED, and that a generated R11 LINE
+# fixture remains readable by the blocking path while stream mode rejects it.
+# Stream APIs do not fall back to full load.
 Remove-Item Env:LIBREDWG_STREAM_TEST_DWG -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_REFS -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_LARGE_DWG -ErrorAction SilentlyContinue
@@ -279,9 +280,16 @@ minserts=1 block_owned=3 entmode3=1
 Default unsupported-version guard:
 
 ```text
-Generated R11 LINE fixtures are readable by `dwg_read_file`, then reject stream
-reading with DWG_ERR_NOTYETSUPPORTED and no object, decoded-object, or
-decode-error callbacks.
+Each currently unsupported pre-R13 header magic is tested directly:
+`AC1.50`, `AC2.10`, `AC2.21`, `AC2.22`, `AC1001`, `AC1002`, `AC1003`,
+`AC1004`, `AC1005`, `AC1006`, `AC1007`, `AC1008`, and `AC1009`.
+Every one must return `DWG_ERR_NOTYETSUPPORTED` with no object,
+decoded-object, or decode-error callbacks.
+
+A generated R11 LINE fixture is also readable by `dwg_read_file`, then rejects
+stream reading with `DWG_ERR_NOTYETSUPPORTED` and no object, decoded-object, or
+decode-error callbacks. This proves blocking support does not imply stream
+support.
 ```
 
 Current stream hardening:
@@ -507,6 +515,8 @@ Development targets from the current state to complete stream parity:
      `DWG_STREAM_F_NO_FULL_FALLBACK`.
    - Not-yet-supported versions must return `DWG_ERR_NOTYETSUPPORTED` with no
      object, decoded-object, or decode-error callbacks.
+   - Unsupported pre-R13 detection is based on the DWG file header magic, not
+     filenames or blocking-reader behavior.
 3. Measure memory on the large-file set after each new version family.
    - The pure stream path should keep the native side incremental.
    - Downstream aggregation is not part of this C-side acceptance check.
