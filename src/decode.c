@@ -339,6 +339,29 @@ dwg_decode_stream (Bit_Chain *restrict dat,
       return error;
     }
 
+  if (dwg.header.from_version >= R_2010b
+      && dwg.header.from_version <= R_2018)
+    {
+      if (stream_supported)
+        *stream_supported = 1;
+      read_r2007_init (&dwg);
+      {
+        Dwg_Header *_obj = &dwg.header;
+        Dwg_Object *obj = NULL;
+        int i;
+        BITCODE_BL vcount;
+
+        // clang-format off
+        #include "header.spec"
+        // clang-format on
+      }
+
+      error = read_r2004_meta_data_stream (dat, &dwg, callbacks, input_mode,
+                                           user);
+      dwg_free (&dwg);
+      return error;
+    }
+
   if (dwg.header.from_version >= R_2007a
       && dwg.header.from_version <= R_2007)
     {
@@ -3694,13 +3717,18 @@ read_2004_stream_object_info (Dwg_Data *restrict dwg,
   body.from_version = obj_stream->dat->from_version;
   body.bit = 0;
   info->size = bit_read_MS (&body);
+  if (body.from_version >= R_2010b)
+    (void)bit_read_UMC (&body);
   info->address = address + body.byte;
   if (info->size > (uint64_t)obj_stream->info->size
       || info->address > (uint64_t)obj_stream->info->size - info->size)
     return DWG_ERR_VALUEOUTOFBOUNDS;
 
   bit_reset_chain (&body);
-  info->type = bit_read_BS (&body);
+  if (body.from_version >= R_2010b)
+    info->type = bit_read_BOT (&body);
+  else
+    info->type = bit_read_BS (&body);
   fixedtype = (Dwg_Object_Type)info->type;
   if (info->type >= 500
       && (BITCODE_BL)(info->type - 500) < dwg->num_classes)
@@ -3745,6 +3773,8 @@ read_2004_buffered_object_info (Dwg_Data *restrict dwg,
   body.byte = address;
   body.bit = 0;
   info->size = bit_read_MS (&body);
+  if (body.from_version >= R_2010b)
+    (void)bit_read_UMC (&body);
   info->address = body.byte;
   if (info->size > obj_dat->size
       || info->address > obj_dat->size - info->size)
@@ -3752,7 +3782,10 @@ read_2004_buffered_object_info (Dwg_Data *restrict dwg,
 
   bit_reset_chain (&body);
   body.size = info->size;
-  info->type = bit_read_BS (&body);
+  if (body.from_version >= R_2010b)
+    info->type = bit_read_BOT (&body);
+  else
+    info->type = bit_read_BS (&body);
   fixedtype = (Dwg_Object_Type)info->type;
   if (info->type >= 500
       && (BITCODE_BL)(info->type - 500) < dwg->num_classes)

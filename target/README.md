@@ -102,10 +102,10 @@ $env:PATH = "D:\Codes\libredwg\build-codex-stream-tdd;C:\msys64\ucrt64\bin;C:\ms
 cmake --build .\build-codex-stream-tdd --target stream_test
 
 # With no fixture environment variables, `stream_test.exe` runs the default
-# repository R13/R14/R2000/R2004/R2007 stream parity fixtures, plus TS1.dwg for
-# OLE/OLE2 entity classification coverage. It also verifies that real
-# R2010/R2013/R2018 fixtures reject with DWG_ERR_NOTYETSUPPORTED without
-# decoding objects. Stream APIs do not fall back to full load.
+# repository R13/R14/R2000/R2004/R2007/R2010/R2013/R2018 stream parity
+# fixtures, plus TS1.dwg for OLE/OLE2 entity classification coverage. It also
+# verifies that generated unsupported pre-R13 fixtures reject with
+# DWG_ERR_NOTYETSUPPORTED. Stream APIs do not fall back to full load.
 Remove-Item Env:LIBREDWG_STREAM_TEST_DWG -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_REFS -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_LARGE_DWG -ErrorAction SilentlyContinue
@@ -278,9 +278,8 @@ minserts=1 block_owned=3 entmode3=1
 Default unsupported-version guard:
 
 ```text
-example_2010.dwg, example_2013.dwg, and example_2018.dwg reject stream reading
-with DWG_ERR_NOTYETSUPPORTED and no object, decoded-object, or decode-error
-callbacks.
+Generated pre-R13 fixtures reject stream reading with DWG_ERR_NOTYETSUPPORTED
+and no object, decoded-object, or decode-error callbacks.
 ```
 
 Current stream hardening:
@@ -393,7 +392,7 @@ the DLL search path. Static Autotools builds avoid that wrapper/DLL problem and
 are the canonical local `make check` route for this stream target.
 ```
 
-Latest no-fallback stream validation:
+Latest R2010/R2013/R2018 stream validation:
 
 ```text
 PATH=/ucrt64/bin:/usr/bin:$PATH \
@@ -401,6 +400,9 @@ make -C .build-autotools-static-codex/test/unit-testing check TESTS=stream_test
 
 PASS: stream_test
 1 test passed
+
+Default strict parity includes example_2010.dwg, example_2013.dwg,
+example_2018.dwg, and sample_2018.dwg. Each passed with `full=0`.
 ```
 
 ## 8. Current gap to complete stream coverage
@@ -424,10 +426,10 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream supported | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map stream reader. Must pass parity with `full=0`. |
 | Pure stream supported | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map stream reader. Must pass parity with `full=0`. AutoCAD 2005/2006 are not separate enum values here; they are covered by the `R_2004` file family when the file identifies that way. |
 | Pure stream supported | `R_2007a`, `R_2007b`, `R_2007` | Uses the R2007 object-map stream reader. Must pass parity with `full=0`. AutoCAD 2008/2009 are not separate enum values here; they are covered by the `R_2007` file family when the file identifies that way. |
+| Pure stream supported | `R_2010b`, `R_2010` | Uses the R2004/2010+ data-section object-map stream reader with R2010 object headers. Must pass parity with `full=0`. AutoCAD 2011/2012 are not separate enum values here; they are covered by the `R_2010` file family when the file identifies that way. |
+| Pure stream supported | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2014/2015/2016/2017 are not separate enum values here; they are covered by the `R_2013` file family when the file identifies that way. |
+| Pure stream supported | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2019/2020/2021 are not separate enum values here; they are covered by the `R_2018` file family when the file identifies that way. |
 | Not pure stream supported | `R_2_0b`, `R_2_0`, `R_2_10`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_2_6`, `R_9`, `R_9c1`, `R_10`, `R_11b1`, `R_11b2`, `R_11` / `R_12` | Pre-R13 formats are not implemented in the current pure stream path. Stream APIs must return `DWG_ERR_NOTYETSUPPORTED` for these versions until a real stream reader exists. |
-| Not pure stream supported | `R_2010b`, `R_2010` | No R2010 pure stream reader exists yet. AutoCAD 2011/2012 are not separate enum values here; they are part of the `R_2010` file family when the file identifies that way. |
-| Not pure stream supported | `R_2013b`, `R_2013` | No R2013 pure stream reader exists yet. AutoCAD 2014/2015/2016/2017 are not separate enum values here; they are part of the `R_2013` file family when the file identifies that way. |
-| Not pure stream supported | `R_2018b`, `R_2018` | No R2018 pure stream reader exists yet. AutoCAD 2019/2020/2021 are not separate enum values here; they are part of the `R_2018` file family when the file identifies that way. |
 | Not pure stream supported / not an acceptance target yet | `R_2022b` | The enum exists in libredwg's version table, but there is no current pure stream reader or strict parity fixture for it. Do not count it as complete until blocking baseline support and stream parity are explicitly verified. |
 
 Version routing is determined from the DWG file header before selecting a stream
@@ -455,9 +457,9 @@ Header magic codes relevant to the current stream target:
 | `AC1018` | `R_2004c` / `R_2004` | Supported |
 | `AC701a` | `R_2007a` | Supported |
 | `AC1021` | `R_2007b` / `R_2007` | Supported |
-| `AC1024` | `R_2010b` / `R_2010` | Not pure stream supported |
-| `AC1027` | `R_2013b` / `R_2013` | Not pure stream supported |
-| `AC1032` | `R_2018b` / `R_2018` | Not pure stream supported |
+| `AC1024` | `R_2010b` / `R_2010` | Supported |
+| `AC1027` | `R_2013b` / `R_2013` | Supported |
+| `AC1032` | `R_2018b` / `R_2018` | Supported |
 | `AC103-4` | `R_2022b` | Not pure stream supported |
 
 Pre-R13 header magic values are also version-detectable but are not current pure
@@ -476,10 +478,7 @@ Pre-R13:
 R_2_0b, R_2_0, R_2_10, R_2_21, R_2_22, R_2_4, R_2_5, R_2_6,
 R_9, R_9c1, R_10, R_11b1, R_11b2, R_11/R_12
 
-R2010+:
-R_2010b, R_2010,
-R_2013b, R_2013,
-R_2018b, R_2018,
+R2022:
 R_2022b
 ```
 
@@ -490,43 +489,34 @@ R_13b1, R_13b2, R_13, R_13c3,
 R_14,
 R_2000b, R_2000, R_2000i, R_2002,
 R_2004a, R_2004b, R_2004c, R_2004,
-R_2007a, R_2007b, R_2007
+R_2007a, R_2007b, R_2007,
+R_2010b, R_2010,
+R_2013b, R_2013,
+R_2018b, R_2018
 ```
 
 Development targets from the current state to complete stream parity:
 
-1. Add pure stream support for R2010.
-   - Parse the R2010 section/object-map layout without materializing the full
-     `Dwg_Data` graph.
-   - Extract object bytes and handle/string data in the shape expected by
-     `dwg_decode_add_object`.
-   - Add default repository fixtures and strict stream parity tests.
-2. Add pure stream support for R2013.
-   - Reuse the R2010 work only where the on-disk structure is actually shared.
-   - Keep unsupported-version rejection tests in place until the R2013 pure
-     stream reader exists.
-3. Add pure stream support for R2018.
-   - Cover R2018-specific header/object/string fields required for decoded
-     object parity.
-   - Add R2018 fixtures to the strict stream parity list, not just the
-     unsupported-version guard.
-4. Expand semantic parity for R2010+.
-   - Re-run the existing owner/layer/block/dimension/polyline/text/hatch/wipeout
-     semantic hashes on R2010/R2013/R2018 fixtures.
-   - Add new counters only when R2010+ exposes semantics that the current
-     counters cannot see.
-5. Keep unsupported-version behavior explicit.
+1. Decide and verify the R2022 acceptance target.
+   - Add a blocking-reader baseline fixture for `R_2022b` if the current C
+     reader accepts that family.
+   - Only then add a pure stream route and strict parity fixture.
+2. Add pre-R13 pure stream support if those blocking-reader versions are in
+   scope for complete coverage.
+   - Until a real pre-R13 stream reader exists, keep generated pre-R13
+     unsupported tests returning `DWG_ERR_NOTYETSUPPORTED`.
+3. Keep unsupported-version behavior explicit.
    - Supported pure stream versions must pass with or without
      `DWG_STREAM_F_NO_FULL_FALLBACK`.
    - Not-yet-supported versions must return `DWG_ERR_NOTYETSUPPORTED` with no
      object, decoded-object, or decode-error callbacks.
-6. Measure memory on the large-file set after each new version family.
+4. Measure memory on the large-file set after each new version family.
    - The pure stream path should keep the native side incremental.
    - Downstream aggregation is not part of this C-side acceptance check.
 
-Until R2010/R2013/R2018 have pure stream readers and strict parity fixtures,
-the project status is: C stream parity is real for R13/R14/R2000/R2004/R2007,
-but complete stream coverage across all blocking-reader versions is not done.
+The project status is: C stream parity is real for
+R13/R14/R2000/R2004/R2007/R2010/R2013/R2018, but complete stream coverage
+across every version enum is not done while pre-R13 and R2022 remain open.
 
 ## 9. C-side work items
 

@@ -147,7 +147,6 @@ static int stream_test_source_path (char *path, size_t size,
 static int test_stream_api_invalid_args (void);
 static int test_repository_stream_fixtures (void);
 static int test_repository_stream_sweep (int compare_refs);
-static int test_repository_unsupported_stream_fixtures (void);
 static int test_unsupported_stream_file_ex_rejects (void);
 static int test_generated_minsert_stream_fixture (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
@@ -1777,8 +1776,12 @@ static int
 test_legacy_stream_file_api (void)
 {
   char path[1024];
-  char unsupported_path[1024];
+  char unsupported_path[128];
+  char r2010_path[1024];
+  char r2013_path[1024];
   Stream_Stats stats = { 0 };
+  Stream_Stats r2010_stats = { 0 };
+  Stream_Stats r2013_stats = { 0 };
   Stream_Stats unsupported_stats = { 0 };
   Stream_Stats no_fallback_stats = { 0 };
   Abort_Stats aborted = { 0 };
@@ -1791,10 +1794,16 @@ test_legacy_stream_file_api (void)
       printf ("legacy stream file fixture path too long\n");
       return 1;
     }
-  if (!stream_test_source_path (unsupported_path, sizeof (unsupported_path),
+  if (!stream_test_source_path (r2010_path, sizeof (r2010_path),
                                 "test/test-data/example_2010.dwg"))
     {
-      printf ("legacy unsupported fixture path too long\n");
+      printf ("legacy R2010 fixture path too long\n");
+      return 1;
+    }
+  if (!stream_test_source_path (r2013_path, sizeof (r2013_path),
+                                "test/test-data/example_2013.dwg"))
+    {
+      printf ("legacy R2013 fixture path too long\n");
       return 1;
     }
 
@@ -1816,6 +1825,45 @@ test_legacy_stream_file_api (void)
 
   callbacks.object = stream_object_callback;
   callbacks.flags = 0;
+  error = dwg_stream_file (r2013_path, &callbacks, &r2013_stats);
+  if (error >= DWG_ERR_CRITICAL || !r2013_stats.num_objects
+      || r2013_stats.full_decode_objects
+      || r2013_stats.lightweight_objects != r2013_stats.num_objects)
+    {
+      printf ("legacy R2013 stream failed: error=0x%x objects=%lu "
+              "full=%lu lightweight=%lu\n",
+              error, (unsigned long)r2013_stats.num_objects,
+              (unsigned long)r2013_stats.full_decode_objects,
+              (unsigned long)r2013_stats.lightweight_objects);
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.flags = 0;
+  error = dwg_stream_file (r2010_path, &callbacks, &r2010_stats);
+  if (error >= DWG_ERR_CRITICAL || !r2010_stats.num_objects
+      || r2010_stats.full_decode_objects
+      || r2010_stats.lightweight_objects != r2010_stats.num_objects)
+    {
+      printf ("legacy R2010 stream failed: error=0x%x objects=%lu "
+              "full=%lu lightweight=%lu\n",
+              error, (unsigned long)r2010_stats.num_objects,
+              (unsigned long)r2010_stats.full_decode_objects,
+              (unsigned long)r2010_stats.lightweight_objects);
+      return 1;
+    }
+
+  snprintf (unsupported_path, sizeof (unsupported_path),
+            "stream_legacy_unsupported_r11_fixture_%ld_%ld.dwg",
+            stream_test_process_id (), (long)time (NULL));
+  if (!write_unsupported_fixture (unsupported_path))
+    {
+      printf ("failed to create legacy unsupported streaming fixture\n");
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.flags = 0;
   error = dwg_stream_file (unsupported_path, &callbacks, &unsupported_stats);
   if (error != DWG_ERR_NOTYETSUPPORTED || unsupported_stats.num_objects
       || unsupported_stats.full_decode_objects
@@ -1827,6 +1875,7 @@ test_legacy_stream_file_api (void)
               (unsigned long)unsupported_stats.num_objects,
               (unsigned long)unsupported_stats.full_decode_objects,
               (unsigned long)unsupported_stats.lightweight_objects);
+      remove (unsupported_path);
       return 1;
     }
 
@@ -1843,8 +1892,10 @@ test_legacy_stream_file_api (void)
               (unsigned long)no_fallback_stats.num_objects,
               (unsigned long)no_fallback_stats.full_decode_objects,
               (unsigned long)no_fallback_stats.lightweight_objects);
+      remove (unsupported_path);
       return 1;
     }
+  remove (unsupported_path);
 
   aborted.limit = 3;
   aborted.error = DWG_ERR_NOTYETSUPPORTED;
@@ -1866,16 +1917,17 @@ test_legacy_stream_file_api (void)
 static int
 test_unsupported_stream_file_ex_rejects (void)
 {
-  char path[1024];
+  char path[128];
   Stream_Stats combined = { 0 };
   Stream_Stats decoded_only = { 0 };
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   int error;
 
-  if (!stream_test_source_path (path, sizeof (path),
-                                "test/test-data/example_2010.dwg"))
+  snprintf (path, sizeof (path), "stream_ex_unsupported_r11_fixture_%ld_%ld.dwg",
+            stream_test_process_id (), (long)time (NULL));
+  if (!write_unsupported_fixture (path))
     {
-      printf ("unsupported stream fixture path too long\n");
+      printf ("failed to create stream_ex unsupported fixture\n");
       return 1;
     }
 
@@ -1890,6 +1942,7 @@ test_unsupported_stream_file_ex_rejects (void)
       printf ("unsupported decoded API failed: error=0x%x expected=0x%x\n",
               error, DWG_ERR_NOTYETSUPPORTED);
       print_stats ("unsupported decoded API", &combined);
+      remove (path);
       return 1;
     }
 
@@ -1902,9 +1955,11 @@ test_unsupported_stream_file_ex_rejects (void)
       printf ("unsupported decoded-only API failed: error=0x%x expected=0x%x\n",
               error, DWG_ERR_NOTYETSUPPORTED);
       print_stats ("unsupported decoded-only API", &decoded_only);
+      remove (path);
       return 1;
     }
 
+  remove (path);
   return 0;
 }
 
@@ -2314,6 +2369,10 @@ test_repository_stream_fixtures (void)
           "test/test-data/example_2000.dwg",
           "test/test-data/example_2004.dwg",
           "test/test-data/example_2007.dwg",
+          "test/test-data/example_2010.dwg",
+          "test/test-data/example_2013.dwg",
+          "test/test-data/example_2018.dwg",
+          "test/test-data/sample_2018.dwg",
           "test/test-data/2000/TS1.dwg" };
   char path[1024];
   size_t i;
@@ -2519,50 +2578,6 @@ test_generated_minsert_stream_fixture (void)
   return 0;
 }
 
-static int
-test_repository_unsupported_stream_fixtures (void)
-{
-  const char *fixtures[]
-      = { "test/test-data/example_2010.dwg",
-          "test/test-data/example_2013.dwg",
-          "test/test-data/example_2018.dwg" };
-  char path[1024];
-  size_t i;
-
-  for (i = 0; i < sizeof (fixtures) / sizeof (fixtures[0]); i++)
-    {
-      Stream_Stats stats = { 0 };
-      Dwg_Stream_Callbacks_Ex callbacks = { 0 };
-      int error;
-
-      stream_trace_stage (fixtures[i]);
-      if (!stream_test_source_path (path, sizeof (path), fixtures[i]))
-        {
-          printf ("unsupported repository fixture path too long: %s\n",
-                  fixtures[i]);
-          return 1;
-        }
-      callbacks.object = stream_object_callback;
-      callbacks.decoded_object = stream_decoded_object_callback;
-      callbacks.decode_error = stream_decode_error_callback;
-      callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
-      error = dwg_stream_file_ex (path, &callbacks, &stats);
-      if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
-          || stats.decoded_objects || stats.decode_error_objects)
-        {
-          printf ("unsupported repository fixture failed: %s error=0x%x "
-                  "expected=0x%x objects=%lu decoded=%lu "
-                  "decode_errors=%lu\n",
-                  fixtures[i], error, DWG_ERR_NOTYETSUPPORTED,
-                  (unsigned long)stats.num_objects,
-                  (unsigned long)stats.decoded_objects,
-                  (unsigned long)stats.decode_error_objects);
-          return 1;
-        }
-    }
-  return 0;
-}
-
 int
 main (void)
 {
@@ -2591,9 +2606,6 @@ main (void)
     return 1;
   stream_trace_stage ("test_generated_minsert_stream_fixture");
   if (test_generated_minsert_stream_fixture ())
-    return 1;
-  stream_trace_stage ("test_repository_unsupported_stream_fixtures");
-  if (test_repository_unsupported_stream_fixtures ())
     return 1;
   stream_trace_stage ("test_large_stream_fixture");
   if (test_large_stream_fixture ())
