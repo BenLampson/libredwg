@@ -45,6 +45,7 @@ typedef struct _probe_stats
   BITCODE_BL num_entities;
   BITCODE_BL num_non_entities;
   BITCODE_BL lightweight_objects;
+  BITCODE_BL r13_object_map_objects;
   BITCODE_BL r2007_object_map_objects;
   BITCODE_BL r2004_object_map_objects;
   BITCODE_BL full_decode_objects;
@@ -123,6 +124,11 @@ probe_object (const Dwg_Stream_Object_Info *info, void *user)
       stats->lightweight_objects++;
       stats->r2004_object_map_objects++;
     }
+  else if (info->decode_mode == DWG_STREAM_DECODE_R13_OBJECT_MAP)
+    {
+      stats->lightweight_objects++;
+      stats->r13_object_map_objects++;
+    }
   else if (info->decode_mode == DWG_STREAM_DECODE_FULL)
     stats->full_decode_objects++;
 
@@ -146,6 +152,9 @@ decode_mode_name (const Probe_Stats *stats)
   if (stats->num_objects
       && stats->r2004_object_map_objects == stats->num_objects)
     return "r2004-object-map";
+  if (stats->num_objects
+      && stats->r13_object_map_objects == stats->num_objects)
+    return "r13-object-map";
   if (stats->num_objects && stats->full_decode_objects == stats->num_objects)
     return "full";
   if (stats->lightweight_objects || stats->full_decode_objects)
@@ -333,6 +342,7 @@ probe_file (const char *path, unsigned long long file_size)
   return 0;
 }
 
+#ifdef HAVE_DIRENT_H
 static int
 has_dwg_suffix (const char *name)
 {
@@ -348,7 +358,6 @@ has_dwg_suffix (const char *name)
          && tolower ((unsigned char)suffix[3]) == 'g';
 }
 
-#ifdef HAVE_DIRENT_H
 static int
 probe_dir (const char *path)
 {

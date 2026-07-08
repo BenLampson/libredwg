@@ -1938,6 +1938,31 @@ r2007_stream_page_cache_free (R2007_Stream_Page_Cache *restrict cache)
   cache->page_index = -1;
 }
 
+static int
+r2007_stream_add_handle_offset (size_t *restrict last_offset,
+                                const BITCODE_MC offset)
+{
+  size_t delta;
+
+  if (!last_offset)
+    return DWG_ERR_INTERNALERROR;
+
+  if (offset < 0)
+    {
+      delta = (size_t)(-(int64_t)offset);
+      if (delta > *last_offset)
+        return DWG_ERR_VALUEOUTOFBOUNDS;
+      *last_offset -= delta;
+      return 0;
+    }
+
+  delta = (size_t)offset;
+  if (*last_offset > (size_t)-1 - delta)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  *last_offset += delta;
+  return 0;
+}
+
 static int64_t
 find_data_section_page_index (const r2007_section *restrict section,
                               const size_t address)
@@ -2177,21 +2202,19 @@ static int
 read_2007_section_handles_stream (
     Bit_Chain *dat, Dwg_Data *restrict dwg,
     r2007_section *restrict sections_map, r2007_page *restrict pages_map,
-    const Dwg_Stream_Callbacks *restrict callbacks,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     const Dwg_Stream_Input_Mode input_mode, void *restrict user)
 {
   R2007_Stream_Page_Cache object_page = { 0 };
-  R2007_Stream_Page_Cache handles_page = { 0 };
+  Bit_Chain hdl_dat = { 0 };
   r2007_section *objects_section;
   r2007_section *handles_section;
   int error;
-  size_t handle_pos = 0;
   size_t endpos;
-  unsigned int section_size;
+  BITCODE_RS section_size = 0;
   BITCODE_BL index = 0;
 
   object_page.page_index = -1;
-  handles_page.page_index = -1;
   objects_section = get_section (sections_map, SECTION_OBJECTS);
   if (!objects_section)
     {
@@ -2205,42 +2228,40 @@ read_2007_section_handles_stream (
       return DWG_ERR_SECTIONNOTFOUND;
     }
 
-  endpos = (size_t)handles_section->data_size;
+  error = read_data_section (&hdl_dat, dat, sections_map, pages_map,
+                             SECTION_HANDLES);
+  if (error >= DWG_ERR_CRITICAL || !hdl_dat.chain)
+    {
+      LOG_ERROR ("Failed to read handles section");
+      if (hdl_dat.chain)
+        free (hdl_dat.chain);
+      return error;
+    }
+
+  endpos = hdl_dat.byte + hdl_dat.size;
   do
     {
-      Bit_Chain hdl_dat = { 0 };
       size_t last_offset = 0;
       size_t oldpos = 0;
-      size_t startpos = 0;
+      size_t startpos = hdl_dat.byte;
       uint16_t crc1, crc2;
 
-      error = copy_data_section_window (&hdl_dat, dat, handles_section,
-                                        pages_map, &handles_page, handle_pos,
-                                        2);
-      if (error)
-        break;
-
+      if (endpos - startpos < 2)
+        {
+          error |= DWG_ERR_VALUEOUTOFBOUNDS;
+          break;
+        }
       section_size = bit_read_RS_BE (&hdl_dat);
-      free (hdl_dat.chain);
-      memset (&hdl_dat, 0, sizeof (hdl_dat));
-
       if (section_size > 2050)
         {
           error |= DWG_ERR_VALUEOUTOFBOUNDS;
           break;
         }
-      if (section_size + 2 > endpos - handle_pos)
+      if ((size_t)section_size + 2 > endpos - startpos)
         {
           error |= DWG_ERR_VALUEOUTOFBOUNDS;
           break;
         }
-
-      error = copy_data_section_window (&hdl_dat, dat, handles_section,
-                                        pages_map, &handles_page, handle_pos,
-                                        section_size + 2);
-      if (error)
-        break;
-      section_size = bit_read_RS_BE (&hdl_dat);
 
       while ((long)(hdl_dat.byte - startpos) < (long)section_size)
         {
@@ -2253,7 +2274,13 @@ read_2007_section_handles_stream (
           oldpos = hdl_dat.byte;
           handleoff = bit_read_UMC (&hdl_dat);
           offset = bit_read_MC (&hdl_dat);
-          last_offset += offset;
+          object_error = r2007_stream_add_handle_offset (&last_offset,
+                                                         offset);
+          if (object_error)
+            {
+              error = object_error;
+              goto done;
+            }
           (void)handleoff;
 
           if (hdl_dat.byte == oldpos)
@@ -2265,7 +2292,6 @@ read_2007_section_handles_stream (
           if (object_error)
             {
               error |= object_error;
-              free (hdl_dat.chain);
               goto done;
             }
 
@@ -2276,39 +2302,70 @@ read_2007_section_handles_stream (
               if (callback_error)
                 {
                   error = callback_error;
-                  free (hdl_dat.chain);
+                  goto done;
+                }
+            }
+          if (callbacks->decoded_object)
+            {
+              Bit_Chain object_dat = { 0 };
+              size_t prefix_size;
+              size_t object_size;
+              int decoded_error;
+
+              if (info.address < last_offset)
+                {
+                  error = DWG_ERR_VALUEOUTOFBOUNDS;
+                  goto done;
+                }
+              prefix_size = info.address - last_offset;
+              if ((size_t)info.size > (size_t)-1 - prefix_size)
+                {
+                  error = DWG_ERR_VALUEOUTOFBOUNDS;
+                  goto done;
+                }
+              object_size = prefix_size + info.size;
+              decoded_error = copy_data_section_window (
+                  &object_dat, dat, objects_section, pages_map, &object_page,
+                  last_offset, object_size);
+              if (decoded_error)
+                {
+                  error = decoded_error;
+                  goto done;
+                }
+              decoded_error = dwg_stream_emit_decoded_object (
+                  dwg, &object_dat, &info, callbacks, user);
+              if (object_dat.chain)
+                free (object_dat.chain);
+              if (decoded_error)
+                {
+                  error = decoded_error;
                   goto done;
                 }
             }
         }
 
       if (error >= DWG_ERR_CRITICAL || hdl_dat.byte == oldpos)
-        {
-          free (hdl_dat.chain);
-          break;
-        }
+        break;
 
       crc1 = bit_calc_CRC (0xC0C1, &(hdl_dat.chain[startpos]),
                            hdl_dat.byte - startpos);
       crc2 = bit_read_RS_BE (&hdl_dat);
-      handle_pos += section_size + 2;
       if (crc1 != crc2)
         {
           LOG_WARN ("Handles section page CRC mismatch: %04X vs calc. %04X "
-                    "from %zx-%zx\n",
+                    "from %" PRIuSIZE "-%" PRIuSIZE "\n",
                     crc2, crc1, startpos, hdl_dat.byte - 2);
           error |= DWG_ERR_WRONGCRC;
         }
 
-      free (hdl_dat.chain);
-
-      if (handle_pos >= endpos)
+      if (hdl_dat.byte >= endpos)
         break;
     }
   while (section_size > 2);
 
 done:
-  r2007_stream_page_cache_free (&handles_page);
+  if (hdl_dat.chain)
+    free (hdl_dat.chain);
   r2007_stream_page_cache_free (&object_page);
   return error;
 }
@@ -3005,7 +3062,7 @@ error:
 int
 read_r2007_meta_data_stream (Bit_Chain *dat, Bit_Chain *hdl_dat,
                              Dwg_Data *restrict dwg,
-                             const Dwg_Stream_Callbacks *restrict callbacks,
+                             const Dwg_Stream_Callbacks_Ex *restrict callbacks,
                              Dwg_Stream_Input_Mode input_mode,
                              void *restrict user)
 {

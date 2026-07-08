@@ -3,8 +3,59 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#ifdef _WIN32
+#  include <process.h>
+#else
+#  include <unistd.h>
+#endif
 
 #include "dwg.h"
+#include "dwg_api.h"
+#include "decode.h"
+
+#define STREAM_DECODE_ERROR_BUCKETS 16
+
+typedef struct _stream_decode_error_bucket
+{
+  int used;
+  int error;
+  BITCODE_BS type;
+  Dwg_Object_Supertype supertype;
+  BITCODE_BL count;
+  BITCODE_RLL first_handle;
+  size_t first_address;
+  BITCODE_RL first_size;
+  BITCODE_RL first_index;
+  char name[64];
+  char dxfname[64];
+} Stream_Decode_Error_Bucket;
+
+typedef struct _stream_semantic_coverage
+{
+  BITCODE_BL block_headers;
+  BITCODE_BL block_headers_with_owned;
+  BITCODE_BL block_entity_chains;
+  BITCODE_BL anonymous_dimension_blocks;
+  BITCODE_BL inserts;
+  BITCODE_BL minserts;
+  BITCODE_BL dimension_blocks;
+  BITCODE_BL polylines_3d_with_vertices;
+  BITCODE_BL hatches;
+  BITCODE_BL wipeouts;
+  BITCODE_BL texts;
+  BITCODE_BL mtexts;
+  BITCODE_BL ownerhandle_entities;
+  BITCODE_BL ownerless_entities;
+  BITCODE_BL model_owned_entities;
+  BITCODE_BL paper_owned_entities;
+  BITCODE_BL block_owned_entities;
+  BITCODE_BL entmode0_entities;
+  BITCODE_BL entmode1_entities;
+  BITCODE_BL entmode2_entities;
+  BITCODE_BL entmode3_entities;
+  BITCODE_BL entmode_other_entities;
+} Stream_Semantic_Coverage;
 
 typedef struct _stream_stats
 {
@@ -13,6 +64,11 @@ typedef struct _stream_stats
   BITCODE_BL num_non_entities;
   BITCODE_BL full_decode_objects;
   BITCODE_BL lightweight_objects;
+  BITCODE_BL decoded_objects;
+  BITCODE_BL decoded_entities;
+  BITCODE_BL decoded_non_entities;
+  unsigned long long decoded_handle_mix;
+  BITCODE_BL r13_object_map_objects;
   BITCODE_BL r2007_object_map_objects;
   BITCODE_BL r2004_object_map_objects;
   BITCODE_BL file_map_objects;
@@ -22,7 +78,50 @@ typedef struct _stream_stats
   size_t min_address;
   size_t max_address;
   BITCODE_RL max_size;
+  size_t last_address;
+  BITCODE_RL last_size;
+  BITCODE_BS last_type;
+  BITCODE_RLL last_handle;
+  Dwg_Object_Supertype last_supertype;
+  struct _stream_ref_snapshot *baseline_refs;
+  size_t baseline_ref_count;
+  BITCODE_BL decoded_ref_mismatches;
+  BITCODE_BL decoded_ref_missing;
+  BITCODE_BL decoded_ref_checked;
+  BITCODE_BL decode_error_objects;
+  BITCODE_BL decode_error_entities;
+  BITCODE_BL decode_error_non_entities;
+  int first_decode_error;
+  unsigned long long decode_error_handle_mix;
+  Stream_Decode_Error_Bucket decode_error_buckets[STREAM_DECODE_ERROR_BUCKETS];
+  BITCODE_BL decode_error_unbucketed;
+  Stream_Semantic_Coverage semantic;
 } Stream_Stats;
+
+typedef struct _stream_ref_snapshot
+{
+  BITCODE_RLL handle;
+  BITCODE_BS fixedtype;
+  Dwg_Object_Supertype supertype;
+  BITCODE_BB entmode;
+  BITCODE_RLL ownerhandle;
+  BITCODE_RLL layer;
+  BITCODE_RLL block_header;
+  BITCODE_RLL dimension_block;
+  BITCODE_BL num_owned;
+  BITCODE_RLL first_vertex;
+  BITCODE_RLL last_vertex;
+  BITCODE_RLL block_entity;
+  BITCODE_RLL first_entity;
+  BITCODE_RLL last_entity;
+  BITCODE_RLL endblk_entity;
+  unsigned long long block_entities_mix;
+  unsigned long long block_header_name_hash;
+  unsigned long long semantic_hash;
+  double block_base_x;
+  double block_base_y;
+  double block_base_z;
+} Stream_Ref_Snapshot;
 
 typedef struct _abort_stats
 {
@@ -31,12 +130,91 @@ typedef struct _abort_stats
   int error;
 } Abort_Stats;
 
+typedef struct _emit_capacity_stats
+{
+  BITCODE_BL decoded_calls;
+  BITCODE_BL decode_error_calls;
+  int error;
+  const Dwg_Stream_Object_Info *info;
+} Emit_Capacity_Stats;
+
 static void print_stats (const char *label, const Stream_Stats *stats);
+static void print_decode_error_buckets (const Stream_Stats *stats);
+static void stream_trace_stage (const char *stage);
+static long stream_test_process_id (void);
+static int stream_test_source_path (char *path, size_t size,
+                                    const char *relative);
+static int test_stream_api_invalid_args (void);
+static int test_repository_stream_fixtures (void);
+static int test_repository_stream_sweep (int compare_refs);
+static int test_repository_unsupported_stream_fixtures (void);
+static int test_full_fallback_decoded_stream_file_ex (void);
+static int test_generated_minsert_stream_fixture (void);
+static int test_stream_file_parity (const char *path, int compare_refs,
+                                    int test_abort_callbacks,
+                                    const char *label, int skip_missing,
+                                    Stream_Semantic_Coverage *coverage);
+static unsigned long long hash_text (const char *text);
+static unsigned long long hash_append_u64 (unsigned long long hash,
+                                           unsigned long long value);
+static unsigned long long hash_append_double (unsigned long long hash,
+                                              double value);
+static unsigned long long hash_append_color (unsigned long long hash,
+                                             BITCODE_CMC color);
+static unsigned long long hash_append_2rd (unsigned long long hash,
+                                           BITCODE_2RD point);
+static unsigned long long hash_append_2bd (unsigned long long hash,
+                                           BITCODE_2BD point);
+static unsigned long long hash_append_3bd (unsigned long long hash,
+                                           BITCODE_3BD point);
+static unsigned long long hash_ref_array (BITCODE_H *refs,
+                                          BITCODE_BL num_refs);
+static unsigned long long utf8_field_hash (void *entity,
+                                           const char *name,
+                                           const char *field);
+static int utf8_field_has_prefix (void *entity, const char *name,
+                                  const char *field, const char *prefix);
+static unsigned long long entity_semantic_hash (const Dwg_Object *obj);
+static void stats_add_owner_coverage (Stream_Semantic_Coverage *coverage,
+                                      const Dwg_Object *obj,
+                                      const Dwg_Object_Entity *entity,
+                                      BITCODE_RLL ownerhandle);
+static void stats_add_semantic_coverage (Stream_Stats *stats,
+                                         const Dwg_Object *obj);
+static int semantic_coverage_equal (const Stream_Semantic_Coverage *a,
+                                    const Stream_Semantic_Coverage *b);
+static void semantic_coverage_add (Stream_Semantic_Coverage *dst,
+                                   const Stream_Semantic_Coverage *src);
+static void print_semantic_coverage (const char *label,
+                                     const Stream_Semantic_Coverage *coverage);
+static int semantic_coverage_require_repository_sweep (
+    const Stream_Semantic_Coverage *coverage);
+static void snapshot_object_refs (const Dwg_Object *obj,
+                                  Stream_Ref_Snapshot *snapshot);
+static void snapshot_block_header_refs (const Dwg_Object *obj,
+                                        Stream_Ref_Snapshot *snapshot);
+static int compare_ref_snapshot_handle (const void *a, const void *b);
+static const Stream_Ref_Snapshot *
+find_ref_snapshot (const Stream_Stats *stats, BITCODE_RLL handle);
+static int ref_snapshots_equal (const Stream_Ref_Snapshot *a,
+                                const Stream_Ref_Snapshot *b);
+static void stream_record_decode_error_bucket (
+    Stream_Stats *stats, const Dwg_Stream_Object_Info *info, int error);
+
+static void
+stream_trace_stage (const char *stage)
+{
+  if (getenv ("LIBREDWG_STREAM_TEST_TRACE"))
+    {
+      fprintf (stderr, "stream_test: %s\n", stage);
+      fflush (stderr);
+    }
+}
 
 static int
 write_unsupported_fixture (const char *path)
 {
-  static const char magic[] = "AC1015";
+  static const char magic[] = "AC1009";
   unsigned char buffer[64] = { 0 };
   FILE *fp;
 
@@ -52,6 +230,16 @@ write_unsupported_fixture (const char *path)
     }
   fclose (fp);
   return 1;
+}
+
+static long
+stream_test_process_id (void)
+{
+#ifdef _WIN32
+  return (long)_getpid ();
+#else
+  return (long)getpid ();
+#endif
 }
 
 static void
@@ -79,6 +267,11 @@ stats_add_object (Stream_Stats *stats, const Dwg_Stream_Object_Info *info)
       stats->lightweight_objects++;
       stats->r2004_object_map_objects++;
     }
+  else if (info->decode_mode == DWG_STREAM_DECODE_R13_OBJECT_MAP)
+    {
+      stats->lightweight_objects++;
+      stats->r13_object_map_objects++;
+    }
   if (info->input_mode == DWG_STREAM_INPUT_FILE_MAP)
     stats->file_map_objects++;
   else if (info->input_mode == DWG_STREAM_INPUT_HEAP)
@@ -90,6 +283,11 @@ stats_add_object (Stream_Stats *stats, const Dwg_Stream_Object_Info *info)
     stats->max_address = info->address;
   if (info->size > stats->max_size)
     stats->max_size = info->size;
+  stats->last_address = info->address;
+  stats->last_size = info->size;
+  stats->last_type = info->type;
+  stats->last_handle = info->handle.value;
+  stats->last_supertype = info->supertype;
 }
 
 static void
@@ -110,6 +308,1076 @@ stats_add_dwg_object (Stream_Stats *stats, const Dwg_Object *obj)
   info.decode_mode = DWG_STREAM_DECODE_FULL;
 
   stats_add_object (stats, &info);
+  stats_add_semantic_coverage (stats, obj);
+}
+
+static BITCODE_RLL
+ref_absolute (const BITCODE_H ref)
+{
+  return ref ? ref->absolute_ref : 0;
+}
+
+static unsigned long long
+hash_text (const char *text)
+{
+  unsigned long long hash = 1469598103934665603ULL;
+
+  if (!text)
+    return 0;
+  while (*text)
+    {
+      hash ^= (unsigned char)*text;
+      hash *= 1099511628211ULL;
+      text++;
+    }
+  return hash ? hash : 1;
+}
+
+static unsigned long long
+hash_append_u64 (unsigned long long hash, unsigned long long value)
+{
+  hash ^= value + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+  hash *= 1099511628211ULL;
+  return hash ? hash : 1;
+}
+
+static unsigned long long
+hash_append_double (unsigned long long hash, double value)
+{
+  unsigned char bytes[sizeof (value)];
+  size_t i;
+
+  memcpy (bytes, &value, sizeof (bytes));
+  for (i = 0; i < sizeof (bytes); i++)
+    hash = hash_append_u64 (hash, bytes[i]);
+  return hash;
+}
+
+static unsigned long long
+hash_append_color (unsigned long long hash, BITCODE_CMC color)
+{
+  hash = hash_append_u64 (hash, (unsigned long long)(long long)color.index);
+  hash = hash_append_u64 (hash, (unsigned long long)color.flag);
+  hash = hash_append_u64 (hash, (unsigned long long)color.raw);
+  hash = hash_append_u64 (hash, (unsigned long long)color.rgb);
+  hash = hash_append_u64 (hash, (unsigned long long)color.method);
+  hash = hash_append_u64 (hash, hash_text ((const char *)color.name));
+  hash = hash_append_u64 (hash, hash_text ((const char *)color.book_name));
+  hash = hash_append_u64 (hash, ref_absolute (color.handle));
+  hash = hash_append_u64 (hash, (unsigned long long)color.alpha_raw);
+  hash = hash_append_u64 (hash, (unsigned long long)color.alpha_type);
+  hash = hash_append_u64 (hash, (unsigned long long)color.alpha);
+  return hash;
+}
+
+static unsigned long long
+hash_append_2rd (unsigned long long hash, BITCODE_2RD point)
+{
+  hash = hash_append_double (hash, point.x);
+  hash = hash_append_double (hash, point.y);
+  return hash;
+}
+
+static unsigned long long
+hash_append_2bd (unsigned long long hash, BITCODE_2BD point)
+{
+  hash = hash_append_double (hash, point.x);
+  hash = hash_append_double (hash, point.y);
+  return hash;
+}
+
+static unsigned long long
+hash_append_3bd (unsigned long long hash, BITCODE_3BD point)
+{
+  hash = hash_append_double (hash, point.x);
+  hash = hash_append_double (hash, point.y);
+  hash = hash_append_double (hash, point.z);
+  return hash;
+}
+
+static unsigned long long
+hash_ref_array (BITCODE_H *refs, BITCODE_BL num_refs)
+{
+  BITCODE_BL i;
+  unsigned long long hash = 1469598103934665603ULL;
+
+  if (!refs || !num_refs)
+    return 0;
+  for (i = 0; i < num_refs; i++)
+    {
+      BITCODE_RLL absolute_ref = ref_absolute (refs[i]);
+      hash ^= (unsigned long long)absolute_ref;
+      hash *= 1099511628211ULL;
+    }
+  return hash ? hash : 1;
+}
+
+static unsigned long long
+utf8_field_hash (void *entity, const char *name, const char *field)
+{
+  char *text = NULL;
+  int isnew = 0;
+  int ok;
+  unsigned long long hash = 0;
+
+  if (!entity || !name || !field)
+    return 0;
+  ok = dwg_dynapi_entity_utf8text (entity, name, field, &text, &isnew, NULL);
+  if (ok && text)
+    hash = hash_text (text);
+  if (isnew && text)
+    free (text);
+  return hash;
+}
+
+static int
+utf8_field_has_prefix (void *entity, const char *name, const char *field,
+                       const char *prefix)
+{
+  char *text = NULL;
+  int isnew = 0;
+  int ok;
+  int matches = 0;
+  size_t prefix_len;
+
+  if (!entity || !name || !field || !prefix)
+    return 0;
+  ok = dwg_dynapi_entity_utf8text (entity, name, field, &text, &isnew, NULL);
+  prefix_len = strlen (prefix);
+  if (ok && text && strncmp (text, prefix, prefix_len) == 0)
+    matches = 1;
+  if (isnew && text)
+    free (text);
+  return matches;
+}
+
+static void
+stats_add_owner_coverage (Stream_Semantic_Coverage *coverage,
+                          const Dwg_Object *obj,
+                          const Dwg_Object_Entity *entity,
+                          BITCODE_RLL ownerhandle)
+{
+  BITCODE_RLL model_handle = 0;
+  BITCODE_RLL paper_handle = 0;
+
+  if (!coverage || !entity)
+    return;
+  if (obj && obj->parent)
+    {
+      model_handle = ref_absolute (obj->parent->header_vars.BLOCK_RECORD_MSPACE);
+      paper_handle = ref_absolute (obj->parent->header_vars.BLOCK_RECORD_PSPACE);
+    }
+
+  if (ownerhandle)
+    {
+      if (ownerhandle == model_handle)
+        coverage->model_owned_entities++;
+      else if (ownerhandle == paper_handle)
+        coverage->paper_owned_entities++;
+      else
+        coverage->block_owned_entities++;
+      return;
+    }
+
+  switch (entity->entmode)
+    {
+    case 1:
+      coverage->paper_owned_entities++;
+      break;
+    case 2:
+      coverage->model_owned_entities++;
+      break;
+    case 3:
+      coverage->block_owned_entities++;
+      break;
+    default:
+      break;
+    }
+}
+
+static void
+stats_add_semantic_coverage (Stream_Stats *stats, const Dwg_Object *obj)
+{
+  Stream_Semantic_Coverage *coverage;
+  Dwg_Object_Entity *entity;
+  BITCODE_RLL ownerhandle;
+
+  if (!stats || !obj)
+    return;
+  coverage = &stats->semantic;
+  if (obj->fixedtype == DWG_TYPE_BLOCK_HEADER)
+    {
+      if (obj->tio.object && obj->tio.object->tio.BLOCK_HEADER)
+        {
+          Dwg_Object_BLOCK_HEADER *block = obj->tio.object->tio.BLOCK_HEADER;
+
+          coverage->block_headers++;
+          if (block->num_owned)
+            coverage->block_headers_with_owned++;
+          if (block->block_entity || block->first_entity
+              || block->last_entity || block->endblk_entity
+              || block->num_owned)
+            coverage->block_entity_chains++;
+          if (utf8_field_has_prefix (block, "BLOCK_HEADER", "name", "*D"))
+            coverage->anonymous_dimension_blocks++;
+        }
+      return;
+    }
+
+  if (obj->supertype != DWG_SUPERTYPE_ENTITY || !obj->tio.entity)
+    return;
+
+  entity = obj->tio.entity;
+  ownerhandle = ref_absolute (entity->ownerhandle);
+  if (ownerhandle)
+    coverage->ownerhandle_entities++;
+  else
+    coverage->ownerless_entities++;
+  stats_add_owner_coverage (coverage, obj, entity, ownerhandle);
+
+  switch (entity->entmode)
+    {
+    case 0:
+      coverage->entmode0_entities++;
+      break;
+    case 1:
+      coverage->entmode1_entities++;
+      break;
+    case 2:
+      coverage->entmode2_entities++;
+      break;
+    case 3:
+      coverage->entmode3_entities++;
+      break;
+    default:
+      coverage->entmode_other_entities++;
+      break;
+    }
+
+  switch (obj->fixedtype)
+    {
+    case DWG_TYPE_INSERT:
+      if (entity->tio.INSERT)
+        coverage->inserts++;
+      break;
+    case DWG_TYPE_MINSERT:
+      if (entity->tio.MINSERT)
+        coverage->minserts++;
+      break;
+    case DWG_TYPE_DIMENSION_ALIGNED:
+    case DWG_TYPE_DIMENSION_ANG2LN:
+    case DWG_TYPE_DIMENSION_ANG3PT:
+    case DWG_TYPE_DIMENSION_DIAMETER:
+    case DWG_TYPE_DIMENSION_LINEAR:
+    case DWG_TYPE_DIMENSION_ORDINATE:
+    case DWG_TYPE_DIMENSION_RADIUS:
+    case DWG_TYPE_ARC_DIMENSION:
+    case DWG_TYPE_LARGE_RADIAL_DIMENSION:
+      if (entity->tio.DIMENSION_common
+          && entity->tio.DIMENSION_common->block)
+        coverage->dimension_blocks++;
+      break;
+    case DWG_TYPE_POLYLINE_3D:
+      if (entity->tio.POLYLINE_3D
+          && (entity->tio.POLYLINE_3D->first_vertex
+              || entity->tio.POLYLINE_3D->last_vertex
+              || entity->tio.POLYLINE_3D->num_owned))
+        coverage->polylines_3d_with_vertices++;
+      break;
+    case DWG_TYPE_HATCH:
+      if (entity->tio.HATCH)
+        coverage->hatches++;
+      break;
+    case DWG_TYPE_WIPEOUT:
+      if (entity->tio.WIPEOUT)
+        coverage->wipeouts++;
+      break;
+    case DWG_TYPE_TEXT:
+      if (entity->tio.TEXT)
+        coverage->texts++;
+      break;
+    case DWG_TYPE_MTEXT:
+      if (entity->tio.MTEXT)
+        coverage->mtexts++;
+      break;
+    default:
+      break;
+    }
+}
+
+static int
+semantic_coverage_equal (const Stream_Semantic_Coverage *a,
+                         const Stream_Semantic_Coverage *b)
+{
+  return a->block_headers == b->block_headers
+         && a->block_headers_with_owned == b->block_headers_with_owned
+         && a->block_entity_chains == b->block_entity_chains
+         && a->anonymous_dimension_blocks == b->anonymous_dimension_blocks
+         && a->inserts == b->inserts && a->minserts == b->minserts
+         && a->dimension_blocks == b->dimension_blocks
+         && a->polylines_3d_with_vertices == b->polylines_3d_with_vertices
+         && a->hatches == b->hatches && a->wipeouts == b->wipeouts
+         && a->texts == b->texts && a->mtexts == b->mtexts
+         && a->ownerhandle_entities == b->ownerhandle_entities
+         && a->ownerless_entities == b->ownerless_entities
+         && a->model_owned_entities == b->model_owned_entities
+         && a->paper_owned_entities == b->paper_owned_entities
+         && a->block_owned_entities == b->block_owned_entities
+         && a->entmode0_entities == b->entmode0_entities
+         && a->entmode1_entities == b->entmode1_entities
+         && a->entmode2_entities == b->entmode2_entities
+         && a->entmode3_entities == b->entmode3_entities
+         && a->entmode_other_entities == b->entmode_other_entities;
+}
+
+static void
+semantic_coverage_add (Stream_Semantic_Coverage *dst,
+                       const Stream_Semantic_Coverage *src)
+{
+  if (!dst || !src)
+    return;
+
+  dst->block_headers += src->block_headers;
+  dst->block_headers_with_owned += src->block_headers_with_owned;
+  dst->block_entity_chains += src->block_entity_chains;
+  dst->anonymous_dimension_blocks += src->anonymous_dimension_blocks;
+  dst->inserts += src->inserts;
+  dst->minserts += src->minserts;
+  dst->dimension_blocks += src->dimension_blocks;
+  dst->polylines_3d_with_vertices += src->polylines_3d_with_vertices;
+  dst->hatches += src->hatches;
+  dst->wipeouts += src->wipeouts;
+  dst->texts += src->texts;
+  dst->mtexts += src->mtexts;
+  dst->ownerhandle_entities += src->ownerhandle_entities;
+  dst->ownerless_entities += src->ownerless_entities;
+  dst->model_owned_entities += src->model_owned_entities;
+  dst->paper_owned_entities += src->paper_owned_entities;
+  dst->block_owned_entities += src->block_owned_entities;
+  dst->entmode0_entities += src->entmode0_entities;
+  dst->entmode1_entities += src->entmode1_entities;
+  dst->entmode2_entities += src->entmode2_entities;
+  dst->entmode3_entities += src->entmode3_entities;
+  dst->entmode_other_entities += src->entmode_other_entities;
+}
+
+static void
+print_semantic_coverage (const char *label,
+                         const Stream_Semantic_Coverage *coverage)
+{
+  printf ("%s: block_headers=%lu block_headers_owned=%lu "
+          "block_chains=%lu anonymous_dim_blocks=%lu inserts=%lu "
+          "minserts=%lu dimension_blocks=%lu poly3d_vertices=%lu "
+          "hatches=%lu wipeouts=%lu texts=%lu mtexts=%lu "
+          "ownerhandle_entities=%lu ownerless_entities=%lu model=%lu "
+          "paper=%lu block_owned=%lu entmode0=%lu entmode1=%lu "
+          "entmode2=%lu entmode3=%lu entmode_other=%lu\n",
+          label, (unsigned long)coverage->block_headers,
+          (unsigned long)coverage->block_headers_with_owned,
+          (unsigned long)coverage->block_entity_chains,
+          (unsigned long)coverage->anonymous_dimension_blocks,
+          (unsigned long)coverage->inserts, (unsigned long)coverage->minserts,
+          (unsigned long)coverage->dimension_blocks,
+          (unsigned long)coverage->polylines_3d_with_vertices,
+          (unsigned long)coverage->hatches, (unsigned long)coverage->wipeouts,
+          (unsigned long)coverage->texts, (unsigned long)coverage->mtexts,
+          (unsigned long)coverage->ownerhandle_entities,
+          (unsigned long)coverage->ownerless_entities,
+          (unsigned long)coverage->model_owned_entities,
+          (unsigned long)coverage->paper_owned_entities,
+          (unsigned long)coverage->block_owned_entities,
+          (unsigned long)coverage->entmode0_entities,
+          (unsigned long)coverage->entmode1_entities,
+          (unsigned long)coverage->entmode2_entities,
+          (unsigned long)coverage->entmode3_entities,
+          (unsigned long)coverage->entmode_other_entities);
+}
+
+static int
+semantic_coverage_require_repository_sweep (
+    const Stream_Semantic_Coverage *coverage)
+{
+  int missing = 0;
+
+  if (!coverage)
+    return 1;
+#define REQUIRE_COVERAGE(field)                                               \
+  do                                                                          \
+    {                                                                         \
+      if (!coverage->field)                                                   \
+        {                                                                     \
+          printf ("repository sweep semantic coverage missing: %s\n",         \
+                  #field);                                                    \
+          missing = 1;                                                        \
+        }                                                                     \
+    }                                                                         \
+  while (0)
+
+  REQUIRE_COVERAGE (block_headers);
+  REQUIRE_COVERAGE (block_headers_with_owned);
+  REQUIRE_COVERAGE (block_entity_chains);
+  REQUIRE_COVERAGE (anonymous_dimension_blocks);
+  REQUIRE_COVERAGE (inserts);
+  REQUIRE_COVERAGE (dimension_blocks);
+  REQUIRE_COVERAGE (polylines_3d_with_vertices);
+  REQUIRE_COVERAGE (hatches);
+  REQUIRE_COVERAGE (wipeouts);
+  REQUIRE_COVERAGE (texts);
+  REQUIRE_COVERAGE (mtexts);
+  REQUIRE_COVERAGE (ownerhandle_entities);
+  REQUIRE_COVERAGE (ownerless_entities);
+  REQUIRE_COVERAGE (model_owned_entities);
+  REQUIRE_COVERAGE (paper_owned_entities);
+  REQUIRE_COVERAGE (block_owned_entities);
+  REQUIRE_COVERAGE (entmode0_entities);
+  REQUIRE_COVERAGE (entmode1_entities);
+  REQUIRE_COVERAGE (entmode2_entities);
+#undef REQUIRE_COVERAGE
+
+  if (missing)
+    print_semantic_coverage ("repository sweep semantic coverage", coverage);
+  return missing;
+}
+
+static unsigned long long
+hash_append_common_entity (unsigned long long hash,
+                           const Dwg_Object_Entity *entity)
+{
+  hash = hash_append_u64 (hash, (unsigned long long)entity->entmode);
+  hash = hash_append_u64 (hash, ref_absolute (entity->ownerhandle));
+  hash = hash_append_u64 (hash, ref_absolute (entity->prev_entity));
+  hash = hash_append_u64 (hash, ref_absolute (entity->next_entity));
+  hash = hash_append_u64 (hash, ref_absolute (entity->layer));
+  hash = hash_append_u64 (hash, ref_absolute (entity->ltype));
+  hash = hash_append_u64 (hash, ref_absolute (entity->material));
+  hash = hash_append_u64 (hash, ref_absolute (entity->plotstyle));
+  hash = hash_append_u64 (hash, ref_absolute (entity->xdicobjhandle));
+  hash = hash_append_u64 (hash, entity->num_reactors);
+  hash = hash_append_u64 (hash,
+                          hash_ref_array (entity->reactors,
+                                          entity->num_reactors));
+  hash = hash_append_color (hash, entity->color);
+  hash = hash_append_double (hash, entity->ltype_scale);
+  hash = hash_append_u64 (hash, entity->ltype_flags);
+  hash = hash_append_u64 (hash, entity->plotstyle_flags);
+  hash = hash_append_u64 (hash, entity->material_flags);
+  hash = hash_append_u64 (hash, entity->shadow_flags);
+  hash = hash_append_u64 (hash, entity->invisible);
+  hash = hash_append_u64 (hash, entity->linewt);
+  hash = hash_append_u64 (hash, entity->isbylayerlt);
+  hash = hash_append_u64 (hash, entity->nolinks);
+  return hash;
+}
+
+static unsigned long long
+hash_append_insert (unsigned long long hash, const Dwg_Entity_INSERT *insert)
+{
+  hash = hash_append_3bd (hash, insert->ins_pt);
+  hash = hash_append_u64 (hash, insert->scale_flag);
+  hash = hash_append_3bd (hash, insert->scale);
+  hash = hash_append_double (hash, insert->rotation);
+  hash = hash_append_3bd (hash, insert->extrusion);
+  hash = hash_append_u64 (hash, insert->has_attribs);
+  hash = hash_append_u64 (hash, insert->num_owned);
+  hash = hash_append_u64 (hash, ref_absolute (insert->block_header));
+  hash = hash_append_u64 (hash, ref_absolute (insert->first_attrib));
+  hash = hash_append_u64 (hash, ref_absolute (insert->last_attrib));
+  hash = hash_append_u64 (hash, hash_ref_array (insert->attribs,
+                                                insert->num_owned));
+  hash = hash_append_u64 (hash, ref_absolute (insert->seqend));
+  return hash;
+}
+
+static unsigned long long
+hash_append_minsert (unsigned long long hash, const Dwg_Entity_MINSERT *insert)
+{
+  hash = hash_append_3bd (hash, insert->ins_pt);
+  hash = hash_append_u64 (hash, insert->scale_flag);
+  hash = hash_append_3bd (hash, insert->scale);
+  hash = hash_append_double (hash, insert->rotation);
+  hash = hash_append_3bd (hash, insert->extrusion);
+  hash = hash_append_u64 (hash, insert->has_attribs);
+  hash = hash_append_u64 (hash, insert->num_owned);
+  hash = hash_append_u64 (hash, insert->num_cols);
+  hash = hash_append_u64 (hash, insert->num_rows);
+  hash = hash_append_double (hash, insert->col_spacing);
+  hash = hash_append_double (hash, insert->row_spacing);
+  hash = hash_append_u64 (hash, ref_absolute (insert->block_header));
+  hash = hash_append_u64 (hash, ref_absolute (insert->first_attrib));
+  hash = hash_append_u64 (hash, ref_absolute (insert->last_attrib));
+  hash = hash_append_u64 (hash, hash_ref_array (insert->attribs,
+                                                insert->num_owned));
+  hash = hash_append_u64 (hash, ref_absolute (insert->seqend));
+  return hash;
+}
+
+static unsigned long long
+hash_append_dimension_common (unsigned long long hash,
+                              const Dwg_DIMENSION_common *dimension)
+{
+  hash = hash_append_u64 (hash, dimension->class_version);
+  hash = hash_append_3bd (hash, dimension->extrusion);
+  hash = hash_append_3bd (hash, dimension->def_pt);
+  hash = hash_append_2rd (hash, dimension->text_midpt);
+  hash = hash_append_double (hash, dimension->elevation);
+  hash = hash_append_u64 (hash, dimension->flag);
+  hash = hash_append_u64 (hash, dimension->flag1);
+  hash = hash_append_u64 (hash, hash_text ((const char *)dimension->user_text));
+  hash = hash_append_double (hash, dimension->text_rotation);
+  hash = hash_append_double (hash, dimension->horiz_dir);
+  hash = hash_append_3bd (hash, dimension->ins_scale);
+  hash = hash_append_double (hash, dimension->ins_rotation);
+  hash = hash_append_u64 (hash, dimension->attachment);
+  hash = hash_append_u64 (hash, dimension->lspace_style);
+  hash = hash_append_double (hash, dimension->lspace_factor);
+  hash = hash_append_double (hash, dimension->act_measurement);
+  hash = hash_append_u64 (hash, dimension->flip_arrow1);
+  hash = hash_append_u64 (hash, dimension->flip_arrow2);
+  hash = hash_append_2rd (hash, dimension->clone_ins_pt);
+  hash = hash_append_u64 (hash, ref_absolute (dimension->block));
+  hash = hash_append_u64 (hash, ref_absolute (dimension->dimstyle));
+  return hash;
+}
+
+static unsigned long long
+hash_append_lwpolyline (unsigned long long hash,
+                        const Dwg_Entity_LWPOLYLINE *lwpolyline)
+{
+  BITCODE_BL i;
+
+  hash = hash_append_u64 (hash, lwpolyline->flag);
+  hash = hash_append_double (hash, lwpolyline->const_width);
+  hash = hash_append_double (hash, lwpolyline->elevation);
+  hash = hash_append_double (hash, lwpolyline->thickness);
+  hash = hash_append_3bd (hash, lwpolyline->extrusion);
+  hash = hash_append_u64 (hash, lwpolyline->num_points);
+  for (i = 0; i < lwpolyline->num_points; i++)
+    hash = hash_append_2rd (hash, lwpolyline->points[i]);
+  hash = hash_append_u64 (hash, lwpolyline->num_bulges);
+  for (i = 0; i < lwpolyline->num_bulges; i++)
+    hash = hash_append_double (hash, lwpolyline->bulges[i]);
+  hash = hash_append_u64 (hash, lwpolyline->num_widths);
+  for (i = 0; i < lwpolyline->num_widths; i++)
+    {
+      hash = hash_append_double (hash, lwpolyline->widths[i].start);
+      hash = hash_append_double (hash, lwpolyline->widths[i].end);
+    }
+  return hash;
+}
+
+static unsigned long long
+hash_append_hatch (unsigned long long hash, const Dwg_Entity_HATCH *hatch)
+{
+  BITCODE_BL i;
+
+  hash = hash_append_u64 (hash, hatch->is_gradient_fill);
+  hash = hash_append_double (hash, hatch->gradient_angle);
+  hash = hash_append_double (hash, hatch->gradient_shift);
+  hash = hash_append_u64 (hash, hatch->single_color_gradient);
+  hash = hash_append_double (hash, hatch->gradient_tint);
+  hash = hash_append_u64 (hash, hatch->num_colors);
+  for (i = 0; i < hatch->num_colors; i++)
+    {
+      hash = hash_append_double (hash, hatch->colors[i].shift_value);
+      hash = hash_append_color (hash, hatch->colors[i].color);
+    }
+  hash = hash_append_u64 (hash, hash_text ((const char *)hatch->gradient_name));
+  hash = hash_append_double (hash, hatch->elevation);
+  hash = hash_append_3bd (hash, hatch->extrusion);
+  hash = hash_append_u64 (hash, hash_text ((const char *)hatch->name));
+  hash = hash_append_u64 (hash, hatch->is_solid_fill);
+  hash = hash_append_u64 (hash, hatch->is_associative);
+  hash = hash_append_u64 (hash, hatch->num_paths);
+  for (i = 0; i < hatch->num_paths; i++)
+    {
+      Dwg_HATCH_Path *path = &hatch->paths[i];
+      BITCODE_BL j;
+
+      hash = hash_append_u64 (hash, path->flag);
+      hash = hash_append_u64 (hash, path->num_segs_or_paths);
+      hash = hash_append_u64 (hash, path->bulges_present);
+      hash = hash_append_u64 (hash, path->closed);
+      hash = hash_append_u64 (hash, path->num_boundary_handles);
+      hash = hash_append_u64 (hash, hash_ref_array (path->boundary_handles,
+                                                    path->num_boundary_handles));
+      if (path->flag & 2)
+        {
+          for (j = 0; j < path->num_segs_or_paths; j++)
+            {
+              hash = hash_append_2rd (hash, path->polyline_paths[j].point);
+              hash = hash_append_double (hash, path->polyline_paths[j].bulge);
+            }
+        }
+      else
+        {
+          for (j = 0; j < path->num_segs_or_paths; j++)
+            {
+              Dwg_HATCH_PathSeg *seg = &path->segs[j];
+              BITCODE_BL k;
+
+              hash = hash_append_u64 (hash, seg->curve_type);
+              hash = hash_append_2rd (hash, seg->first_endpoint);
+              hash = hash_append_2rd (hash, seg->second_endpoint);
+              hash = hash_append_2rd (hash, seg->center);
+              hash = hash_append_double (hash, seg->radius);
+              hash = hash_append_double (hash, seg->start_angle);
+              hash = hash_append_double (hash, seg->end_angle);
+              hash = hash_append_u64 (hash, seg->is_ccw);
+              hash = hash_append_2rd (hash, seg->endpoint);
+              hash = hash_append_double (hash, seg->minor_major_ratio);
+              hash = hash_append_u64 (hash, seg->degree);
+              hash = hash_append_u64 (hash, seg->is_rational);
+              hash = hash_append_u64 (hash, seg->is_periodic);
+              hash = hash_append_u64 (hash, seg->num_knots);
+              for (k = 0; k < seg->num_knots; k++)
+                hash = hash_append_double (hash, seg->knots[k]);
+              hash = hash_append_u64 (hash, seg->num_control_points);
+              for (k = 0; k < seg->num_control_points; k++)
+                {
+                  hash = hash_append_2rd (hash, seg->control_points[k].point);
+                  hash = hash_append_double (hash,
+                                             seg->control_points[k].weight);
+                }
+              hash = hash_append_u64 (hash, seg->num_fitpts);
+              for (k = 0; k < seg->num_fitpts; k++)
+                hash = hash_append_2rd (hash, seg->fitpts[k]);
+              hash = hash_append_2rd (hash, seg->start_tangent);
+              hash = hash_append_2rd (hash, seg->end_tangent);
+            }
+        }
+    }
+  hash = hash_append_u64 (hash, hatch->style);
+  hash = hash_append_u64 (hash, hatch->pattern_type);
+  hash = hash_append_double (hash, hatch->angle);
+  hash = hash_append_double (hash, hatch->scale_spacing);
+  hash = hash_append_u64 (hash, hatch->double_flag);
+  hash = hash_append_u64 (hash, hatch->num_deflines);
+  for (i = 0; i < hatch->num_deflines; i++)
+    {
+      BITCODE_BS j;
+
+      hash = hash_append_double (hash, hatch->deflines[i].angle);
+      hash = hash_append_2bd (hash, hatch->deflines[i].pt0);
+      hash = hash_append_2bd (hash, hatch->deflines[i].offset);
+      hash = hash_append_u64 (hash, hatch->deflines[i].num_dashes);
+      for (j = 0; j < hatch->deflines[i].num_dashes; j++)
+        hash = hash_append_double (hash, hatch->deflines[i].dashes[j]);
+    }
+  hash = hash_append_u64 (hash, hatch->has_derived);
+  hash = hash_append_double (hash, hatch->pixel_size);
+  hash = hash_append_u64 (hash, hatch->num_seeds);
+  for (i = 0; i < hatch->num_seeds; i++)
+    hash = hash_append_2rd (hash, hatch->seeds[i]);
+  return hash;
+}
+
+static unsigned long long
+hash_append_wipeout (unsigned long long hash, const Dwg_Entity_WIPEOUT *wipeout)
+{
+  BITCODE_BL i;
+
+  hash = hash_append_u64 (hash, wipeout->class_version);
+  hash = hash_append_3bd (hash, wipeout->pt0);
+  hash = hash_append_3bd (hash, wipeout->uvec);
+  hash = hash_append_3bd (hash, wipeout->vvec);
+  hash = hash_append_2rd (hash, wipeout->image_size);
+  hash = hash_append_u64 (hash, wipeout->display_props);
+  hash = hash_append_u64 (hash, wipeout->clipping);
+  hash = hash_append_u64 (hash, wipeout->brightness);
+  hash = hash_append_u64 (hash, wipeout->contrast);
+  hash = hash_append_u64 (hash, wipeout->fade);
+  hash = hash_append_u64 (hash, wipeout->clip_mode);
+  hash = hash_append_u64 (hash, wipeout->clip_boundary_type);
+  hash = hash_append_u64 (hash, wipeout->num_clip_verts);
+  for (i = 0; i < wipeout->num_clip_verts; i++)
+    hash = hash_append_2rd (hash, wipeout->clip_verts[i]);
+  hash = hash_append_u64 (hash, ref_absolute (wipeout->imagedef));
+  hash = hash_append_u64 (hash, ref_absolute (wipeout->imagedefreactor));
+  return hash;
+}
+
+static unsigned long long
+entity_semantic_hash (const Dwg_Object *obj)
+{
+  Dwg_Object_Entity *entity;
+  unsigned long long hash = 1469598103934665603ULL;
+
+  if (!obj || obj->supertype != DWG_SUPERTYPE_ENTITY || !obj->tio.entity)
+    return 0;
+
+  entity = obj->tio.entity;
+  hash = hash_append_common_entity (hash, entity);
+  switch (obj->fixedtype)
+    {
+    case DWG_TYPE_TEXT:
+      if (entity->tio.TEXT)
+        {
+          Dwg_Entity_TEXT *text = entity->tio.TEXT;
+          hash = hash_append_2bd (hash, text->ins_pt);
+          hash = hash_append_2bd (hash, text->alignment_pt);
+          hash = hash_append_3bd (hash, text->extrusion);
+          hash = hash_append_double (hash, text->elevation);
+          hash = hash_append_double (hash, text->thickness);
+          hash = hash_append_double (hash, text->oblique_angle);
+          hash = hash_append_double (hash, text->rotation);
+          hash = hash_append_double (hash, text->height);
+          hash = hash_append_double (hash, text->width_factor);
+          hash = hash_append_u64 (hash,
+                                  utf8_field_hash (text, "TEXT",
+                                                   "text_value"));
+          hash = hash_append_u64 (hash, text->generation);
+          hash = hash_append_u64 (hash, text->horiz_alignment);
+          hash = hash_append_u64 (hash, text->vert_alignment);
+          hash = hash_append_u64 (hash, ref_absolute (text->style));
+        }
+      break;
+    case DWG_TYPE_ATTRIB:
+      if (entity->tio.ATTRIB)
+        {
+          Dwg_Entity_ATTRIB *attrib = entity->tio.ATTRIB;
+          hash = hash_append_2bd (hash, attrib->ins_pt);
+          hash = hash_append_2bd (hash, attrib->alignment_pt);
+          hash = hash_append_3bd (hash, attrib->extrusion);
+          hash = hash_append_double (hash, attrib->elevation);
+          hash = hash_append_double (hash, attrib->thickness);
+          hash = hash_append_double (hash, attrib->oblique_angle);
+          hash = hash_append_double (hash, attrib->rotation);
+          hash = hash_append_double (hash, attrib->height);
+          hash = hash_append_double (hash, attrib->width_factor);
+          hash = hash_append_u64 (hash,
+                                  utf8_field_hash (attrib, "ATTRIB",
+                                                   "text_value"));
+          hash = hash_append_u64 (hash,
+                                  utf8_field_hash (attrib, "ATTRIB", "tag"));
+          hash = hash_append_u64 (hash, attrib->flags);
+          hash = hash_append_u64 (hash, ref_absolute (attrib->style));
+        }
+      break;
+    case DWG_TYPE_ATTDEF:
+      if (entity->tio.ATTDEF)
+        {
+          Dwg_Entity_ATTDEF *attdef = entity->tio.ATTDEF;
+          hash = hash_append_2bd (hash, attdef->ins_pt);
+          hash = hash_append_2bd (hash, attdef->alignment_pt);
+          hash = hash_append_3bd (hash, attdef->extrusion);
+          hash = hash_append_double (hash, attdef->elevation);
+          hash = hash_append_double (hash, attdef->thickness);
+          hash = hash_append_double (hash, attdef->oblique_angle);
+          hash = hash_append_double (hash, attdef->rotation);
+          hash = hash_append_double (hash, attdef->height);
+          hash = hash_append_double (hash, attdef->width_factor);
+          hash = hash_append_u64 (hash,
+                                  utf8_field_hash (attdef, "ATTDEF",
+                                                   "default_value"));
+          hash = hash_append_u64 (hash,
+                                  utf8_field_hash (attdef, "ATTDEF", "tag"));
+          hash = hash_append_u64 (hash,
+                                  utf8_field_hash (attdef, "ATTDEF",
+                                                   "prompt"));
+          hash = hash_append_u64 (hash, attdef->flags);
+          hash = hash_append_u64 (hash, ref_absolute (attdef->style));
+        }
+      break;
+    case DWG_TYPE_INSERT:
+      if (entity->tio.INSERT)
+        hash = hash_append_insert (hash, entity->tio.INSERT);
+      break;
+    case DWG_TYPE_MINSERT:
+      if (entity->tio.MINSERT)
+        hash = hash_append_minsert (hash, entity->tio.MINSERT);
+      break;
+    case DWG_TYPE_LINE:
+      if (entity->tio.LINE)
+        {
+          Dwg_Entity_LINE *line = entity->tio.LINE;
+          hash = hash_append_u64 (hash, line->z_is_zero);
+          hash = hash_append_3bd (hash, line->start);
+          hash = hash_append_3bd (hash, line->end);
+          hash = hash_append_double (hash, line->thickness);
+          hash = hash_append_3bd (hash, line->extrusion);
+        }
+      break;
+    case DWG_TYPE_MTEXT:
+      if (entity->tio.MTEXT)
+        {
+          Dwg_Entity_MTEXT *mtext = entity->tio.MTEXT;
+          BITCODE_BL i;
+
+          hash = hash_append_3bd (hash, mtext->ins_pt);
+          hash = hash_append_3bd (hash, mtext->extrusion);
+          hash = hash_append_3bd (hash, mtext->x_axis_dir);
+          hash = hash_append_double (hash, mtext->rect_height);
+          hash = hash_append_double (hash, mtext->rect_width);
+          hash = hash_append_double (hash, mtext->text_height);
+          hash = hash_append_u64 (hash, mtext->attachment);
+          hash = hash_append_u64 (hash, mtext->flow_dir);
+          hash = hash_append_double (hash, mtext->extents_width);
+          hash = hash_append_double (hash, mtext->extents_height);
+          hash = hash_append_u64 (hash,
+                                  utf8_field_hash (mtext, "MTEXT", "text"));
+          hash = hash_append_u64 (hash, ref_absolute (mtext->style));
+          hash = hash_append_u64 (hash, mtext->linespace_style);
+          hash = hash_append_double (hash, mtext->linespace_factor);
+          hash = hash_append_u64 (hash, mtext->bg_fill_flag);
+          hash = hash_append_u64 (hash, mtext->bg_fill_scale);
+          hash = hash_append_color (hash, mtext->bg_fill_color);
+          hash = hash_append_u64 (hash, mtext->bg_fill_trans);
+          hash = hash_append_u64 (hash, ref_absolute (mtext->appid));
+          hash = hash_append_u64 (hash, mtext->column_type);
+          hash = hash_append_double (hash, mtext->column_width);
+          hash = hash_append_double (hash, mtext->gutter);
+          hash = hash_append_u64 (hash, mtext->num_column_heights);
+          for (i = 0; i < mtext->num_column_heights; i++)
+            hash = hash_append_double (hash, mtext->column_heights[i]);
+        }
+      break;
+    case DWG_TYPE_DIMENSION_ALIGNED:
+    case DWG_TYPE_DIMENSION_ANG2LN:
+    case DWG_TYPE_DIMENSION_ANG3PT:
+    case DWG_TYPE_DIMENSION_DIAMETER:
+    case DWG_TYPE_DIMENSION_LINEAR:
+    case DWG_TYPE_DIMENSION_ORDINATE:
+    case DWG_TYPE_DIMENSION_RADIUS:
+    case DWG_TYPE_ARC_DIMENSION:
+    case DWG_TYPE_LARGE_RADIAL_DIMENSION:
+      if (entity->tio.DIMENSION_common)
+        hash = hash_append_dimension_common (hash,
+                                             entity->tio.DIMENSION_common);
+      break;
+    case DWG_TYPE_VERTEX_2D:
+      if (entity->tio.VERTEX_2D)
+        {
+          Dwg_Entity_VERTEX_2D *vertex = entity->tio.VERTEX_2D;
+          hash = hash_append_u64 (hash, vertex->flag);
+          hash = hash_append_3bd (hash, vertex->point);
+          hash = hash_append_double (hash, vertex->start_width);
+          hash = hash_append_double (hash, vertex->end_width);
+          hash = hash_append_u64 (hash, vertex->id);
+          hash = hash_append_double (hash, vertex->bulge);
+          hash = hash_append_double (hash, vertex->tangent_dir);
+        }
+      break;
+    case DWG_TYPE_VERTEX_3D:
+    case DWG_TYPE_VERTEX_MESH:
+    case DWG_TYPE_VERTEX_PFACE:
+      if (entity->tio.VERTEX_3D)
+        {
+          hash = hash_append_u64 (hash, entity->tio.VERTEX_3D->flag);
+          hash = hash_append_3bd (hash, entity->tio.VERTEX_3D->point);
+        }
+      break;
+    case DWG_TYPE_VERTEX_PFACE_FACE:
+      if (entity->tio.VERTEX_PFACE_FACE)
+        {
+          Dwg_Entity_VERTEX_PFACE_FACE *face = entity->tio.VERTEX_PFACE_FACE;
+          int i;
+
+          hash = hash_append_u64 (hash, face->flag);
+          for (i = 0; i < 4; i++)
+            hash = hash_append_u64 (hash,
+                                    (unsigned long long)(long long)
+                                        face->vertind[i]);
+        }
+      break;
+    case DWG_TYPE_LWPOLYLINE:
+      if (entity->tio.LWPOLYLINE)
+        hash = hash_append_lwpolyline (hash, entity->tio.LWPOLYLINE);
+      break;
+    case DWG_TYPE_HATCH:
+      if (entity->tio.HATCH)
+        hash = hash_append_hatch (hash, entity->tio.HATCH);
+      break;
+    case DWG_TYPE_WIPEOUT:
+      if (entity->tio.WIPEOUT)
+        hash = hash_append_wipeout (hash, entity->tio.WIPEOUT);
+      break;
+    default:
+      break;
+    }
+  return hash;
+}
+
+static void
+snapshot_block_header_refs (const Dwg_Object *obj,
+                            Stream_Ref_Snapshot *snapshot)
+{
+  Dwg_Object_BLOCK_HEADER *block;
+
+  if (!obj || !obj->tio.object || !obj->tio.object->tio.BLOCK_HEADER
+      || !snapshot)
+    return;
+
+  block = obj->tio.object->tio.BLOCK_HEADER;
+  snapshot->num_owned = block->num_owned;
+  snapshot->block_base_x = block->base_pt.x;
+  snapshot->block_base_y = block->base_pt.y;
+  snapshot->block_base_z = block->base_pt.z;
+  snapshot->block_entity = ref_absolute (block->block_entity);
+  snapshot->first_entity = ref_absolute (block->first_entity);
+  snapshot->last_entity = ref_absolute (block->last_entity);
+  snapshot->endblk_entity = ref_absolute (block->endblk_entity);
+  snapshot->block_entities_mix
+      = hash_ref_array (block->entities, block->num_owned);
+  snapshot->block_header_name_hash
+      = utf8_field_hash (block, "BLOCK_HEADER", "name");
+}
+
+static void
+snapshot_polyline_refs (const Dwg_Object *obj, Stream_Ref_Snapshot *snapshot)
+{
+  Dwg_Object_Entity *entity;
+
+  if (!obj || !obj->tio.entity || !snapshot)
+    return;
+  entity = obj->tio.entity;
+  switch (obj->fixedtype)
+    {
+    case DWG_TYPE_POLYLINE_2D:
+      if (entity->tio.POLYLINE_2D)
+        {
+          snapshot->num_owned = entity->tio.POLYLINE_2D->num_owned;
+          snapshot->first_vertex
+              = ref_absolute (entity->tio.POLYLINE_2D->first_vertex);
+          snapshot->last_vertex
+              = ref_absolute (entity->tio.POLYLINE_2D->last_vertex);
+        }
+      break;
+    case DWG_TYPE_POLYLINE_3D:
+      if (entity->tio.POLYLINE_3D)
+        {
+          snapshot->num_owned = entity->tio.POLYLINE_3D->num_owned;
+          snapshot->first_vertex
+              = ref_absolute (entity->tio.POLYLINE_3D->first_vertex);
+          snapshot->last_vertex
+              = ref_absolute (entity->tio.POLYLINE_3D->last_vertex);
+        }
+      break;
+    case DWG_TYPE_POLYLINE_MESH:
+      if (entity->tio.POLYLINE_MESH)
+        {
+          snapshot->num_owned = entity->tio.POLYLINE_MESH->num_owned;
+          snapshot->first_vertex
+              = ref_absolute (entity->tio.POLYLINE_MESH->first_vertex);
+          snapshot->last_vertex
+              = ref_absolute (entity->tio.POLYLINE_MESH->last_vertex);
+        }
+      break;
+    case DWG_TYPE_POLYLINE_PFACE:
+      if (entity->tio.POLYLINE_PFACE)
+        {
+          snapshot->num_owned = entity->tio.POLYLINE_PFACE->num_owned;
+          snapshot->first_vertex
+              = ref_absolute (entity->tio.POLYLINE_PFACE->first_vertex);
+          snapshot->last_vertex
+              = ref_absolute (entity->tio.POLYLINE_PFACE->last_vertex);
+        }
+      break;
+    default:
+      break;
+    }
+}
+
+static void
+snapshot_object_refs (const Dwg_Object *obj, Stream_Ref_Snapshot *snapshot)
+{
+  Dwg_Object_Entity *entity;
+
+  memset (snapshot, 0, sizeof (*snapshot));
+  if (!obj)
+    return;
+  snapshot->handle = obj->handle.value;
+  snapshot->fixedtype = obj->fixedtype;
+  snapshot->supertype = obj->supertype;
+  if (obj->fixedtype == DWG_TYPE_BLOCK_HEADER)
+    {
+      snapshot_block_header_refs (obj, snapshot);
+      return;
+    }
+  if (obj->supertype != DWG_SUPERTYPE_ENTITY || !obj->tio.entity)
+    return;
+
+  entity = obj->tio.entity;
+  snapshot->semantic_hash = entity_semantic_hash (obj);
+  snapshot->entmode = entity->entmode;
+  snapshot->ownerhandle = ref_absolute (entity->ownerhandle);
+  snapshot->layer = ref_absolute (entity->layer);
+  if (obj->fixedtype == DWG_TYPE_INSERT && entity->tio.INSERT)
+    {
+      snapshot->block_header = ref_absolute (entity->tio.INSERT->block_header);
+      snapshot->num_owned = entity->tio.INSERT->num_owned;
+    }
+  else if (obj->fixedtype == DWG_TYPE_MINSERT && entity->tio.MINSERT)
+    {
+      snapshot->block_header = ref_absolute (entity->tio.MINSERT->block_header);
+      snapshot->num_owned = entity->tio.MINSERT->num_owned;
+    }
+  else if (obj->fixedtype == DWG_TYPE_DIMENSION_ALIGNED
+           || obj->fixedtype == DWG_TYPE_DIMENSION_ANG2LN
+           || obj->fixedtype == DWG_TYPE_DIMENSION_ANG3PT
+           || obj->fixedtype == DWG_TYPE_DIMENSION_DIAMETER
+           || obj->fixedtype == DWG_TYPE_DIMENSION_LINEAR
+           || obj->fixedtype == DWG_TYPE_DIMENSION_ORDINATE
+           || obj->fixedtype == DWG_TYPE_DIMENSION_RADIUS
+           || obj->fixedtype == DWG_TYPE_ARC_DIMENSION
+           || obj->fixedtype == DWG_TYPE_LARGE_RADIAL_DIMENSION)
+    {
+      Dwg_DIMENSION_common *dimension = entity->tio.DIMENSION_common;
+      snapshot->dimension_block
+          = dimension ? ref_absolute (dimension->block) : 0;
+    }
+  else
+    snapshot_polyline_refs (obj, snapshot);
+}
+
+static int
+compare_ref_snapshot_handle (const void *a, const void *b)
+{
+  const Stream_Ref_Snapshot *left = (const Stream_Ref_Snapshot *)a;
+  const Stream_Ref_Snapshot *right = (const Stream_Ref_Snapshot *)b;
+
+  if (left->handle < right->handle)
+    return -1;
+  if (left->handle > right->handle)
+    return 1;
+  return 0;
+}
+
+static const Stream_Ref_Snapshot *
+find_ref_snapshot (const Stream_Stats *stats, BITCODE_RLL handle)
+{
+  Stream_Ref_Snapshot key;
+
+  if (!stats || !stats->baseline_refs || !stats->baseline_ref_count)
+    return NULL;
+  memset (&key, 0, sizeof (key));
+  key.handle = handle;
+  return (const Stream_Ref_Snapshot *)bsearch (
+      &key, stats->baseline_refs, stats->baseline_ref_count,
+      sizeof (stats->baseline_refs[0]), compare_ref_snapshot_handle);
+}
+
+static int
+ref_snapshots_equal (const Stream_Ref_Snapshot *a,
+                     const Stream_Ref_Snapshot *b)
+{
+  return a->handle == b->handle && a->fixedtype == b->fixedtype
+         && a->supertype == b->supertype && a->entmode == b->entmode
+         && a->ownerhandle == b->ownerhandle && a->layer == b->layer
+         && a->block_header == b->block_header
+         && a->dimension_block == b->dimension_block
+         && a->num_owned == b->num_owned
+         && a->first_vertex == b->first_vertex
+         && a->last_vertex == b->last_vertex
+         && a->block_entity == b->block_entity
+         && a->first_entity == b->first_entity
+         && a->last_entity == b->last_entity
+         && a->endblk_entity == b->endblk_entity
+         && a->block_entities_mix == b->block_entities_mix
+         && a->block_header_name_hash == b->block_header_name_hash
+         && a->semantic_hash == b->semantic_hash
+         && a->block_base_x == b->block_base_x
+         && a->block_base_y == b->block_base_y
+         && a->block_base_z == b->block_base_z;
 }
 
 static int
@@ -132,12 +1400,274 @@ abort_object_callback (const Dwg_Stream_Object_Info *info, void *user)
 }
 
 static int
+abort_decoded_object_callback (const Dwg_Stream_Object_Info *info,
+                               const Dwg_Object *object, void *user)
+{
+  Abort_Stats *stats = (Abort_Stats *)user;
+
+  (void)info;
+  (void)object;
+  stats->calls++;
+  if (stats->calls >= stats->limit)
+    return stats->error;
+  return 0;
+}
+
+static int
+stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
+                                const Dwg_Object *object, void *user)
+{
+  Stream_Stats *stats = (Stream_Stats *)user;
+  const Stream_Ref_Snapshot *baseline_ref;
+  Stream_Ref_Snapshot decoded_ref;
+
+  if (!object)
+    return DWG_ERR_INTERNALERROR;
+  stats->decoded_objects++;
+  stats_add_semantic_coverage (stats, object);
+  if (object->supertype == DWG_SUPERTYPE_ENTITY)
+    stats->decoded_entities++;
+  else
+    stats->decoded_non_entities++;
+  stats->decoded_handle_mix
+      ^= (unsigned long long)object->handle.value
+         + ((unsigned long long)object->type << 33)
+         + ((unsigned long long)object->supertype << 49);
+  if ((info->decode_mode != DWG_STREAM_DECODE_R2004_OBJECT_MAP
+       && object->handle.value != info->handle.value)
+      || object->type != info->type
+      || object->supertype != info->supertype)
+    {
+      printf ("decoded object mismatch: info handle=%llu type=%u super=%u; "
+              "object handle=%llu type=%u super=%u\n",
+              (unsigned long long)info->handle.value, (unsigned)info->type,
+              (unsigned)info->supertype,
+              (unsigned long long)object->handle.value,
+              (unsigned)object->type, (unsigned)object->supertype);
+      return DWG_ERR_INTERNALERROR;
+    }
+  if (stats->baseline_refs && object->handle.value)
+    {
+      baseline_ref = find_ref_snapshot (stats, object->handle.value);
+      if (!baseline_ref)
+        stats->decoded_ref_missing++;
+      else
+        {
+          snapshot_object_refs (object, &decoded_ref);
+          stats->decoded_ref_checked++;
+          if (!ref_snapshots_equal (baseline_ref, &decoded_ref))
+            {
+              stats->decoded_ref_mismatches++;
+              if (stats->decoded_ref_mismatches <= 25)
+                printf ("decoded ref mismatch handle=%llu type=%u "
+                        "owner=%llu/%llu layer=%llu/%llu block=%llu/%llu "
+                        "dimblock=%llu/%llu owned=%lu/%lu first=%llu/%llu "
+                        "last=%llu/%llu entmode=%u/%u sem=%llu/%llu\n",
+                        (unsigned long long)object->handle.value,
+                        (unsigned)object->fixedtype,
+                        (unsigned long long)baseline_ref->ownerhandle,
+                        (unsigned long long)decoded_ref.ownerhandle,
+                        (unsigned long long)baseline_ref->layer,
+                        (unsigned long long)decoded_ref.layer,
+                        (unsigned long long)baseline_ref->block_header,
+                        (unsigned long long)decoded_ref.block_header,
+                        (unsigned long long)baseline_ref->dimension_block,
+                        (unsigned long long)decoded_ref.dimension_block,
+                        (unsigned long)baseline_ref->num_owned,
+                        (unsigned long)decoded_ref.num_owned,
+                        (unsigned long long)baseline_ref->first_vertex,
+                        (unsigned long long)decoded_ref.first_vertex,
+                        (unsigned long long)baseline_ref->last_vertex,
+                        (unsigned long long)decoded_ref.last_vertex,
+                        (unsigned)baseline_ref->entmode,
+                        (unsigned)decoded_ref.entmode,
+                        baseline_ref->semantic_hash,
+                        decoded_ref.semantic_hash);
+              if (object->fixedtype == DWG_TYPE_BLOCK_HEADER)
+                printf ("decoded block mismatch handle=%llu "
+                        "blockent=%llu/%llu first=%llu/%llu "
+                        "last=%llu/%llu endblk=%llu/%llu "
+                        "entities=%llu/%llu name=%llu/%llu "
+                        "base=(%.17g,%.17g,%.17g)/"
+                        "(%.17g,%.17g,%.17g)\n",
+                        (unsigned long long)object->handle.value,
+                        (unsigned long long)baseline_ref->block_entity,
+                        (unsigned long long)decoded_ref.block_entity,
+                        (unsigned long long)baseline_ref->first_entity,
+                        (unsigned long long)decoded_ref.first_entity,
+                        (unsigned long long)baseline_ref->last_entity,
+                        (unsigned long long)decoded_ref.last_entity,
+                        (unsigned long long)baseline_ref->endblk_entity,
+                        (unsigned long long)decoded_ref.endblk_entity,
+                        baseline_ref->block_entities_mix,
+                        decoded_ref.block_entities_mix,
+                        baseline_ref->block_header_name_hash,
+                        decoded_ref.block_header_name_hash,
+                        baseline_ref->block_base_x, baseline_ref->block_base_y,
+                        baseline_ref->block_base_z, decoded_ref.block_base_x,
+                        decoded_ref.block_base_y, decoded_ref.block_base_z);
+            }
+        }
+    }
+  return 0;
+}
+
+static int
+stream_decode_error_callback (const Dwg_Stream_Object_Info *info, int error,
+                              void *user)
+{
+  Stream_Stats *stats = (Stream_Stats *)user;
+
+  if (!info)
+    return DWG_ERR_INTERNALERROR;
+  stats->decode_error_objects++;
+  if (info->supertype == DWG_SUPERTYPE_ENTITY)
+    stats->decode_error_entities++;
+  else
+    stats->decode_error_non_entities++;
+  if (!stats->first_decode_error)
+    stats->first_decode_error = error;
+  stats->decode_error_handle_mix
+      ^= (unsigned long long)info->handle.value
+         + ((unsigned long long)info->type << 33)
+         + ((unsigned long long)info->supertype << 49);
+  stream_record_decode_error_bucket (stats, info, error);
+  return 0;
+}
+
+static int
+emit_capacity_decoded_object_callback (const Dwg_Stream_Object_Info *info,
+                                       const Dwg_Object *object, void *user)
+{
+  Emit_Capacity_Stats *stats = (Emit_Capacity_Stats *)user;
+
+  (void)info;
+  (void)object;
+  stats->decoded_calls++;
+  return DWG_ERR_INTERNALERROR;
+}
+
+static int
+emit_capacity_decode_error_callback (const Dwg_Stream_Object_Info *info,
+                                     int error, void *user)
+{
+  Emit_Capacity_Stats *stats = (Emit_Capacity_Stats *)user;
+
+  stats->decode_error_calls++;
+  stats->error = error;
+  stats->info = info;
+  return 0;
+}
+
+static void
+stream_record_decode_error_bucket (Stream_Stats *stats,
+                                   const Dwg_Stream_Object_Info *info,
+                                   int error)
+{
+  unsigned int i;
+
+  for (i = 0; i < STREAM_DECODE_ERROR_BUCKETS; i++)
+    {
+      Stream_Decode_Error_Bucket *bucket = &stats->decode_error_buckets[i];
+      if (bucket->used && bucket->error == error
+          && bucket->type == info->type
+          && bucket->supertype == info->supertype)
+        {
+          bucket->count++;
+          return;
+        }
+    }
+
+  for (i = 0; i < STREAM_DECODE_ERROR_BUCKETS; i++)
+    {
+      Stream_Decode_Error_Bucket *bucket = &stats->decode_error_buckets[i];
+      if (!bucket->used)
+        {
+          bucket->used = 1;
+          bucket->error = error;
+          bucket->type = info->type;
+          bucket->supertype = info->supertype;
+          bucket->count = 1;
+          bucket->first_handle = info->handle.value;
+          bucket->first_address = info->address;
+          bucket->first_size = info->size;
+          bucket->first_index = info->index;
+          if (info->name)
+            snprintf (bucket->name, sizeof (bucket->name), "%s",
+                      info->name);
+          if (info->dxfname)
+            snprintf (bucket->dxfname, sizeof (bucket->dxfname), "%s",
+                      info->dxfname);
+          return;
+        }
+    }
+
+  stats->decode_error_unbucketed++;
+}
+
+static int
+test_emit_decoded_object_isolated_host_state (void)
+{
+  Dwg_Data dwg = { 0 };
+  Bit_Chain object_dat = { 0 };
+  Dwg_Stream_Object_Info info = { 0 };
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Emit_Capacity_Stats stats = { 0 };
+  Dwg_Object object_pool[1];
+  Dwg_Object_Ref handseed = { 0 };
+  Dwg_Object_Ref *host_ref = NULL;
+  Dwg_Object_Ref **old_object_ref = &host_ref;
+  int old_dirty_refs = 1;
+  int error;
+
+  memset (object_pool, 0, sizeof (object_pool));
+  dwg.object = object_pool;
+  dwg.num_objects = 1;
+  dwg.num_alloced_objects = 1;
+  dwg.object_ref = old_object_ref;
+  dwg.header_vars.HANDSEED = &handseed;
+  dwg.dirty_refs = old_dirty_refs;
+  info.handle.value = 0x1234;
+  info.type = DWG_TYPE_LINE;
+  info.supertype = DWG_SUPERTYPE_ENTITY;
+  callbacks.decoded_object = emit_capacity_decoded_object_callback;
+  callbacks.decode_error = emit_capacity_decode_error_callback;
+
+  error = dwg_stream_emit_decoded_object (&dwg, &object_dat, &info,
+                                          &callbacks, &stats);
+  if (error || stats.decoded_calls || stats.decode_error_calls != 1
+      || stats.error != DWG_ERR_VALUEOUTOFBOUNDS || stats.info != &info
+      || dwg.object != object_pool || dwg.num_objects != 1
+      || dwg.num_alloced_objects != 1 || dwg.object_ref != old_object_ref
+      || dwg.num_object_refs || dwg.header_vars.HANDSEED != &handseed
+      || dwg.dirty_refs != old_dirty_refs || dwg.object_map)
+    {
+      printf ("emit decoded isolated host state failed: error=0x%x "
+              "decoded=%lu decode_errors=%lu callback_error=0x%x "
+              "objects=%lu alloced=%lu refs=%lu restored=%d\n",
+              error, (unsigned long)stats.decoded_calls,
+              (unsigned long)stats.decode_error_calls, stats.error,
+              (unsigned long)dwg.num_objects,
+              (unsigned long)dwg.num_alloced_objects,
+              (unsigned long)dwg.num_object_refs,
+              dwg.object == object_pool && dwg.object_ref == old_object_ref
+                  && dwg.header_vars.HANDSEED == &handseed
+                  && dwg.dirty_refs == old_dirty_refs && !dwg.object_map);
+      return 1;
+    }
+  return 0;
+}
+
+static int
 test_no_full_fallback (void)
 {
-  const char *path = "stream_unsupported_r2000_fixture.dwg";
+  char path[128];
   Stream_Stats stats = { 0 };
-  Dwg_Stream_Callbacks callbacks = { 0 };
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   int error;
+
+  snprintf (path, sizeof (path), "stream_unsupported_r11_fixture_%ld_%ld.dwg",
+            stream_test_process_id (), (long)time (NULL));
 
   if (!write_unsupported_fixture (path))
     {
@@ -146,17 +1676,256 @@ test_no_full_fallback (void)
     }
 
   callbacks.object = stream_object_callback;
+  callbacks.decoded_object = stream_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
-  error = dwg_stream_file (path, &callbacks, &stats);
+  error = dwg_stream_file_ex (path, &callbacks, &stats);
   remove (path);
-  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects)
+  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+      || stats.decoded_objects || stats.decode_error_objects)
     {
       printf ("no-full-fallback failed: error=0x%x expected=0x%x "
-              "objects=%lu\n",
+              "objects=%lu decoded=%lu decode_errors=%lu\n",
               error, DWG_ERR_NOTYETSUPPORTED,
-              (unsigned long)stats.num_objects);
+              (unsigned long)stats.num_objects,
+              (unsigned long)stats.decoded_objects,
+              (unsigned long)stats.decode_error_objects);
       return 1;
     }
+  return 0;
+}
+
+static int
+test_stream_api_invalid_args (void)
+{
+  Dwg_Stream_Callbacks callbacks = { 0 };
+  Dwg_Stream_Callbacks_Ex callbacks_ex = { 0 };
+  int error;
+
+  error = dwg_stream_file (NULL, &callbacks, NULL);
+  if (error != DWG_ERR_INTERNALERROR)
+    {
+      printf ("dwg_stream_file NULL filename failed: error=0x%x\n", error);
+      return 1;
+    }
+
+  error = dwg_stream_file ("missing.dwg", NULL, NULL);
+  if (error != DWG_ERR_INTERNALERROR)
+    {
+      printf ("dwg_stream_file NULL callbacks failed: error=0x%x\n", error);
+      return 1;
+    }
+
+  error = dwg_stream_file_ex (NULL, &callbacks_ex, NULL);
+  if (error != DWG_ERR_INTERNALERROR)
+    {
+      printf ("dwg_stream_file_ex NULL filename failed: error=0x%x\n",
+              error);
+      return 1;
+    }
+
+  error = dwg_stream_file_ex ("missing.dwg", NULL, NULL);
+  if (error != DWG_ERR_INTERNALERROR)
+    {
+      printf ("dwg_stream_file_ex NULL callbacks failed: error=0x%x\n",
+              error);
+      return 1;
+    }
+
+  return 0;
+}
+
+static int
+test_legacy_callback_initializer (void)
+{
+#if defined __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+  Dwg_Stream_Callbacks callbacks
+      = { stream_object_callback, DWG_STREAM_F_NO_FULL_FALLBACK };
+#if defined __GNUC__
+#pragma GCC diagnostic pop
+#endif
+
+  if (callbacks.object != stream_object_callback
+      || callbacks.flags != DWG_STREAM_F_NO_FULL_FALLBACK)
+    {
+      printf ("legacy callback initializer mismatch\n");
+      return 1;
+    }
+  return 0;
+}
+
+static int
+test_legacy_stream_file_api (void)
+{
+  char path[1024];
+  char unsupported_path[1024];
+  Stream_Stats stats = { 0 };
+  Stream_Stats fallback_stats = { 0 };
+  Stream_Stats no_fallback_stats = { 0 };
+  Abort_Stats aborted = { 0 };
+  Dwg_Stream_Callbacks callbacks = { 0 };
+  int error;
+
+  if (!stream_test_source_path (path, sizeof (path),
+                                "test/test-data/example_r13.dwg"))
+    {
+      printf ("legacy stream file fixture path too long\n");
+      return 1;
+    }
+  if (!stream_test_source_path (unsupported_path, sizeof (unsupported_path),
+                                "test/test-data/example_2010.dwg"))
+    {
+      printf ("legacy fallback fixture path too long\n");
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+  error = dwg_stream_file (path, &callbacks, &stats);
+  if (error >= DWG_ERR_CRITICAL || !stats.num_objects
+      || stats.full_decode_objects || stats.decoded_objects
+      || stats.decode_error_objects)
+    {
+      printf ("legacy stream file API failed: error=0x%x objects=%lu "
+              "full=%lu decoded=%lu decode_errors=%lu\n",
+              error, (unsigned long)stats.num_objects,
+              (unsigned long)stats.full_decode_objects,
+              (unsigned long)stats.decoded_objects,
+              (unsigned long)stats.decode_error_objects);
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.flags = 0;
+  error = dwg_stream_file (unsupported_path, &callbacks, &fallback_stats);
+  if (error >= DWG_ERR_CRITICAL || !fallback_stats.num_objects
+      || fallback_stats.full_decode_objects != fallback_stats.num_objects
+      || fallback_stats.lightweight_objects || fallback_stats.decoded_objects
+      || fallback_stats.decode_error_objects)
+    {
+      printf ("legacy full fallback failed: error=0x%x objects=%lu "
+              "full=%lu lightweight=%lu decoded=%lu decode_errors=%lu\n",
+              error, (unsigned long)fallback_stats.num_objects,
+              (unsigned long)fallback_stats.full_decode_objects,
+              (unsigned long)fallback_stats.lightweight_objects,
+              (unsigned long)fallback_stats.decoded_objects,
+              (unsigned long)fallback_stats.decode_error_objects);
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+  error = dwg_stream_file (unsupported_path, &callbacks, &no_fallback_stats);
+  if (error != DWG_ERR_NOTYETSUPPORTED || no_fallback_stats.num_objects
+      || no_fallback_stats.full_decode_objects
+      || no_fallback_stats.lightweight_objects)
+    {
+      printf ("legacy no-full-fallback failed: error=0x%x expected=0x%x "
+              "objects=%lu full=%lu lightweight=%lu\n",
+              error, DWG_ERR_NOTYETSUPPORTED,
+              (unsigned long)no_fallback_stats.num_objects,
+              (unsigned long)no_fallback_stats.full_decode_objects,
+              (unsigned long)no_fallback_stats.lightweight_objects);
+      return 1;
+    }
+
+  aborted.limit = 3;
+  aborted.error = DWG_ERR_NOTYETSUPPORTED;
+  callbacks.object = abort_object_callback;
+  callbacks.flags = 0;
+  error = dwg_stream_file (path, &callbacks, &aborted);
+  if (error != aborted.error || aborted.calls != aborted.limit)
+    {
+      printf ("legacy callback not-supported-bit abort failed: error=0x%x "
+              "expected=0x%x calls=%lu expected_calls=%lu\n",
+              error, aborted.error, (unsigned long)aborted.calls,
+              (unsigned long)aborted.limit);
+      return 1;
+    }
+
+  return 0;
+}
+
+static int
+test_full_fallback_decoded_stream_file_ex (void)
+{
+  char path[1024];
+  Stream_Stats combined = { 0 };
+  Stream_Stats decoded_only = { 0 };
+  Abort_Stats aborted = { 0 };
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  int error;
+
+  if (!stream_test_source_path (path, sizeof (path),
+                                "test/test-data/example_2010.dwg"))
+    {
+      printf ("full fallback fixture path too long\n");
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.decoded_object = stream_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
+  error = dwg_stream_file_ex (path, &callbacks, &combined);
+  if (error >= DWG_ERR_CRITICAL || !combined.num_objects
+      || combined.full_decode_objects != combined.num_objects
+      || combined.lightweight_objects
+      || combined.decoded_objects != combined.num_objects
+      || combined.decoded_handle_mix != combined.handle_mix
+      || combined.decode_error_objects)
+    {
+      printf ("full fallback decoded API failed: error=0x%x\n", error);
+      print_stats ("full fallback decoded API", &combined);
+      return 1;
+    }
+
+  callbacks.object = NULL;
+  error = dwg_stream_file_ex (path, &callbacks, &decoded_only);
+  if (error >= DWG_ERR_CRITICAL || decoded_only.num_objects
+      || decoded_only.decoded_objects != combined.num_objects
+      || decoded_only.decoded_entities != combined.num_entities
+      || decoded_only.decoded_non_entities != combined.num_non_entities
+      || decoded_only.decoded_handle_mix != combined.handle_mix
+      || decoded_only.decode_error_objects)
+    {
+      printf ("full fallback decoded-only API failed: error=0x%x\n", error);
+      print_stats ("full fallback decoded-only API", &decoded_only);
+      return 1;
+    }
+
+  aborted.limit = 3;
+  aborted.error = 34567;
+  callbacks.object = abort_object_callback;
+  callbacks.decoded_object = NULL;
+  callbacks.decode_error = NULL;
+  error = dwg_stream_file_ex (path, &callbacks, &aborted);
+  if (error != aborted.error || aborted.calls != aborted.limit)
+    {
+      printf ("full fallback object abort failed: error=0x%x expected=0x%x "
+              "calls=%lu expected_calls=%lu\n",
+              error, aborted.error, (unsigned long)aborted.calls,
+              (unsigned long)aborted.limit);
+      return 1;
+    }
+
+  aborted.calls = 0;
+  aborted.limit = 4;
+  aborted.error = 45678;
+  callbacks.object = NULL;
+  callbacks.decoded_object = abort_decoded_object_callback;
+  error = dwg_stream_file_ex (path, &callbacks, &aborted);
+  if (error != aborted.error || aborted.calls != aborted.limit)
+    {
+      printf ("full fallback decoded abort failed: error=0x%x expected=0x%x "
+              "calls=%lu expected_calls=%lu\n",
+              error, aborted.error, (unsigned long)aborted.calls,
+              (unsigned long)aborted.limit);
+      return 1;
+    }
+
   return 0;
 }
 
@@ -165,9 +1934,10 @@ test_large_stream_fixture (void)
 {
   const char *path = getenv ("LIBREDWG_STREAM_TEST_LARGE_DWG");
   Stream_Stats stats = { 0 };
-  Dwg_Stream_Callbacks callbacks = { 0 };
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   FILE *fp;
   int error;
+  int decode_objects = 0;
 
   if (!path || !*path)
     return 0;
@@ -180,12 +1950,19 @@ test_large_stream_fixture (void)
     }
   fclose (fp);
 
+  decode_objects = getenv ("LIBREDWG_STREAM_TEST_LARGE_DECODED") != NULL;
   callbacks.object = stream_object_callback;
+  if (decode_objects)
+    {
+      callbacks.decoded_object = stream_decoded_object_callback;
+      callbacks.decode_error = stream_decode_error_callback;
+    }
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
-  error = dwg_stream_file (path, &callbacks, &stats);
+  error = dwg_stream_file_ex (path, &callbacks, &stats);
   if (error >= DWG_ERR_CRITICAL)
     {
       printf ("large stream fixture failed: %s error=0x%x\n", path, error);
+      print_stats ("large stream fixture partial", &stats);
       return 1;
     }
   if (!stats.num_objects || stats.full_decode_objects
@@ -195,8 +1972,23 @@ test_large_stream_fixture (void)
                    &stats);
       return 1;
     }
+  if (decode_objects && !stats.decoded_objects)
+    {
+      print_stats ("large stream fixture decoded no objects", &stats);
+      return 1;
+    }
+  if (decode_objects
+      && stats.decoded_objects + stats.decode_error_objects
+             != stats.num_objects)
+    {
+      print_stats ("large stream fixture decoded accounting mismatch",
+                   &stats);
+      return 1;
+    }
 
   print_stats ("large stream fixture ok", &stats);
+  if (decode_objects && getenv ("LIBREDWG_STREAM_TEST_ERROR_BUCKETS"))
+    print_decode_error_buckets (&stats);
   return 0;
 }
 
@@ -219,52 +2011,115 @@ print_stats (const char *label, const Stream_Stats *stats)
 {
   printf ("%s: objects=%lu entities=%lu non_entities=%lu total_size=%llu "
           "max_size=%lu min_address=%zu max_address=%zu handle_mix=%llu "
-          "lightweight=%lu r2007=%lu r2004=%lu full=%lu file_map=%lu "
-          "heap=%lu\n",
+          "lightweight=%lu decoded=%lu decoded_entities=%lu "
+          "decoded_non_entities=%lu decoded_handle_mix=%llu decode_errors=%lu "
+          "decode_error_entities=%lu decode_error_non_entities=%lu "
+          "first_decode_error=0x%x decode_error_handle_mix=%llu r2007=%lu "
+          "r2004=%lu r13=%lu full=%lu file_map=%lu heap=%lu last_address=%zu "
+          "last_size=%lu last_type=%u last_handle=%llu last_super=%u\n",
           label, (unsigned long)stats->num_objects,
           (unsigned long)stats->num_entities,
           (unsigned long)stats->num_non_entities, stats->total_size,
           (unsigned long)stats->max_size, stats->min_address,
           stats->max_address, stats->handle_mix,
           (unsigned long)stats->lightweight_objects,
+          (unsigned long)stats->decoded_objects,
+          (unsigned long)stats->decoded_entities,
+          (unsigned long)stats->decoded_non_entities,
+          stats->decoded_handle_mix,
+          (unsigned long)stats->decode_error_objects,
+          (unsigned long)stats->decode_error_entities,
+          (unsigned long)stats->decode_error_non_entities,
+          stats->first_decode_error, stats->decode_error_handle_mix,
           (unsigned long)stats->r2007_object_map_objects,
           (unsigned long)stats->r2004_object_map_objects,
+          (unsigned long)stats->r13_object_map_objects,
           (unsigned long)stats->full_decode_objects,
           (unsigned long)stats->file_map_objects,
-          (unsigned long)stats->heap_objects);
+          (unsigned long)stats->heap_objects, stats->last_address,
+          (unsigned long)stats->last_size, (unsigned)stats->last_type,
+          (unsigned long long)stats->last_handle,
+          (unsigned)stats->last_supertype);
 }
 
-int
-main (void)
+static void
+print_decode_error_buckets (const Stream_Stats *stats)
 {
-  const char *path = getenv ("LIBREDWG_STREAM_TEST_DWG");
+  unsigned int i;
+
+  for (i = 0; i < STREAM_DECODE_ERROR_BUCKETS; i++)
+    {
+      const Stream_Decode_Error_Bucket *bucket
+          = &stats->decode_error_buckets[i];
+      if (!bucket->used)
+        continue;
+      printf ("decode_error_bucket[%u]: count=%lu error=0x%x type=%u "
+              "super=%u first_handle=%llu first_index=%lu "
+              "first_address=%zu first_size=%lu name=%s dxfname=%s\n",
+              i, (unsigned long)bucket->count, bucket->error,
+              (unsigned)bucket->type, (unsigned)bucket->supertype,
+              (unsigned long long)bucket->first_handle,
+              (unsigned long)bucket->first_index, bucket->first_address,
+              (unsigned long)bucket->first_size, bucket->name,
+              bucket->dxfname);
+    }
+  if (stats->decode_error_unbucketed)
+    printf ("decode_error_unbucketed=%lu\n",
+            (unsigned long)stats->decode_error_unbucketed);
+}
+
+static int
+stream_test_source_path (char *path, size_t size, const char *relative)
+{
+  const char *file = __FILE__;
+  const char *marker = "test/unit-testing/stream_test.c";
+  const char *pos = strstr (file, marker);
+  size_t root_len;
+  int written;
+
+  if (!pos)
+    {
+      marker = "test\\unit-testing\\stream_test.c";
+      pos = strstr (file, marker);
+    }
+  if (pos)
+    {
+      root_len = (size_t)(pos - file);
+      if (root_len + strlen (relative) + 1 > size)
+        return 0;
+      memcpy (path, file, root_len);
+      strcpy (&path[root_len], relative);
+      return 1;
+    }
+
+  written = snprintf (path, size, "%s", relative);
+  return written >= 0 && (size_t)written < size;
+}
+
+static int
+test_stream_file_parity (const char *path, int compare_refs,
+                         int test_abort_callbacks, const char *label,
+                         int skip_missing, Stream_Semantic_Coverage *coverage)
+{
   FILE *fp;
   int error;
   Dwg_Data dwg = { 0 };
   Stream_Stats baseline = { 0 };
   Stream_Stats streamed = { 0 };
+  Stream_Stats decoded_only = { 0 };
   Abort_Stats aborted = { 0 };
-  Dwg_Stream_Callbacks callbacks = { 0 };
-
-  if (test_no_full_fallback ())
-    return 1;
-  if (test_large_stream_fixture ())
-    return 1;
-
-  if (!path || !*path)
-    {
-      printf ("skip: set LIBREDWG_STREAM_TEST_DWG to a local DWG fixture\n");
-      return 77;
-    }
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  BITCODE_BL i;
 
   fp = fopen (path, "rb");
   if (!fp)
     {
       printf ("skip: cannot open %s\n", path);
-      return 77;
+      return skip_missing ? 77 : 1;
     }
   fclose (fp);
 
+  stream_trace_stage ("baseline dwg_read_file");
   error = dwg_read_file (path, &dwg);
   if (error >= DWG_ERR_CRITICAL)
     {
@@ -272,16 +2127,41 @@ main (void)
       return 1;
     }
 
-  for (BITCODE_BL i = 0; i < dwg.num_objects; i++)
-    stats_add_dwg_object (&baseline, &dwg.object[i]);
+  if (compare_refs && dwg.num_objects)
+    {
+      baseline.baseline_refs = (Stream_Ref_Snapshot *)calloc (
+          dwg.num_objects, sizeof (baseline.baseline_refs[0]));
+      if (!baseline.baseline_refs)
+        {
+          dwg_free (&dwg);
+          return 1;
+        }
+      baseline.baseline_ref_count = dwg.num_objects;
+    }
+  for (i = 0; i < dwg.num_objects; i++)
+    {
+      stats_add_dwg_object (&baseline, &dwg.object[i]);
+      if (baseline.baseline_refs)
+        snapshot_object_refs (&dwg.object[i], &baseline.baseline_refs[i]);
+    }
+  if (baseline.baseline_refs)
+    qsort (baseline.baseline_refs, baseline.baseline_ref_count,
+           sizeof (baseline.baseline_refs[0]), compare_ref_snapshot_handle);
+  streamed.baseline_refs = baseline.baseline_refs;
+  streamed.baseline_ref_count = baseline.baseline_ref_count;
   dwg_free (&dwg);
 
+  stream_trace_stage ("combined dwg_stream_file_ex");
   callbacks.object = stream_object_callback;
+  callbacks.decoded_object = stream_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
-  error = dwg_stream_file (path, &callbacks, &streamed);
+  error = dwg_stream_file_ex (path, &callbacks, &streamed);
   if (error >= DWG_ERR_CRITICAL)
     {
-      printf ("dwg_stream_file failed: %s error=0x%x\n", path, error);
+      printf ("dwg_stream_file_ex failed: %s error=0x%x\n", path, error);
+      print_stats ("streamed partial", &streamed);
+      free (baseline.baseline_refs);
       return 1;
     }
 
@@ -289,28 +2169,469 @@ main (void)
     {
       print_stats ("baseline", &baseline);
       print_stats ("streamed", &streamed);
+      free (baseline.baseline_refs);
       return 1;
     }
   if (streamed.lightweight_objects != streamed.num_objects
       || streamed.full_decode_objects)
     {
       print_stats ("streamed did not use the lightweight path", &streamed);
+      free (baseline.baseline_refs);
       return 1;
     }
-
-  aborted.limit = 7;
-  aborted.error = 12345;
-  callbacks.object = abort_object_callback;
-  error = dwg_stream_file (path, &callbacks, &aborted);
-  if (error != aborted.error || aborted.calls != aborted.limit)
+  if (streamed.r13_object_map_objects == streamed.num_objects)
     {
-      printf ("callback abort failed: error=0x%x expected=0x%x calls=%lu "
-              "expected_calls=%lu\n",
-              error, aborted.error, (unsigned long)aborted.calls,
-              (unsigned long)aborted.limit);
+      if (!streamed.decoded_objects || !streamed.decoded_entities
+          || streamed.decode_error_objects)
+        {
+          print_stats ("streamed decoded object mismatch", &streamed);
+          free (baseline.baseline_refs);
+          return 1;
+        }
+    }
+  else if (streamed.decoded_objects != streamed.num_objects
+           || streamed.decoded_entities != streamed.num_entities
+           || streamed.decoded_non_entities != streamed.num_non_entities
+           || streamed.decoded_handle_mix != baseline.handle_mix
+           || streamed.decode_error_objects)
+    {
+      print_stats ("baseline", &baseline);
+      print_stats ("streamed decoded object mismatch", &streamed);
+      free (baseline.baseline_refs);
+      return 1;
+    }
+  if (compare_refs
+      && (streamed.decoded_ref_missing || streamed.decoded_ref_mismatches))
+    {
+      printf ("decoded ref compare failed: checked=%lu missing=%lu "
+              "mismatches=%lu\n",
+              (unsigned long)streamed.decoded_ref_checked,
+              (unsigned long)streamed.decoded_ref_missing,
+              (unsigned long)streamed.decoded_ref_mismatches);
+      free (baseline.baseline_refs);
+      return 1;
+    }
+  if (!semantic_coverage_equal (&baseline.semantic, &streamed.semantic))
+    {
+      print_semantic_coverage ("baseline semantic", &baseline.semantic);
+      print_semantic_coverage ("streamed semantic", &streamed.semantic);
+      free (baseline.baseline_refs);
       return 1;
     }
 
-  print_stats ("stream parity ok", &streamed);
+  if (test_abort_callbacks)
+    {
+      stream_trace_stage ("decoded-only dwg_stream_file_ex");
+      decoded_only.baseline_refs = baseline.baseline_refs;
+      decoded_only.baseline_ref_count = baseline.baseline_ref_count;
+      callbacks.object = NULL;
+      callbacks.decoded_object = stream_decoded_object_callback;
+      callbacks.decode_error = stream_decode_error_callback;
+      error = dwg_stream_file_ex (path, &callbacks, &decoded_only);
+      if (error >= DWG_ERR_CRITICAL
+          || decoded_only.num_objects || decoded_only.decoded_objects
+                                         != baseline.num_objects
+          || decoded_only.decoded_entities != baseline.num_entities
+          || decoded_only.decoded_non_entities != baseline.num_non_entities
+          || decoded_only.decode_error_objects
+          || (compare_refs
+              && (decoded_only.decoded_ref_missing
+                  || decoded_only.decoded_ref_mismatches)))
+        {
+          printf ("decoded-only stream mismatch: error=0x%x "
+                  "objects=%lu decoded=%lu/%lu entities=%lu/%lu "
+                  "non_entities=%lu/%lu decode_errors=%lu missing=%lu "
+                  "mismatches=%lu\n",
+                  error, (unsigned long)decoded_only.num_objects,
+                  (unsigned long)decoded_only.decoded_objects,
+                  (unsigned long)baseline.num_objects,
+                  (unsigned long)decoded_only.decoded_entities,
+                  (unsigned long)baseline.num_entities,
+                  (unsigned long)decoded_only.decoded_non_entities,
+                  (unsigned long)baseline.num_non_entities,
+                  (unsigned long)decoded_only.decode_error_objects,
+                  (unsigned long)decoded_only.decoded_ref_missing,
+                  (unsigned long)decoded_only.decoded_ref_mismatches);
+          free (baseline.baseline_refs);
+          return 1;
+        }
+      if (!semantic_coverage_equal (&baseline.semantic,
+                                    &decoded_only.semantic))
+        {
+          print_semantic_coverage ("baseline semantic", &baseline.semantic);
+          print_semantic_coverage ("decoded-only semantic",
+                                   &decoded_only.semantic);
+          free (baseline.baseline_refs);
+          return 1;
+        }
+
+      stream_trace_stage ("abort object dwg_stream_file_ex");
+      aborted.limit = 7;
+      aborted.error = 12345;
+      callbacks.object = abort_object_callback;
+      callbacks.decoded_object = NULL;
+      callbacks.decode_error = NULL;
+      error = dwg_stream_file_ex (path, &callbacks, &aborted);
+      if (error != aborted.error || aborted.calls != aborted.limit)
+        {
+          printf ("callback abort failed: error=0x%x expected=0x%x calls=%lu "
+                  "expected_calls=%lu\n",
+                  error, aborted.error, (unsigned long)aborted.calls,
+                  (unsigned long)aborted.limit);
+          free (baseline.baseline_refs);
+          return 1;
+        }
+
+      aborted.calls = 0;
+      aborted.limit = 3;
+      aborted.error = DWG_ERR_NOTYETSUPPORTED;
+      callbacks.object = abort_object_callback;
+      callbacks.decoded_object = NULL;
+      callbacks.decode_error = NULL;
+      callbacks.flags = 0;
+      error = dwg_stream_file_ex (path, &callbacks, &aborted);
+      if (error != aborted.error || aborted.calls != aborted.limit)
+        {
+          printf ("callback not-supported-bit abort failed: error=0x%x "
+                  "expected=0x%x calls=%lu expected_calls=%lu\n",
+                  error, aborted.error, (unsigned long)aborted.calls,
+                  (unsigned long)aborted.limit);
+          free (baseline.baseline_refs);
+          return 1;
+        }
+
+      stream_trace_stage ("abort decoded dwg_stream_file_ex");
+      aborted.calls = 0;
+      aborted.limit = 5;
+      aborted.error = 23456;
+      callbacks.object = NULL;
+      callbacks.decoded_object = abort_decoded_object_callback;
+      callbacks.decode_error = NULL;
+      callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+      error = dwg_stream_file_ex (path, &callbacks, &aborted);
+      if (error != aborted.error || aborted.calls != aborted.limit)
+        {
+          printf ("decoded abort mismatch: error=0x%x calls=%lu "
+                  "expected=0x%x/%lu\n",
+                  error, (unsigned long)aborted.calls, aborted.error,
+                  (unsigned long)aborted.limit);
+          free (baseline.baseline_refs);
+          return 1;
+        }
+    }
+
+  semantic_coverage_add (coverage, &baseline.semantic);
+  print_stats (label ? label : "stream parity ok", &streamed);
+  free (baseline.baseline_refs);
   return 0;
+}
+
+static int
+test_repository_stream_fixtures (void)
+{
+  const char *fixtures[]
+      = { "test/test-data/example_r13.dwg",
+          "test/test-data/example_r14.dwg",
+          "test/test-data/example_2000.dwg",
+          "test/test-data/example_2004.dwg",
+          "test/test-data/example_2007.dwg",
+          "test/test-data/2000/TS1.dwg" };
+  char path[1024];
+  size_t i;
+  int error;
+
+  for (i = 0; i < sizeof (fixtures) / sizeof (fixtures[0]); i++)
+    {
+      stream_trace_stage (fixtures[i]);
+      if (!stream_test_source_path (path, sizeof (path), fixtures[i]))
+        {
+          printf ("repository fixture path too long: %s\n", fixtures[i]);
+          return 1;
+        }
+      error = test_stream_file_parity (
+          path, 0, i == 0, "repository stream parity ok", 0, NULL);
+      if (error)
+        return error;
+    }
+  return 0;
+}
+
+static int
+test_repository_stream_sweep (int compare_refs)
+{
+  const char *fixtures[]
+      = { "test/test-data/2000/Arc.dwg",
+          "test/test-data/2000/circle.dwg",
+          "test/test-data/2000/Cone.dwg",
+          "test/test-data/2000/Constraints.dwg",
+          "test/test-data/2000/ConstructionLine.dwg",
+          "test/test-data/2000/Donut.dwg",
+          "test/test-data/2000/Ellipse.dwg",
+          "test/test-data/2000/entities-2d.dwg",
+          "test/test-data/2000/entities-3d.dwg",
+          "test/test-data/2000/Helix.dwg",
+          "test/test-data/2000/Leader.dwg",
+          "test/test-data/2000/Line.dwg",
+          "test/test-data/2000/Multiline.dwg",
+          "test/test-data/2000/Point.dwg",
+          "test/test-data/2000/Polygon.dwg",
+          "test/test-data/2000/Polyline.dwg",
+          "test/test-data/2000/PolyLine2D.dwg",
+          "test/test-data/2000/PolyLine3D.dwg",
+          "test/test-data/2000/RAY.dwg",
+          "test/test-data/2000/Spline.dwg",
+          "test/test-data/2000/Text.dwg",
+          "test/test-data/2000/TS1.dwg",
+          "test/test-data/2004/Arc.dwg",
+          "test/test-data/2004/circle.dwg",
+          "test/test-data/2004/Constraints.dwg",
+          "test/test-data/2004/ConstructionLine.dwg",
+          "test/test-data/2004/Donut.dwg",
+          "test/test-data/2004/Ellipse.dwg",
+          "test/test-data/2004/HatchG.dwg",
+          "test/test-data/2004/Helix.dwg",
+          "test/test-data/2004/Leader.dwg",
+          "test/test-data/2004/Line.dwg",
+          "test/test-data/2004/material.dwg",
+          "test/test-data/2004/Multiline.dwg",
+          "test/test-data/2004/Point.dwg",
+          "test/test-data/2004/Polygon.dwg",
+          "test/test-data/2004/Polyline.dwg",
+          "test/test-data/2004/PolyLine3D.dwg",
+          "test/test-data/2004/RAY.dwg",
+          "test/test-data/2004/Spline.dwg",
+          "test/test-data/2004/Surface.dwg",
+          "test/test-data/2004/Text.dwg",
+          "test/test-data/2004/Underlay.dwg",
+          "test/test-data/2007/Arc.dwg",
+          "test/test-data/2007/ATMOS-DC22S.dwg",
+          "test/test-data/2007/circle.dwg",
+          "test/test-data/2007/Constraints.dwg",
+          "test/test-data/2007/ConstructionLine.dwg",
+          "test/test-data/2007/Donut.dwg",
+          "test/test-data/2007/Ellipse.dwg",
+          "test/test-data/2007/Helix.dwg",
+          "test/test-data/2007/Leader.dwg",
+          "test/test-data/2007/Line.dwg",
+          "test/test-data/2007/Multiline.dwg",
+          "test/test-data/2007/Point.dwg",
+          "test/test-data/2007/Polygon.dwg",
+          "test/test-data/2007/Polyline.dwg",
+          "test/test-data/2007/PolyLine3D.dwg",
+          "test/test-data/2007/RAY.dwg",
+          "test/test-data/2007/Spline.dwg",
+          "test/test-data/2007/Text.dwg",
+          "test/test-data/example_2000.dwg",
+          "test/test-data/example_2004.dwg",
+          "test/test-data/example_2007.dwg",
+          "test/test-data/example_r13.dwg",
+          "test/test-data/example_r14.dwg",
+          "test/test-data/sample_2000.dwg" };
+  char path[1024];
+  Stream_Semantic_Coverage coverage = { 0 };
+  size_t i;
+  int error;
+
+  for (i = 0; i < sizeof (fixtures) / sizeof (fixtures[0]); i++)
+    {
+      stream_trace_stage (fixtures[i]);
+      if (!stream_test_source_path (path, sizeof (path), fixtures[i]))
+        {
+          printf ("repository sweep fixture path too long: %s\n",
+                  fixtures[i]);
+          return 1;
+        }
+      error = test_stream_file_parity (
+          path, compare_refs, i == 0, "repository stream sweep ok", 0,
+          &coverage);
+      if (error)
+        return error;
+    }
+  print_semantic_coverage ("repository stream sweep semantic coverage",
+                           &coverage);
+  if (semantic_coverage_require_repository_sweep (&coverage))
+    return 1;
+  printf ("repository stream sweep summary: files=%lu refs=%d\n",
+          (unsigned long)(sizeof (fixtures) / sizeof (fixtures[0])),
+          compare_refs ? 1 : 0);
+  return 0;
+}
+
+static int
+test_generated_minsert_stream_fixture (void)
+{
+  Dwg_Data *dwg;
+  Dwg_Object *mspace;
+  Dwg_Object_BLOCK_HEADER *hdr;
+  Dwg_Object_BLOCK_HEADER *blk;
+  Dwg_Entity_LINE *block_line;
+  dwg_point_3d pt1 = { 1.5, 2.5, 0.2 };
+  dwg_point_3d pt2 = { 2.5, 1.5, 0.0 };
+  Stream_Semantic_Coverage coverage = { 0 };
+  char path[128];
+  int error;
+
+  snprintf (path, sizeof (path), "stream_minsert_fixture_%ld_%ld.dwg",
+            stream_test_process_id (), (long)time (NULL));
+  dwg = dwg_new_Document (R_2000, 0, 0);
+  if (!dwg)
+    {
+      printf ("failed to create generated MINSERT document\n");
+      return 1;
+    }
+  mspace = dwg_model_space_object (dwg);
+  if (!mspace || !mspace->tio.object || !mspace->tio.object->tio.BLOCK_HEADER)
+    {
+      printf ("generated MINSERT document has no model space\n");
+      dwg_free (dwg);
+      return 1;
+    }
+  hdr = mspace->tio.object->tio.BLOCK_HEADER;
+  blk = dwg_add_BLOCK_HEADER (dwg, "bloko");
+  if (!blk)
+    {
+      printf ("failed to create generated MINSERT block header\n");
+      dwg_free (dwg);
+      return 1;
+  }
+  dwg_add_BLOCK (blk, "bloko");
+  block_line = dwg_add_LINE (blk, &pt1, &pt2);
+  if (!block_line || !block_line->parent)
+    {
+      printf ("failed to create generated MINSERT block LINE\n");
+      dwg_free (dwg);
+      return 1;
+    }
+  block_line->parent->entmode = 3;
+  dwg_add_ENDBLK (blk);
+  dwg_add_MINSERT (hdr, &pt1, "bloko", 1.0, 1.0, 1.0, 0.0, 2, 1, 1.0,
+                   0.0);
+
+  error = dwg_write_file (path, dwg);
+  dwg_free (dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    {
+      printf ("failed to write generated MINSERT fixture: error=0x%x\n",
+              error);
+      remove (path);
+      return 1;
+    }
+
+  error = test_stream_file_parity (path, 1, 0,
+                                   "generated MINSERT stream parity ok", 0,
+                                   &coverage);
+  remove (path);
+  if (error)
+    return error;
+  print_semantic_coverage ("generated MINSERT semantic coverage", &coverage);
+  if (!coverage.minserts)
+    {
+      printf ("generated MINSERT fixture did not cover MINSERT\n");
+      return 1;
+    }
+  if (!coverage.block_owned_entities || !coverage.entmode3_entities)
+    {
+      printf ("generated MINSERT fixture did not cover block-owned entmode=3: "
+              "block_owned=%lu entmode3=%lu\n",
+              (unsigned long)coverage.block_owned_entities,
+              (unsigned long)coverage.entmode3_entities);
+      return 1;
+    }
+  return 0;
+}
+
+static int
+test_repository_unsupported_stream_fixtures (void)
+{
+  const char *fixtures[]
+      = { "test/test-data/example_2010.dwg",
+          "test/test-data/example_2013.dwg",
+          "test/test-data/example_2018.dwg" };
+  char path[1024];
+  size_t i;
+
+  for (i = 0; i < sizeof (fixtures) / sizeof (fixtures[0]); i++)
+    {
+      Stream_Stats stats = { 0 };
+      Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+      int error;
+
+      stream_trace_stage (fixtures[i]);
+      if (!stream_test_source_path (path, sizeof (path), fixtures[i]))
+        {
+          printf ("unsupported repository fixture path too long: %s\n",
+                  fixtures[i]);
+          return 1;
+        }
+      callbacks.object = stream_object_callback;
+      callbacks.decoded_object = stream_decoded_object_callback;
+      callbacks.decode_error = stream_decode_error_callback;
+      callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+      error = dwg_stream_file_ex (path, &callbacks, &stats);
+      if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+          || stats.decoded_objects || stats.decode_error_objects)
+        {
+          printf ("unsupported repository fixture failed: %s error=0x%x "
+                  "expected=0x%x objects=%lu decoded=%lu "
+                  "decode_errors=%lu\n",
+                  fixtures[i], error, DWG_ERR_NOTYETSUPPORTED,
+                  (unsigned long)stats.num_objects,
+                  (unsigned long)stats.decoded_objects,
+                  (unsigned long)stats.decode_error_objects);
+          return 1;
+        }
+    }
+  return 0;
+}
+
+int
+main (void)
+{
+  const char *path = getenv ("LIBREDWG_STREAM_TEST_DWG");
+  int compare_refs = getenv ("LIBREDWG_STREAM_TEST_REFS") != NULL;
+  Stream_Semantic_Coverage coverage = { 0 };
+  int error;
+
+  stream_trace_stage ("test_no_full_fallback");
+  if (test_no_full_fallback ())
+    return 1;
+  stream_trace_stage ("test_stream_api_invalid_args");
+  if (test_stream_api_invalid_args ())
+    return 1;
+  stream_trace_stage ("test_legacy_callback_initializer");
+  if (test_legacy_callback_initializer ())
+    return 1;
+  stream_trace_stage ("test_legacy_stream_file_api");
+  if (test_legacy_stream_file_api ())
+    return 1;
+  stream_trace_stage ("test_full_fallback_decoded_stream_file_ex");
+  if (test_full_fallback_decoded_stream_file_ex ())
+    return 1;
+  stream_trace_stage ("test_emit_decoded_object_isolated_host_state");
+  if (test_emit_decoded_object_isolated_host_state ())
+    return 1;
+  stream_trace_stage ("test_generated_minsert_stream_fixture");
+  if (test_generated_minsert_stream_fixture ())
+    return 1;
+  stream_trace_stage ("test_repository_unsupported_stream_fixtures");
+  if (test_repository_unsupported_stream_fixtures ())
+    return 1;
+  stream_trace_stage ("test_large_stream_fixture");
+  if (test_large_stream_fixture ())
+    return 1;
+
+  if (!path || !*path)
+    {
+      if (getenv ("LIBREDWG_STREAM_TEST_LARGE_DWG"))
+        return 0;
+      if (getenv ("LIBREDWG_STREAM_TEST_REPOSITORY_SWEEP"))
+        return test_repository_stream_sweep (compare_refs);
+      return test_repository_stream_fixtures ();
+    }
+
+  error = test_stream_file_parity (path, compare_refs, 1, "stream parity ok",
+                                   1, &coverage);
+  if (!error)
+    print_semantic_coverage ("stream parity semantic coverage", &coverage);
+  return error;
 }

@@ -11509,6 +11509,7 @@ typedef enum DWG_STREAM_DECODE_MODE
   DWG_STREAM_DECODE_FULL = 0,
   DWG_STREAM_DECODE_R2007_OBJECT_MAP = 1,
   DWG_STREAM_DECODE_R2004_OBJECT_MAP = 2,
+  DWG_STREAM_DECODE_R13_OBJECT_MAP = 3,
 } Dwg_Stream_Decode_Mode;
 
 typedef enum DWG_STREAM_INPUT_MODE
@@ -11536,6 +11537,20 @@ typedef struct _dwg_stream_object_info
 typedef int (*Dwg_Stream_Object_Callback)
     (const Dwg_Stream_Object_Info *restrict info, void *restrict user);
 
+/* Called after the stream path decodes one object. The object pointer is valid
+   only for the duration of the callback; callers must copy any data they need.
+   This callback is incremental and must not rely on a fully materialized DWG
+   object graph. */
+typedef int (*Dwg_Stream_Decoded_Object_Callback)
+    (const Dwg_Stream_Object_Info *restrict info,
+     const Dwg_Object *restrict object, void *restrict user);
+
+/* Called when an object-map entry could not be decoded into a temporary
+   Dwg_Object for decoded_object. Non-zero returns abort streaming. */
+typedef int (*Dwg_Stream_Decode_Error_Callback)
+    (const Dwg_Stream_Object_Info *restrict info, int error,
+     void *restrict user);
+
 typedef enum DWG_STREAM_FLAGS
 {
   DWG_STREAM_F_NO_FULL_FALLBACK = 1u << 0,
@@ -11547,6 +11562,14 @@ typedef struct _dwg_stream_callbacks
   unsigned int flags;
 } Dwg_Stream_Callbacks;
 
+typedef struct _dwg_stream_callbacks_ex
+{
+  Dwg_Stream_Object_Callback object;
+  unsigned int flags;
+  Dwg_Stream_Decoded_Object_Callback decoded_object;
+  Dwg_Stream_Decode_Error_Callback decode_error;
+} Dwg_Stream_Callbacks_Ex;
+
 /*--------------------------------------------------
  * Exported Functions
  */
@@ -11556,6 +11579,9 @@ EXPORT int dwg_read_file (const char *restrict filename,
 EXPORT int dwg_stream_file (const char *restrict filename,
                             const Dwg_Stream_Callbacks *restrict callbacks,
                             void *restrict user);
+EXPORT int dwg_stream_file_ex (
+    const char *restrict filename,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks, void *restrict user);
 EXPORT int dxf_read_file (const char *restrict filename,
                           Dwg_Data *restrict dwg);
 // You might need to probe for that.

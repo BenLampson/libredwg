@@ -40,8 +40,9 @@ typedef enum ENTITY_SECTION_INDEX_R11
 
 EXPORT int dwg_decode (Bit_Chain *restrict dat, Dwg_Data *restrict dwg);
 int dwg_decode_stream (Bit_Chain *restrict dat,
-                       const Dwg_Stream_Callbacks *restrict callbacks,
-                       Dwg_Stream_Input_Mode input_mode, void *restrict user);
+                       const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+                       Dwg_Stream_Input_Mode input_mode,
+                       int *restrict stream_supported, void *restrict user);
 int dwg_decode_unknown_bits (Bit_Chain *restrict dat,
                              Dwg_Object *restrict obj);
 int dwg_decode_unknown_rest (Bit_Chain *restrict dat,
@@ -84,6 +85,12 @@ int dwg_decode_header_variables (Bit_Chain *dat, Bit_Chain *hdl_dat,
                                  Bit_Chain *str_dat, Dwg_Data *restrict dwg);
 int dwg_decode_add_object (Dwg_Data *restrict dwg, Bit_Chain *dat,
                            Bit_Chain *hdl_dat, size_t address);
+/* Exported for unit-testing/stream_test and internal stream decoders only.
+   Not part of the public API. */
+EXPORT int dwg_stream_emit_decoded_object (
+    Dwg_Data *restrict dwg, Bit_Chain *restrict object_dat,
+    const Dwg_Stream_Object_Info *restrict info,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks, void *restrict user);
 int obj_handle_stream (Bit_Chain *restrict dat, Dwg_Object *restrict obj,
                        Bit_Chain *restrict hdl_dat);
 void bfr_read (void *restrict dst, BITCODE_RC *restrict *restrict src,
@@ -148,7 +155,7 @@ int read_r2007_meta_data (Bit_Chain *dat, Bit_Chain *hdl_dat,
                           Dwg_Data *restrict dwg);
 int read_r2007_meta_data_stream (
     Bit_Chain *dat, Bit_Chain *hdl_dat, Dwg_Data *restrict dwg,
-    const Dwg_Stream_Callbacks *restrict callbacks,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     Dwg_Stream_Input_Mode input_mode, void *restrict user);
 void section_string_stream (Dwg_Data *restrict dwg, Bit_Chain *restrict dat,
                             BITCODE_RL bitsize, Bit_Chain *restrict str);

@@ -21,6 +21,7 @@ compile_commands.json
 
 # dirs
 /.analysis/
+/build-*/
 /.build-*/
 /.build/
 /.build32/
@@ -62,6 +63,7 @@ compile_commands.json
 /00*.patch
 /ABI-*.dump
 /.*.log
+/build-*.log
 /*_20*.log
 /*_r1*.log
 /*_20*.dxf

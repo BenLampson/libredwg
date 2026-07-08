@@ -468,7 +468,50 @@ dwg_read_file (const char *restrict filename, Dwg_Data *restrict dwg)
   return error;
 }
 
-/** dwg_stream_file
+typedef struct _dwg_stream_callback_forwarder
+{
+  const Dwg_Stream_Callbacks_Ex *callbacks;
+  void *user;
+  int *called;
+} Dwg_Stream_Callback_Forwarder;
+
+static int
+dwg_stream_forward_object (const Dwg_Stream_Object_Info *restrict info,
+                           void *restrict user)
+{
+  Dwg_Stream_Callback_Forwarder *forwarder
+      = (Dwg_Stream_Callback_Forwarder *)user;
+
+  *forwarder->called = 1;
+  return forwarder->callbacks->object (info, forwarder->user);
+}
+
+static int
+dwg_stream_forward_decoded_object (
+    const Dwg_Stream_Object_Info *restrict info,
+    const Dwg_Object *restrict object, void *restrict user)
+{
+  Dwg_Stream_Callback_Forwarder *forwarder
+      = (Dwg_Stream_Callback_Forwarder *)user;
+
+  *forwarder->called = 1;
+  return forwarder->callbacks->decoded_object (info, object,
+                                               forwarder->user);
+}
+
+static int
+dwg_stream_forward_decode_error (
+    const Dwg_Stream_Object_Info *restrict info, int error,
+    void *restrict user)
+{
+  Dwg_Stream_Callback_Forwarder *forwarder
+      = (Dwg_Stream_Callback_Forwarder *)user;
+
+  *forwarder->called = 1;
+  return forwarder->callbacks->decode_error (info, error, forwarder->user);
+}
+
+/** dwg_stream_file_ex
  * returns 0 on success, or the first critical read/decode/callback error.
  *
  * Uses a lightweight object-map decoder when the DWG version supports it.
@@ -476,9 +519,9 @@ dwg_read_file (const char *restrict filename, Dwg_Data *restrict dwg)
  * unless DWG_STREAM_F_NO_FULL_FALLBACK is set.
  */
 EXPORT int
-dwg_stream_file (const char *restrict filename,
-                 const Dwg_Stream_Callbacks *restrict callbacks,
-                 void *restrict user)
+dwg_stream_file_ex (const char *restrict filename,
+                    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+                    void *restrict user)
 {
   FILE *fp;
   struct_stat_t attrib;
@@ -486,6 +529,10 @@ dwg_stream_file (const char *restrict filename,
   Dwg_Readonly_File_Map file_map;
   Dwg_Data dwg = { 0 };
   Dwg_Stream_Input_Mode input_mode = DWG_STREAM_INPUT_HEAP;
+  Dwg_Stream_Callbacks_Ex stream_callbacks = { 0 };
+  Dwg_Stream_Callback_Forwarder forwarder = { 0 };
+  int stream_supported = 0;
+  int stream_callback_called = 0;
   int error;
 
   dwg_readonly_file_map_init (&file_map);
@@ -541,8 +588,21 @@ dwg_stream_file (const char *restrict filename,
       return DWG_ERR_INVALIDDWG;
     }
 
-  error = dwg_decode_stream (&bit_chain, callbacks, input_mode, user);
-  if (!(error & DWG_ERR_NOTYETSUPPORTED))
+  stream_callbacks = *callbacks;
+  forwarder.callbacks = callbacks;
+  forwarder.user = user;
+  forwarder.called = &stream_callback_called;
+  if (callbacks->object)
+    stream_callbacks.object = dwg_stream_forward_object;
+  if (callbacks->decoded_object)
+    stream_callbacks.decoded_object = dwg_stream_forward_decoded_object;
+  if (callbacks->decode_error)
+    stream_callbacks.decode_error = dwg_stream_forward_decode_error;
+
+  error = dwg_decode_stream (&bit_chain, &stream_callbacks, input_mode,
+                             &stream_supported, &forwarder);
+  if (error != DWG_ERR_NOTYETSUPPORTED || stream_supported
+      || stream_callback_called)
     {
       dwg_readonly_file_map_close (&file_map, &bit_chain);
       return error;
@@ -565,9 +625,11 @@ dwg_stream_file (const char *restrict filename,
 
   dwg_fixup_viewport_ids (&dwg);
 
-  if (callbacks->object)
+  if (callbacks->object || callbacks->decoded_object)
     {
-      for (BITCODE_BL i = 0; i < dwg.num_objects; i++)
+      BITCODE_BL i;
+
+      for (i = 0; i < dwg.num_objects; i++)
         {
           const Dwg_Object *obj = &dwg.object[i];
           Dwg_Stream_Object_Info info = { 0 };
@@ -586,17 +648,48 @@ dwg_stream_file (const char *restrict filename,
           info.decode_mode = DWG_STREAM_DECODE_FULL;
           info.input_mode = input_mode;
 
-          callback_error = callbacks->object (&info, user);
-          if (callback_error)
+          if (callbacks->object)
             {
-              dwg_free (&dwg);
-              return callback_error;
+              callback_error = callbacks->object (&info, user);
+              if (callback_error)
+                {
+                  dwg_free (&dwg);
+                  return callback_error;
+                }
+            }
+
+          if (callbacks->decoded_object)
+            {
+              callback_error = callbacks->decoded_object (&info, obj, user);
+              if (callback_error)
+                {
+                  dwg_free (&dwg);
+                  return callback_error;
+                }
             }
         }
     }
 
   dwg_free (&dwg);
   return error;
+}
+
+/** dwg_stream_file
+ * Backward-compatible object-info streaming API.
+ */
+EXPORT int
+dwg_stream_file (const char *restrict filename,
+                 const Dwg_Stream_Callbacks *restrict callbacks,
+                 void *restrict user)
+{
+  Dwg_Stream_Callbacks_Ex callbacks_ex = { 0 };
+
+  if (!callbacks)
+    return DWG_ERR_INTERNALERROR;
+
+  callbacks_ex.object = callbacks->object;
+  callbacks_ex.flags = callbacks->flags;
+  return dwg_stream_file_ex (filename, &callbacks_ex, user);
 }
 
 #if !defined(DISABLE_DXF) && defined(USE_WRITE)
