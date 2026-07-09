@@ -3327,6 +3327,7 @@ test_generated_pre_r13_stream_basic (void)
   unsigned long long expected_polyline_mask = (1ULL << 4) - 1;
   unsigned long long expected_vertex_mask = (1ULL << 5) - 1;
   unsigned long long expected_table_mask = 0;
+  unsigned long long expected_table_fixedtype_mask = (1ULL << 10) - 1;
   BITCODE_BL expected_entity_count = 71;
   BITCODE_BL expected_table_count = 0;
   BITCODE_BL expected_count = expected_entity_count;
@@ -3346,6 +3347,8 @@ test_generated_pre_r13_stream_basic (void)
   dwg_point_3d pface_pts[] = { { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 },
                                { 0.0, 1.0, 1.0 } };
   dwg_face pface_faces[] = { { 1, 2, 3, 0 } };
+  dwg_point_3d ucs_xdir = { 1.0, 0.0, 0.0 };
+  dwg_point_3d ucs_ydir = { 0.0, 1.0, 0.0 };
   char path[128];
   int error;
 
@@ -3409,6 +3412,13 @@ test_generated_pre_r13_stream_basic (void)
   if (!blk || !nested_blk)
     {
       printf ("failed to create generated R11 basic block header\n");
+      dwg_free (gen);
+      return 1;
+    }
+  if (!dwg_add_VIEW (gen, "r11view")
+      || !dwg_add_UCS (gen, &pt1, &ucs_xdir, &ucs_ydir, "r11ucs"))
+    {
+      printf ("failed to create generated R11 VIEW/UCS tables\n");
       dwg_free (gen);
       return 1;
     }
@@ -3529,6 +3539,16 @@ test_generated_pre_r13_stream_basic (void)
   if (!expected_table_count)
     {
       printf ("generated R11 blocking read did not cover table entries\n");
+      dwg_free (&dwg);
+      remove (path);
+      return 1;
+    }
+  if ((expected_table_mask & expected_table_fixedtype_mask)
+      != expected_table_fixedtype_mask)
+    {
+      printf ("generated R11 blocking read missed table fixedtypes: "
+              "mask=0x%llx expected=0x%llx\n",
+              expected_table_mask, expected_table_fixedtype_mask);
       dwg_free (&dwg);
       remove (path);
       return 1;
