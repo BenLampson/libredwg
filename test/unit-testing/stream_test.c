@@ -2991,14 +2991,15 @@ test_generated_pre_r13_stream_basic (void)
   Dwg_Object *mspace;
   Dwg_Object_BLOCK_HEADER *hdr;
   Dwg_Object_BLOCK_HEADER *blk;
+  Dwg_Object_BLOCK_HEADER *nested_blk;
   Dwg_Entity_INSERT *insert;
   unsigned long long expected_mask = 0;
   unsigned long long expected_block_mask = 0;
   unsigned long long expected_dim_mask = (1ULL << 7) - 1;
   unsigned long long expected_polyline_mask = (1ULL << 4) - 1;
   unsigned long long expected_vertex_mask = (1ULL << 5) - 1;
-  BITCODE_BL expected_count = 55;
-  BITCODE_BL expected_block_count = 31;
+  BITCODE_BL expected_count = 59;
+  BITCODE_BL expected_block_count = 35;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
   dwg_point_3d pt3 = { 3.0, 1.0, 0.0 };
@@ -3046,6 +3047,7 @@ test_generated_pre_r13_stream_basic (void)
   expected_block_mask |= 1ULL << DWG_TYPE_SOLID_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_3DFACE_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_SHAPE_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_INSERT_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_SEQEND_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_POLYLINE_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_VERTEX_r11;
@@ -3068,9 +3070,18 @@ test_generated_pre_r13_stream_basic (void)
     }
   hdr = mspace->tio.object->tio.BLOCK_HEADER;
   blk = dwg_add_BLOCK_HEADER (gen, "r11blk");
-  if (!blk)
+  nested_blk = dwg_add_BLOCK_HEADER (gen, "nestedblk");
+  if (!blk || !nested_blk)
     {
       printf ("failed to create generated R11 basic block header\n");
+      dwg_free (gen);
+      return 1;
+    }
+  if (!dwg_add_BLOCK (nested_blk, "nestedblk")
+      || !dwg_add_LINE (nested_blk, &pt2, &pt3)
+      || !dwg_add_ENDBLK (nested_blk))
+    {
+      printf ("failed to create generated R11 nested block definition\n");
       dwg_free (gen);
       return 1;
     }
@@ -3087,6 +3098,7 @@ test_generated_pre_r13_stream_basic (void)
       || !dwg_add_POLYLINE_3D (blk, 2, pl3d_pts)
       || !dwg_add_POLYLINE_MESH (blk, 2, 2, mesh_pts)
       || !dwg_add_POLYLINE_PFACE (blk, 3, 1, pface_pts, pface_faces)
+      || !dwg_add_INSERT (blk, &pt4, "nestedblk", 1.0, 1.0, 1.0, 0.0)
       || !dwg_add_ENDBLK (blk))
     {
       printf ("failed to create generated R11 basic block definition\n");
