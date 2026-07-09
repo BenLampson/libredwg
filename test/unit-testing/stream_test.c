@@ -2920,7 +2920,8 @@ write_generated_r11_insert_fixture (char *path, size_t path_size,
 
 static int
 mark_r11_insert_as_minsert_opts (const char *path,
-                                 const BITCODE_RL insert_address)
+                                 const BITCODE_RL insert_address,
+                                 const int opts_bit)
 {
   FILE *fp;
   long opts_pos;
@@ -2948,7 +2949,7 @@ mark_r11_insert_as_minsert_opts (const char *path,
       fclose (fp);
       return 1;
     }
-  if (fputc (lo | OPTS_R11_INSERT_HAS_NUM_COLS, fp) == EOF
+  if (fputc (lo | opts_bit, fp) == EOF
       || fputc (hi, fp) == EOF)
     {
       fclose (fp);
@@ -3206,38 +3207,55 @@ test_pre_r13_legacy_entity_stream (void)
 static int
 test_pre_r13_minsert_opts_reject (void)
 {
-  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
-  Stream_Stats stats = { 0 };
-  BITCODE_RL insert_address;
-  char path[128];
-  int error;
+  static const struct
+  {
+    int opts_bit;
+    const char *name;
+  } minsert_opts[] = {
+    { OPTS_R11_INSERT_HAS_NUM_COLS, "NUM_COLS" },
+    { OPTS_R11_INSERT_HAS_NUM_ROWS, "NUM_ROWS" },
+    { OPTS_R11_INSERT_HAS_COL_SPACING, "COL_SPACING" },
+    { OPTS_R11_INSERT_HAS_ROW_SPACING, "ROW_SPACING" },
+  };
+  size_t i;
 
-  error = write_generated_r11_insert_fixture (path, sizeof (path),
-                                              &insert_address);
-  if (error)
-    return error;
-  if (mark_r11_insert_as_minsert_opts (path, insert_address))
+  for (i = 0; i < sizeof (minsert_opts) / sizeof (minsert_opts[0]); i++)
     {
-      printf ("failed to mark generated R11 INSERT as MINSERT opts\n");
+      Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+      Stream_Stats stats = { 0 };
+      BITCODE_RL insert_address;
+      char path[128];
+      int error;
+
+      error = write_generated_r11_insert_fixture (path, sizeof (path),
+                                                  &insert_address);
+      if (error)
+        return error;
+      if (mark_r11_insert_as_minsert_opts (path, insert_address,
+                                           minsert_opts[i].opts_bit))
+        {
+          printf ("failed to mark generated R11 INSERT as MINSERT %s opts\n",
+                  minsert_opts[i].name);
+          remove (path);
+          return 1;
+        }
+
+      callbacks.object = stream_object_callback;
+      callbacks.decoded_object = stream_decoded_object_callback;
+      callbacks.decode_error = stream_decode_error_callback;
+      error = dwg_stream_file_ex (path, &callbacks, &stats);
       remove (path);
-      return 1;
-    }
-
-  callbacks.object = stream_object_callback;
-  callbacks.decoded_object = stream_decoded_object_callback;
-  callbacks.decode_error = stream_decode_error_callback;
-  error = dwg_stream_file_ex (path, &callbacks, &stats);
-  remove (path);
-  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
-      || stats.decoded_objects || stats.decode_error_objects)
-    {
-      printf ("R11 MINSERT opts reject failed: error=0x%x expected=0x%x "
-              "objects=%lu decoded=%lu decode_errors=%lu\n",
-              error, DWG_ERR_NOTYETSUPPORTED,
-              (unsigned long)stats.num_objects,
-              (unsigned long)stats.decoded_objects,
-              (unsigned long)stats.decode_error_objects);
-      return 1;
+      if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+          || stats.decoded_objects || stats.decode_error_objects)
+        {
+          printf ("R11 MINSERT %s opts reject failed: error=0x%x "
+                  "expected=0x%x objects=%lu decoded=%lu decode_errors=%lu\n",
+                  minsert_opts[i].name, error, DWG_ERR_NOTYETSUPPORTED,
+                  (unsigned long)stats.num_objects,
+                  (unsigned long)stats.decoded_objects,
+                  (unsigned long)stats.decode_error_objects);
+          return 1;
+        }
     }
   return 0;
 }
