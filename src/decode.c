@@ -8659,6 +8659,9 @@ read_pre_r13_meta_data_stream (
         case DWG_TYPE_CIRCLE_r11:
           error |= dwg_decode_CIRCLE (dat, &obj);
           break;
+        case DWG_TYPE_SHAPE_r11:
+          error |= dwg_decode_SHAPE (dat, &obj);
+          break;
         case DWG_TYPE_TEXT_r11:
           error |= dwg_decode_TEXT (dat, &obj);
           break;
@@ -8674,7 +8677,25 @@ read_pre_r13_meta_data_stream (
         case DWG_TYPE_3DFACE_r11:
           error |= dwg_decode__3DFACE (dat, &obj);
           break;
+        case DWG_TYPE_INSERT_r11:
+          error |= dwg_decode_INSERT (dat, &obj);
+          break;
+        case DWG_TYPE_ATTDEF_r11:
+          error |= dwg_decode_ATTDEF (dat, &obj);
+          break;
+        case DWG_TYPE_ATTRIB_r11:
+          error |= dwg_decode_ATTRIB (dat, &obj);
+          break;
+        case DWG_TYPE_SEQEND_r11:
+          error |= dwg_decode_SEQEND (dat, &obj);
+          break;
+        case DWG_TYPE_VIEWPORT_r11:
+          error |= dwg_decode_VIEWPORT (dat, &obj);
+          break;
         default:
+          LOG_ERROR ("DWG stream reader does not support R11/R12 entity type "
+                     "%u",
+                     (unsigned)abstype);
           error = DWG_ERR_NOTYETSUPPORTED;
           goto object_done;
         }

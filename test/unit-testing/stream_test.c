@@ -2697,7 +2697,10 @@ test_generated_pre_r13_stream_basic (void)
   Dwg_Data *gen;
   Dwg_Object *mspace;
   Dwg_Object_BLOCK_HEADER *hdr;
+  Dwg_Object_BLOCK_HEADER *blk;
+  Dwg_Entity_INSERT *insert;
   unsigned long long expected_mask = 0;
+  BITCODE_BL expected_count = 13;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
   dwg_point_3d pt3 = { 3.0, 1.0, 0.0 };
@@ -2716,6 +2719,11 @@ test_generated_pre_r13_stream_basic (void)
   expected_mask |= 1ULL << DWG_TYPE_TRACE_r11;
   expected_mask |= 1ULL << DWG_TYPE_SOLID_r11;
   expected_mask |= 1ULL << DWG_TYPE_3DFACE_r11;
+  expected_mask |= 1ULL << DWG_TYPE_SHAPE_r11;
+  expected_mask |= 1ULL << DWG_TYPE_INSERT_r11;
+  expected_mask |= 1ULL << DWG_TYPE_ATTDEF_r11;
+  expected_mask |= 1ULL << DWG_TYPE_ATTRIB_r11;
+  expected_mask |= 1ULL << DWG_TYPE_VIEWPORT_r11;
 
   snprintf (path, sizeof (path), "stream_basic_r11_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
@@ -2733,6 +2741,20 @@ test_generated_pre_r13_stream_basic (void)
       return 1;
     }
   hdr = mspace->tio.object->tio.BLOCK_HEADER;
+  blk = dwg_add_BLOCK_HEADER (gen, "r11blk");
+  if (!blk)
+    {
+      printf ("failed to create generated R11 basic block header\n");
+      dwg_free (gen);
+      return 1;
+    }
+  if (!dwg_add_BLOCK (blk, "r11blk") || !dwg_add_LINE (blk, &pt1, &pt2)
+      || !dwg_add_ENDBLK (blk))
+    {
+      printf ("failed to create generated R11 basic block definition\n");
+      dwg_free (gen);
+      return 1;
+    }
   if (!dwg_add_LINE (hdr, &pt1, &pt2)
       || !dwg_add_POINT (hdr, &pt3)
       || !dwg_add_CIRCLE (hdr, &pt2, 1.25)
@@ -2740,7 +2762,13 @@ test_generated_pre_r13_stream_basic (void)
       || !dwg_add_ARC (hdr, &pt3, 1.0, 0.0, 1.0)
       || !dwg_add_TRACE (hdr, &pt1, &pt2d1, &pt2d2, &pt2d3)
       || !dwg_add_SOLID (hdr, &pt2, &pt2d1, &pt2d2, &pt2d3)
-      || !dwg_add_3DFACE (hdr, &pt1, &pt2, &pt3, &pt4))
+      || !dwg_add_3DFACE (hdr, &pt1, &pt2, &pt3, &pt4)
+      || !dwg_add_SHAPE (hdr, "shape1", &pt1, 1.0, 0.0)
+      || !dwg_add_ATTDEF (hdr, 0.25, 0, "Prompt", &pt2, "TAG1", "Value")
+      || !(insert = dwg_add_INSERT (hdr, &pt3, "r11blk", 1.0, 1.0, 1.0,
+                                    0.0))
+      || !dwg_add_ATTRIB (insert, 0.25, 0, &pt4, "TAG2", "Attr")
+      || !dwg_add_VIEWPORT (hdr, "vp1"))
     {
       printf ("failed to create generated R11 basic entities\n");
       dwg_free (gen);
@@ -2772,10 +2800,12 @@ test_generated_pre_r13_stream_basic (void)
   callbacks.decode_error = stream_decode_error_callback;
   error = dwg_stream_file_ex (path, &callbacks, &stats);
   remove (path);
-  if (error >= DWG_ERR_CRITICAL || stats.num_objects != 8
-      || stats.num_entities != 8 || stats.full_decode_objects
-      || stats.lightweight_objects != 8 || stats.prer13_entity_objects != 8
-      || stats.decoded_objects != 8 || stats.decoded_entities != 8
+  if (error >= DWG_ERR_CRITICAL || stats.num_objects != expected_count
+      || stats.num_entities != expected_count || stats.full_decode_objects
+      || stats.lightweight_objects != expected_count
+      || stats.prer13_entity_objects != expected_count
+      || stats.decoded_objects != expected_count
+      || stats.decoded_entities != expected_count
       || stats.decode_error_objects
       || (stats.r11_type_mask & expected_mask) != expected_mask)
     {
