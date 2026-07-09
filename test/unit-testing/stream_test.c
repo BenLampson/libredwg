@@ -162,6 +162,7 @@ static int test_unsupported_pre_r13_versions_reject (void);
 static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
 static int test_pre_r13_minsert_opts_reject (void);
+static int test_pre_r13_jump_entity_stream (void);
 static int test_generated_pre_r13_stream_basic (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
                                     int test_abort_callbacks,
@@ -2958,6 +2959,180 @@ mark_r11_insert_as_minsert_opts (const char *path,
 }
 
 static int
+write_generated_r11_line_fixture (char *path, size_t path_size,
+                                  BITCODE_RL *line_address)
+{
+  Dwg_Data dwg = { 0 };
+  Dwg_Data *gen;
+  Dwg_Object *mspace;
+  Dwg_Object_BLOCK_HEADER *hdr;
+  BITCODE_BL i;
+  dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
+  dwg_point_3d pt2 = { 2.0, 3.0, 0.0 };
+  int error;
+
+  snprintf (path, path_size, "stream_r11_line_%ld_%ld.dwg",
+            stream_test_process_id (), (long)time (NULL));
+  gen = dwg_new_Document (R_11, 0, 0);
+  if (!gen)
+    {
+      printf ("failed to create generated R11 LINE document\n");
+      return 1;
+    }
+  mspace = dwg_model_space_object (gen);
+  if (!mspace || !mspace->tio.object || !mspace->tio.object->tio.BLOCK_HEADER)
+    {
+      printf ("generated R11 LINE document has no model space\n");
+      dwg_free (gen);
+      return 1;
+    }
+  hdr = mspace->tio.object->tio.BLOCK_HEADER;
+  if (!dwg_add_LINE (hdr, &pt1, &pt2))
+    {
+      printf ("failed to create generated R11 LINE fixture\n");
+      dwg_free (gen);
+      return 1;
+    }
+
+  error = dwg_write_file (path, gen);
+  dwg_free (gen);
+  if (error >= DWG_ERR_CRITICAL)
+    {
+      printf ("failed to write generated R11 LINE fixture: error=0x%x\n",
+              error);
+      remove (path);
+      return 1;
+    }
+
+  error = dwg_read_file (path, &dwg);
+  if (error >= DWG_ERR_CRITICAL || !dwg.num_objects)
+    {
+      printf ("generated R11 LINE blocking read failed: error=0x%x "
+              "objects=%lu\n",
+              error, (unsigned long)dwg.num_objects);
+      dwg_free (&dwg);
+      remove (path);
+      return 1;
+    }
+
+  *line_address = 0;
+  for (i = 0; i < dwg.num_objects; i++)
+    {
+      Dwg_Object *obj = &dwg.object[i];
+      if (obj->fixedtype == DWG_TYPE_LINE && obj->type == DWG_TYPE_LINE_r11
+          && obj->address)
+        {
+          *line_address = (BITCODE_RL)obj->address;
+          break;
+        }
+    }
+  dwg_free (&dwg);
+  if (!*line_address)
+    {
+      printf ("generated R11 LINE fixture did not find LINE address\n");
+      remove (path);
+      return 1;
+    }
+  return 0;
+}
+
+static int
+mark_r11_entity_type (const char *path, const BITCODE_RL address,
+                      const int type)
+{
+  FILE *fp;
+
+  fp = fopen (path, "r+b");
+  if (!fp)
+    return 1;
+  if (fseek (fp, (long)address, SEEK_SET))
+    {
+      fclose (fp);
+      return 1;
+    }
+  if (fputc (type, fp) == EOF)
+    {
+      fclose (fp);
+      return 1;
+    }
+  fclose (fp);
+  return 0;
+}
+
+static int
+test_pre_r13_jump_entity_stream (void)
+{
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Stream_Stats stats = { 0 };
+  Dwg_Data dwg = { 0 };
+  BITCODE_RL line_address;
+  BITCODE_BL i;
+  int found_jump = 0;
+  char path[128];
+  int error;
+
+  error = write_generated_r11_line_fixture (path, sizeof (path),
+                                            &line_address);
+  if (error)
+    return error;
+  if (mark_r11_entity_type (path, line_address, DWG_TYPE_JUMP_r11))
+    {
+      printf ("failed to mark generated R11 LINE as JUMP\n");
+      remove (path);
+      return 1;
+    }
+
+  error = dwg_read_file (path, &dwg);
+  if (error >= DWG_ERR_CRITICAL || !dwg.num_objects)
+    {
+      printf ("generated R11 JUMP blocking read failed: error=0x%x "
+              "objects=%lu\n",
+              error, (unsigned long)dwg.num_objects);
+      dwg_free (&dwg);
+      remove (path);
+      return 1;
+    }
+  for (i = 0; i < dwg.num_objects; i++)
+    {
+      Dwg_Object *obj = &dwg.object[i];
+      if (obj->fixedtype == DWG_TYPE_JUMP && obj->type == DWG_TYPE_JUMP_r11)
+        {
+          found_jump = 1;
+          break;
+        }
+    }
+  dwg_free (&dwg);
+  if (!found_jump)
+    {
+      printf ("generated R11 JUMP fixture did not cover JUMP in blocking "
+              "read\n");
+      remove (path);
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.decoded_object = stream_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
+  error = dwg_stream_file_ex (path, &callbacks, &stats);
+  remove (path);
+  if (error >= DWG_ERR_CRITICAL || stats.full_decode_objects
+      || !stats.num_objects || !stats.decoded_objects
+      || stats.decode_error_objects
+      || !(stats.r11_type_mask & (1ULL << DWG_TYPE_JUMP_r11)))
+    {
+      printf ("R11 JUMP stream failed: error=0x%x objects=%lu decoded=%lu "
+              "full=%lu decode_errors=%lu mask=0x%llx expected=0x%llx\n",
+              error, (unsigned long)stats.num_objects,
+              (unsigned long)stats.decoded_objects,
+              (unsigned long)stats.full_decode_objects,
+              (unsigned long)stats.decode_error_objects, stats.r11_type_mask,
+              1ULL << DWG_TYPE_JUMP_r11);
+      return 1;
+    }
+  return 0;
+}
+
+static int
 test_pre_r13_minsert_opts_reject (void)
 {
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
@@ -3286,6 +3461,9 @@ main (void)
     return 1;
   stream_trace_stage ("test_pre_r13_minsert_opts_reject");
   if (test_pre_r13_minsert_opts_reject ())
+    return 1;
+  stream_trace_stage ("test_pre_r13_jump_entity_stream");
+  if (test_pre_r13_jump_entity_stream ())
     return 1;
   stream_trace_stage ("test_generated_pre_r13_stream_basic");
   if (test_generated_pre_r13_stream_basic ())

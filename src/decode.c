@@ -8889,6 +8889,9 @@ read_pre_r13_entity_section_stream (
         case DWG_TYPE_SEQEND_r11:
           error |= dwg_decode_SEQEND (dat, &obj);
           break;
+        case DWG_TYPE_JUMP_r11:
+          error |= dwg_decode_JUMP (dat, &obj);
+          break;
         case DWG_TYPE_POLYLINE_r11:
           error |= decode_pre_r13_polyline_variant (dat, &obj);
           break;
