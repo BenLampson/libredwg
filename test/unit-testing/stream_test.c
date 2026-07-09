@@ -162,7 +162,7 @@ static int test_unsupported_pre_r13_versions_reject (void);
 static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
 static int test_pre_r13_minsert_opts_reject (void);
-static int test_pre_r13_jump_entity_stream (void);
+static int test_pre_r13_legacy_entity_stream (void);
 static int test_generated_pre_r13_stream_basic (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
                                     int test_abort_callbacks,
@@ -3059,15 +3059,23 @@ mark_r11_entity_type (const char *path, const BITCODE_RL address,
   return 0;
 }
 
+typedef struct _r11_mutated_entity_case
+{
+  int r11_type;
+  Dwg_Object_Type fixedtype;
+  const char *name;
+} R11_Mutated_Entity_Case;
+
 static int
-test_pre_r13_jump_entity_stream (void)
+test_pre_r13_mutated_entity_stream (
+    const R11_Mutated_Entity_Case *test_case)
 {
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   Stream_Stats stats = { 0 };
   Dwg_Data dwg = { 0 };
   BITCODE_RL line_address;
   BITCODE_BL i;
-  int found_jump = 0;
+  int found_entity = 0;
   char path[128];
   int error;
 
@@ -3075,9 +3083,9 @@ test_pre_r13_jump_entity_stream (void)
                                             &line_address);
   if (error)
     return error;
-  if (mark_r11_entity_type (path, line_address, DWG_TYPE_JUMP_r11))
+  if (mark_r11_entity_type (path, line_address, test_case->r11_type))
     {
-      printf ("failed to mark generated R11 LINE as JUMP\n");
+      printf ("failed to mark generated R11 LINE as %s\n", test_case->name);
       remove (path);
       return 1;
     }
@@ -3085,9 +3093,9 @@ test_pre_r13_jump_entity_stream (void)
   error = dwg_read_file (path, &dwg);
   if (error >= DWG_ERR_CRITICAL || !dwg.num_objects)
     {
-      printf ("generated R11 JUMP blocking read failed: error=0x%x "
+      printf ("generated R11 %s blocking read failed: error=0x%x "
               "objects=%lu\n",
-              error, (unsigned long)dwg.num_objects);
+              test_case->name, error, (unsigned long)dwg.num_objects);
       dwg_free (&dwg);
       remove (path);
       return 1;
@@ -3095,17 +3103,19 @@ test_pre_r13_jump_entity_stream (void)
   for (i = 0; i < dwg.num_objects; i++)
     {
       Dwg_Object *obj = &dwg.object[i];
-      if (obj->fixedtype == DWG_TYPE_JUMP && obj->type == DWG_TYPE_JUMP_r11)
+      if (obj->fixedtype == test_case->fixedtype
+          && obj->type == test_case->r11_type)
         {
-          found_jump = 1;
+          found_entity = 1;
           break;
         }
     }
   dwg_free (&dwg);
-  if (!found_jump)
+  if (!found_entity)
     {
-      printf ("generated R11 JUMP fixture did not cover JUMP in blocking "
-              "read\n");
+      printf ("generated R11 %s fixture did not cover %s in blocking "
+              "read\n",
+              test_case->name, test_case->name);
       remove (path);
       return 1;
     }
@@ -3118,18 +3128,79 @@ test_pre_r13_jump_entity_stream (void)
   if (error >= DWG_ERR_CRITICAL || stats.full_decode_objects
       || !stats.num_objects || !stats.decoded_objects
       || stats.decode_error_objects
-      || !(stats.r11_type_mask & (1ULL << DWG_TYPE_JUMP_r11)))
+      || !(stats.r11_type_mask & (1ULL << test_case->r11_type)))
     {
-      printf ("R11 JUMP stream failed: error=0x%x objects=%lu decoded=%lu "
+      printf ("R11 %s stream failed: error=0x%x objects=%lu decoded=%lu "
               "full=%lu decode_errors=%lu mask=0x%llx expected=0x%llx\n",
-              error, (unsigned long)stats.num_objects,
+              test_case->name, error, (unsigned long)stats.num_objects,
               (unsigned long)stats.decoded_objects,
               (unsigned long)stats.full_decode_objects,
               (unsigned long)stats.decode_error_objects, stats.r11_type_mask,
-              1ULL << DWG_TYPE_JUMP_r11);
+              1ULL << test_case->r11_type);
       return 1;
     }
   return 0;
+}
+
+static int
+test_pre_r13_mutated_entity_reject (
+    const R11_Mutated_Entity_Case *test_case)
+{
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Stream_Stats stats = { 0 };
+  BITCODE_RL line_address;
+  char path[128];
+  int error;
+
+  error = write_generated_r11_line_fixture (path, sizeof (path),
+                                            &line_address);
+  if (error)
+    return error;
+  if (mark_r11_entity_type (path, line_address, test_case->r11_type))
+    {
+      printf ("failed to mark generated R11 LINE as %s\n", test_case->name);
+      remove (path);
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.decoded_object = stream_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
+  error = dwg_stream_file_ex (path, &callbacks, &stats);
+  remove (path);
+  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+      || stats.decoded_objects || stats.decode_error_objects)
+    {
+      printf ("R11 %s unsupported reject failed: error=0x%x expected=0x%x "
+              "objects=%lu decoded=%lu decode_errors=%lu\n",
+              test_case->name, error, DWG_ERR_NOTYETSUPPORTED,
+              (unsigned long)stats.num_objects,
+              (unsigned long)stats.decoded_objects,
+              (unsigned long)stats.decode_error_objects);
+      return 1;
+    }
+  return 0;
+}
+
+static int
+test_pre_r13_legacy_entity_stream (void)
+{
+  static const R11_Mutated_Entity_Case unsupported_cases[] = {
+    { DWG_TYPE_REPEAT_r11, DWG_TYPE_REPEAT, "REPEAT" },
+    { DWG_TYPE_ENDREP_r11, DWG_TYPE_ENDREP, "ENDREP" },
+    { DWG_TYPE_LOAD_r11, DWG_TYPE_LOAD, "LOAD" },
+  };
+  static const R11_Mutated_Entity_Case jump_case
+      = { DWG_TYPE_JUMP_r11, DWG_TYPE_JUMP, "JUMP" };
+  size_t i;
+
+  for (i = 0; i < sizeof (unsupported_cases) / sizeof (unsupported_cases[0]);
+       i++)
+    {
+      if (test_pre_r13_mutated_entity_reject (&unsupported_cases[i]))
+        return 1;
+    }
+  return test_pre_r13_mutated_entity_stream (&jump_case);
 }
 
 static int
@@ -3462,8 +3533,8 @@ main (void)
   stream_trace_stage ("test_pre_r13_minsert_opts_reject");
   if (test_pre_r13_minsert_opts_reject ())
     return 1;
-  stream_trace_stage ("test_pre_r13_jump_entity_stream");
-  if (test_pre_r13_jump_entity_stream ())
+  stream_trace_stage ("test_pre_r13_legacy_entity_stream");
+  if (test_pre_r13_legacy_entity_stream ())
     return 1;
   stream_trace_stage ("test_generated_pre_r13_stream_basic");
   if (test_generated_pre_r13_stream_basic ())
