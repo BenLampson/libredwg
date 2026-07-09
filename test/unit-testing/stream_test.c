@@ -84,6 +84,7 @@ typedef struct _stream_stats
   unsigned long long r11_block_polyline_fixedtype_mask;
   unsigned long long r11_vertex_fixedtype_mask;
   unsigned long long r11_table_fixedtype_mask;
+  unsigned long long prer2_legacy_fixedtype_mask;
   BITCODE_BL r11_block_section_objects;
   BITCODE_BL r11_block_section_active;
   size_t min_address;
@@ -169,6 +170,7 @@ static int test_unsupported_pre_r13_versions_reject (void);
 static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
 static int test_pre_r13_minsert_opts_stream (void);
+static int test_pre_r2_legacy_entity_stream (void);
 static int test_pre_r13_legacy_entity_stream (void);
 static int test_generated_pre_r13_stream_basic (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
@@ -443,6 +445,22 @@ pre_r13_table_entry_bit (BITCODE_BS fixedtype)
       return 1ULL << 8;
     case DWG_TYPE_VX_TABLE_RECORD:
       return 1ULL << 9;
+    default:
+      return 0;
+    }
+}
+
+static unsigned long long
+pre_r2_legacy_entity_bit (BITCODE_BS fixedtype)
+{
+  switch (fixedtype)
+    {
+    case DWG_TYPE_REPEAT:
+      return 1ULL << 0;
+    case DWG_TYPE_ENDREP:
+      return 1ULL << 1;
+    case DWG_TYPE_LOAD:
+      return 1ULL << 2;
     default:
       return 0;
     }
@@ -1651,6 +1669,10 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
   stats_add_r11_polyline_fixedtype (stats, object);
   stats_add_r11_vertex_fixedtype (stats, object);
   stats_add_r11_dimension_fixedtype (stats, info, object);
+  if (info && info->decode_mode == DWG_STREAM_DECODE_PRER13_ENTITY
+      && object->supertype == DWG_SUPERTYPE_ENTITY)
+    stats->prer2_legacy_fixedtype_mask |= pre_r2_legacy_entity_bit (
+        object->fixedtype);
   stats_add_semantic_coverage (stats, object);
   if (object->supertype == DWG_SUPERTYPE_ENTITY)
     stats->decoded_entities++;
@@ -3190,64 +3212,94 @@ test_pre_r13_mutated_entity_stream (
 }
 
 static int
-test_pre_r13_mutated_entity_reject (
-    const R11_Mutated_Entity_Case *test_case)
+test_pre_r13_legacy_entity_stream (void)
 {
+  static const R11_Mutated_Entity_Case jump_case
+      = { DWG_TYPE_JUMP_r11, DWG_TYPE_JUMP, "JUMP" };
+
+  return test_pre_r13_mutated_entity_stream (&jump_case);
+}
+
+static int
+test_pre_r2_legacy_entity_stream (void)
+{
+  static const unsigned long long expected_mask
+      = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   Stream_Stats stats = { 0 };
-  BITCODE_RL line_address;
-  char path[128];
+  Dwg_Data dwg = { 0 };
+  char path[1024];
+  BITCODE_BL baseline_entities = 0;
+  BITCODE_BL i;
+  unsigned long long baseline_mask = 0;
   int error;
 
-  error = write_generated_r11_line_fixture (path, sizeof (path),
-                                            &line_address);
-  if (error)
-    return error;
-  if (mark_r11_entity_type (path, line_address, test_case->r11_type))
+  if (!stream_test_source_path (path, sizeof (path),
+                                "test/test-data/r1.4/entities.dwg"))
     {
-      printf ("failed to mark generated R11 LINE as %s\n", test_case->name);
-      remove (path);
+      printf ("failed to resolve R1.4 legacy entity fixture path\n");
+      return 1;
+    }
+
+  error = dwg_read_file (path, &dwg);
+  if (error >= DWG_ERR_CRITICAL || !dwg.num_objects)
+    {
+      printf ("R1.4 legacy blocking read failed: error=0x%x objects=%lu\n",
+              error, (unsigned long)dwg.num_objects);
+      dwg_free (&dwg);
+      return 1;
+    }
+
+  baseline_entities = dwg.header_vars.numentities;
+  for (i = 0; i < dwg.num_objects; i++)
+    {
+      Dwg_Object *obj = &dwg.object[i];
+      baseline_mask |= pre_r2_legacy_entity_bit (obj->fixedtype);
+    }
+  dwg_free (&dwg);
+  if ((baseline_mask & expected_mask) != expected_mask)
+    {
+      printf ("R1.4 legacy blocking read missed fixedtypes: mask=0x%llx "
+              "expected=0x%llx\n",
+              baseline_mask, expected_mask);
       return 1;
     }
 
   callbacks.object = stream_object_callback;
   callbacks.decoded_object = stream_decoded_object_callback;
   callbacks.decode_error = stream_decode_error_callback;
+  callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
   error = dwg_stream_file_ex (path, &callbacks, &stats);
-  remove (path);
-  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
-      || stats.decoded_objects || stats.decode_error_objects)
+  if (error >= DWG_ERR_CRITICAL || !stats.num_objects
+      || stats.num_entities != baseline_entities
+      || stats.num_non_entities || stats.full_decode_objects
+      || stats.lightweight_objects != stats.num_objects
+      || stats.prer13_entity_objects != stats.num_objects
+      || stats.decoded_objects != stats.num_objects
+      || stats.decoded_entities != stats.num_objects
+      || stats.decode_error_objects
+      || (stats.prer2_legacy_fixedtype_mask & expected_mask)
+             != expected_mask)
     {
-      printf ("R11 %s unsupported reject failed: error=0x%x expected=0x%x "
-              "objects=%lu decoded=%lu decode_errors=%lu\n",
-              test_case->name, error, DWG_ERR_NOTYETSUPPORTED,
-              (unsigned long)stats.num_objects,
+      printf ("R1.4 legacy stream failed: error=0x%x objects=%lu "
+              "entities=%lu expected_entities=%lu non_entities=%lu "
+              "lightweight=%lu prer13=%lu full=%lu decoded=%lu "
+              "decoded_entities=%lu decode_errors=%lu mask=0x%llx "
+              "expected=0x%llx\n",
+              error, (unsigned long)stats.num_objects,
+              (unsigned long)stats.num_entities,
+              (unsigned long)baseline_entities,
+              (unsigned long)stats.num_non_entities,
+              (unsigned long)stats.lightweight_objects,
+              (unsigned long)stats.prer13_entity_objects,
+              (unsigned long)stats.full_decode_objects,
               (unsigned long)stats.decoded_objects,
-              (unsigned long)stats.decode_error_objects);
+              (unsigned long)stats.decoded_entities,
+              (unsigned long)stats.decode_error_objects,
+              stats.prer2_legacy_fixedtype_mask, expected_mask);
       return 1;
     }
   return 0;
-}
-
-static int
-test_pre_r13_legacy_entity_stream (void)
-{
-  static const R11_Mutated_Entity_Case unsupported_cases[] = {
-    { DWG_TYPE_REPEAT_r11, DWG_TYPE_REPEAT, "REPEAT" },
-    { DWG_TYPE_ENDREP_r11, DWG_TYPE_ENDREP, "ENDREP" },
-    { DWG_TYPE_LOAD_r11, DWG_TYPE_LOAD, "LOAD" },
-  };
-  static const R11_Mutated_Entity_Case jump_case
-      = { DWG_TYPE_JUMP_r11, DWG_TYPE_JUMP, "JUMP" };
-  size_t i;
-
-  for (i = 0; i < sizeof (unsupported_cases) / sizeof (unsupported_cases[0]);
-       i++)
-    {
-      if (test_pre_r13_mutated_entity_reject (&unsupported_cases[i]))
-        return 1;
-    }
-  return test_pre_r13_mutated_entity_stream (&jump_case);
 }
 
 static int
@@ -3660,6 +3712,9 @@ main (void)
     return 1;
   stream_trace_stage ("test_pre_r13_legacy_entity_stream");
   if (test_pre_r13_legacy_entity_stream ())
+    return 1;
+  stream_trace_stage ("test_pre_r2_legacy_entity_stream");
+  if (test_pre_r2_legacy_entity_stream ())
     return 1;
   stream_trace_stage ("test_generated_pre_r13_stream_basic");
   if (test_generated_pre_r13_stream_basic ())

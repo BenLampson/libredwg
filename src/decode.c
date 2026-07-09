@@ -105,6 +105,10 @@ static int read_r13_r2000_meta_data_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     Dwg_Stream_Input_Mode input_mode, void *restrict user);
+static int read_pre_r2_meta_data_stream (
+    Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+    Dwg_Stream_Input_Mode input_mode, void *restrict user);
 static int read_pre_r13_meta_data_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
@@ -387,6 +391,27 @@ dwg_decode_stream (Bit_Chain *restrict dat,
 
       error = read_r2007_meta_data_stream (dat, &r2007_hdl_dat, &dwg,
                                            callbacks, input_mode, user);
+      dwg_free (&dwg);
+      return error;
+    }
+
+  if (dwg.header.from_version == R_1_4)
+    {
+      if (stream_supported)
+        *stream_supported = 1;
+      {
+        Dwg_Header *_obj = &dwg.header;
+        Bit_Chain *hdl_dat = dat;
+        int i;
+        BITCODE_BL vcount;
+
+        // clang-format off
+        #include "header.spec"
+        // clang-format on
+      }
+
+      error = read_pre_r2_meta_data_stream (dat, &dwg, callbacks,
+                                            input_mode, user);
       dwg_free (&dwg);
       return error;
     }
@@ -9017,6 +9042,72 @@ object_done:
   if ((BITCODE_RL)dat->byte != end)
     return DWG_ERR_INVALIDDWG;
   error |= decode_preR13_sentinel (end_sentinel, end_name, dat, dwg);
+  return error >= DWG_ERR_CRITICAL ? error : 0;
+}
+
+static int
+read_pre_r2_meta_data_stream (
+    Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user)
+{
+  BITCODE_RL num_entities;
+  BITCODE_RL start;
+  BITCODE_RL end;
+  BITCODE_RL size;
+  BITCODE_BL start_index;
+  BITCODE_BL index = 0;
+  BITCODE_BL i;
+  int error = 0;
+
+  if (dwg->header.from_version != R_1_4)
+    return DWG_ERR_NOTYETSUPPORTED;
+
+  error = dwg_add_Document (dwg, 0);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+
+  error = decode_preR13_header_variables (dat, dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+  if (dat->byte + 2 >= dat->size)
+    return error | DWG_ERR_CRITICAL;
+
+  num_entities = dwg->header_vars.numentities;
+  dwg->header.entities_start = dat->byte & 0xFFFFFFFF;
+  dwg->header.entities_end = dwg->header_vars.dwg_size;
+  start = dwg->header.entities_start;
+  end = dwg->header.entities_end;
+  size = end > start ? end - start : 0;
+  start_index = dwg->num_objects;
+
+  error = decode_preR13_entities (start, end, num_entities, size, dat, dwg,
+                                  ENTITIES_SECTION_INDEX);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+
+  for (i = start_index; i < dwg->num_objects; i++)
+    {
+      Dwg_Object *obj = &dwg->object[i];
+      Dwg_Stream_Object_Info info;
+      int callback_error;
+
+      stream_pre_r13_object_info (dwg, obj, index, input_mode, &info);
+      if (callbacks->object)
+        {
+          callback_error = callbacks->object (&info, user);
+          if (callback_error)
+            return callback_error;
+        }
+      if (callbacks->decoded_object)
+        {
+          callback_error = callbacks->decoded_object (&info, obj, user);
+          if (callback_error)
+            return callback_error;
+        }
+      index++;
+    }
+
   return error >= DWG_ERR_CRITICAL ? error : 0;
 }
 
