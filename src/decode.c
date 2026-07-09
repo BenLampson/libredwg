@@ -52,6 +52,8 @@ static int cur_ver = 0;
 static BITCODE_BL rcount1 = 0, rcount2 = 0;
 static bool is_teigha = false;
 
+EXPORT int dwg_add_Document (Dwg_Data *restrict dwg, const int imperial);
+
 #ifdef DWG_ABORT
 static unsigned int errors = 0;
 #  ifndef DWG_ABORT_LIMIT
@@ -100,6 +102,10 @@ static int read_r2004_meta_data_stream (
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     Dwg_Stream_Input_Mode input_mode, void *restrict user);
 static int read_r13_r2000_meta_data_stream (
+    Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+    Dwg_Stream_Input_Mode input_mode, void *restrict user);
+static int read_pre_r13_meta_data_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     Dwg_Stream_Input_Mode input_mode, void *restrict user);
@@ -381,6 +387,27 @@ dwg_decode_stream (Bit_Chain *restrict dat,
 
       error = read_r2007_meta_data_stream (dat, &r2007_hdl_dat, &dwg,
                                            callbacks, input_mode, user);
+      dwg_free (&dwg);
+      return error;
+    }
+
+  if (dwg.header.from_version == R_11)
+    {
+      if (stream_supported)
+        *stream_supported = 1;
+      {
+        Dwg_Header *_obj = &dwg.header;
+        Bit_Chain *hdl_dat = dat;
+        int i;
+        BITCODE_BL vcount;
+
+        // clang-format off
+        #include "header.spec"
+        // clang-format on
+      }
+
+      error = read_pre_r13_meta_data_stream (dat, &dwg, callbacks,
+                                             input_mode, user);
       dwg_free (&dwg);
       return error;
     }
@@ -8495,6 +8522,180 @@ decode_r11_auxheader (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
   LOG_TRACE ("\n");
 
   return error;
+}
+
+static void
+stream_clear_pre_r13_refs (Dwg_Data *restrict dwg,
+                           const BITCODE_BL base_ref_count)
+{
+  BITCODE_BL i;
+
+  for (i = base_ref_count; i < dwg->num_object_refs; i++)
+    {
+      free (dwg->object_ref[i]);
+      dwg->object_ref[i] = NULL;
+    }
+  dwg->num_object_refs = base_ref_count;
+}
+
+static int
+stream_finalize_pre_r13_entity (Bit_Chain *restrict dat,
+                                Dwg_Object *restrict obj)
+{
+  int error = 0;
+
+  if (obj->type == DWG_TYPE_JUMP_r11)
+    return 0;
+
+  if (obj->size > dat->size - obj->address
+      || obj->size + obj->address > dat->byte + 2)
+    {
+      LOG_ERROR ("Invalid obj->size " FORMAT_RL " changed to %" PRIuSIZE,
+                 obj->size, dat->byte + 2 - obj->address);
+      error |= DWG_ERR_VALUEOUTOFBOUNDS;
+      obj->size = ((dat->byte + 2) - obj->address) & 0xFFFFFFFF;
+    }
+  else if (obj->address + obj->size != dat->byte + 2)
+    {
+      if (obj->address + obj->size > dat->byte + 2)
+        {
+          BITCODE_RL offset
+              = (BITCODE_RL)(obj->address + obj->size - (dat->byte + 2));
+          obj->num_unknown_rest = 8 * offset;
+          obj->unknown_rest = bit_read_TF (dat, offset);
+          if (!obj->unknown_rest)
+            {
+              LOG_ERROR ("Out of memory");
+              obj->num_unknown_rest = 0;
+            }
+        }
+      if (obj->address + obj->size > dat->byte + 2)
+        dat->byte = obj->address + obj->size - 2;
+    }
+  if (!bit_check_CRC (dat, obj->address, 0xC0C1))
+    error |= DWG_ERR_WRONGCRC;
+  return error;
+}
+
+static void
+stream_pre_r13_object_info (const Dwg_Data *restrict dwg,
+                            const Dwg_Object *restrict obj,
+                            const BITCODE_BL index,
+                            const Dwg_Stream_Input_Mode input_mode,
+                            Dwg_Stream_Object_Info *restrict info)
+{
+  memset (info, 0, sizeof (*info));
+  info->size = obj->size;
+  info->address = obj->address;
+  info->type = obj->type;
+  info->index = index;
+  info->fixedtype = obj->fixedtype;
+  info->name = obj->name;
+  info->dxfname = obj->dxfname;
+  info->supertype = obj->supertype;
+  info->handle = obj->handle;
+  info->version = dwg->header.version;
+  info->decode_mode = DWG_STREAM_DECODE_PRER13_ENTITY;
+  info->input_mode = input_mode;
+}
+
+static int
+read_pre_r13_meta_data_stream (
+    Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user)
+{
+  BITCODE_RL start = dwg->header.entities_start;
+  BITCODE_RL end = dwg->header.entities_end;
+  BITCODE_BL index = 0;
+  int error = 0;
+
+  if (dwg->header.from_version != R_11)
+    return DWG_ERR_NOTYETSUPPORTED;
+  if (!start || end <= start || end > dat->size || start < 16)
+    return DWG_ERR_INVALIDDWG;
+
+  error = dwg_add_Document (dwg, 0);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+
+  dat->byte = start - 16;
+  dat->bit = 0;
+  error |= decode_preR13_sentinel (DWG_SENTINEL_R11_ENTITIES_BEGIN,
+                                   "DWG_SENTINEL_R11_ENTITIES_BEGIN", dat,
+                                   dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+  if ((BITCODE_RL)dat->byte != start)
+    return DWG_ERR_INVALIDDWG;
+
+  while ((BITCODE_RL)dat->byte < end)
+    {
+      Dwg_Object obj;
+      Dwg_Object_Type_r11 abstype;
+      BITCODE_BL base_ref_count = dwg->num_object_refs;
+      Dwg_Stream_Object_Info info;
+      int callback_error = 0;
+      size_t iter_start = dat->byte;
+
+      memset (&obj, 0, sizeof (obj));
+      obj.index = index;
+      obj.parent = dwg;
+      obj.address = dat->byte;
+      obj.supertype = DWG_SUPERTYPE_ENTITY;
+      obj.type = bit_read_RC (dat);
+      abstype = obj.type > 127
+                    ? (Dwg_Object_Type_r11)((unsigned)obj.type & 0x7F)
+                    : (Dwg_Object_Type_r11)obj.type;
+
+      switch (abstype)
+        {
+        case DWG_TYPE_LINE_r11:
+          error |= dwg_decode_LINE (dat, &obj);
+          break;
+        default:
+          error = DWG_ERR_NOTYETSUPPORTED;
+          goto object_done;
+        }
+
+      error |= stream_finalize_pre_r13_entity (dat, &obj);
+      if (error >= DWG_ERR_CRITICAL)
+        goto object_done;
+      stream_pre_r13_object_info (dwg, &obj, index, input_mode, &info);
+      if (callbacks->object)
+        {
+          callback_error = callbacks->object (&info, user);
+          if (callback_error)
+            {
+              error = callback_error;
+              goto object_done;
+            }
+        }
+      if (callbacks->decoded_object)
+        {
+          callback_error = callbacks->decoded_object (&info, &obj, user);
+          if (callback_error)
+            {
+              error = callback_error;
+              goto object_done;
+            }
+        }
+
+object_done:
+      if (obj.tio.object)
+        dwg_free_object (&obj);
+      stream_clear_pre_r13_refs (dwg, base_ref_count);
+      if (error >= DWG_ERR_CRITICAL || error == DWG_ERR_NOTYETSUPPORTED)
+        return error;
+      if (dat->byte == iter_start)
+        return DWG_ERR_INVALIDDWG;
+      index++;
+    }
+  if ((BITCODE_RL)dat->byte != end)
+    return DWG_ERR_INVALIDDWG;
+  error |= decode_preR13_sentinel (DWG_SENTINEL_R11_ENTITIES_END,
+                                   "DWG_SENTINEL_R11_ENTITIES_END", dat, dwg);
+  return error >= DWG_ERR_CRITICAL ? error : 0;
 }
 
 // sentinel on begin and end is part of this decoding in case of R11

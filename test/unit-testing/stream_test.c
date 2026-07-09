@@ -71,6 +71,7 @@ typedef struct _stream_stats
   BITCODE_BL r13_object_map_objects;
   BITCODE_BL r2007_object_map_objects;
   BITCODE_BL r2004_object_map_objects;
+  BITCODE_BL prer13_entity_objects;
   BITCODE_BL file_map_objects;
   BITCODE_BL heap_objects;
   unsigned long long total_size;
@@ -151,7 +152,7 @@ static int test_unsupported_stream_file_ex_rejects (void);
 static int test_unsupported_pre_r13_versions_reject (void);
 static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
-static int test_generated_pre_r13_stream_rejects (void);
+static int test_generated_pre_r13_stream_line (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
                                     int test_abort_callbacks,
                                     const char *label, int skip_missing,
@@ -232,7 +233,6 @@ static const Unsupported_Stream_Fixture unsupported_pre_r13_fixtures[] = {
   { "AC1006", "R_10" },
   { "AC1007", "R_11b1" },
   { "AC1008", "R_11b2" },
-  { "AC1009", "R_11/R_12" },
 };
 
 static int
@@ -302,6 +302,11 @@ stats_add_object (Stream_Stats *stats, const Dwg_Stream_Object_Info *info)
     {
       stats->lightweight_objects++;
       stats->r13_object_map_objects++;
+    }
+  else if (info->decode_mode == DWG_STREAM_DECODE_PRER13_ENTITY)
+    {
+      stats->lightweight_objects++;
+      stats->prer13_entity_objects++;
     }
   if (info->input_mode == DWG_STREAM_INPUT_FILE_MAP)
     stats->file_map_objects++;
@@ -2133,8 +2138,9 @@ print_stats (const char *label, const Stream_Stats *stats)
           "decoded_non_entities=%lu decoded_handle_mix=%llu decode_errors=%lu "
           "decode_error_entities=%lu decode_error_non_entities=%lu "
           "first_decode_error=0x%x decode_error_handle_mix=%llu r2007=%lu "
-          "r2004=%lu r13=%lu full=%lu file_map=%lu heap=%lu last_address=%zu "
-          "last_size=%lu last_type=%u last_handle=%llu last_super=%u\n",
+          "r2004=%lu r13=%lu prer13=%lu full=%lu file_map=%lu heap=%lu "
+          "last_address=%zu last_size=%lu last_type=%u last_handle=%llu "
+          "last_super=%u\n",
           label, (unsigned long)stats->num_objects,
           (unsigned long)stats->num_entities,
           (unsigned long)stats->num_non_entities, stats->total_size,
@@ -2152,6 +2158,7 @@ print_stats (const char *label, const Stream_Stats *stats)
           (unsigned long)stats->r2007_object_map_objects,
           (unsigned long)stats->r2004_object_map_objects,
           (unsigned long)stats->r13_object_map_objects,
+          (unsigned long)stats->prer13_entity_objects,
           (unsigned long)stats->full_decode_objects,
           (unsigned long)stats->file_map_objects,
           (unsigned long)stats->heap_objects, stats->last_address,
@@ -2678,7 +2685,7 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
 }
 
 static int
-test_generated_pre_r13_stream_rejects (void)
+test_generated_pre_r13_stream_line (void)
 {
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   Stream_Stats stats = { 0 };
@@ -2741,15 +2748,23 @@ test_generated_pre_r13_stream_rejects (void)
   callbacks.decode_error = stream_decode_error_callback;
   error = dwg_stream_file_ex (path, &callbacks, &stats);
   remove (path);
-  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
-      || stats.decoded_objects || stats.decode_error_objects)
+  if (error >= DWG_ERR_CRITICAL || stats.num_objects != 1
+      || stats.num_entities != 1 || stats.full_decode_objects
+      || stats.lightweight_objects != 1 || stats.prer13_entity_objects != 1
+      || stats.decoded_objects != 1 || stats.decoded_entities != 1
+      || stats.decode_error_objects || stats.last_type != DWG_TYPE_LINE_r11)
     {
-      printf ("generated R11 unsupported stream failed: error=0x%x "
-              "expected=0x%x objects=%lu decoded=%lu decode_errors=%lu\n",
-              error, DWG_ERR_NOTYETSUPPORTED,
-              (unsigned long)stats.num_objects,
+      printf ("generated R11 LINE stream failed: error=0x%x objects=%lu "
+              "entities=%lu lightweight=%lu prer13=%lu full=%lu decoded=%lu "
+              "decoded_entities=%lu decode_errors=%lu last_type=%u\n",
+              error, (unsigned long)stats.num_objects,
+              (unsigned long)stats.num_entities,
+              (unsigned long)stats.lightweight_objects,
+              (unsigned long)stats.prer13_entity_objects,
+              (unsigned long)stats.full_decode_objects,
               (unsigned long)stats.decoded_objects,
-              (unsigned long)stats.decode_error_objects);
+              (unsigned long)stats.decoded_entities,
+              (unsigned long)stats.decode_error_objects, stats.last_type);
       return 1;
     }
   return 0;
@@ -2792,8 +2807,8 @@ main (void)
   if (test_generated_minsert_stream_fixture (
           R_2022b, "generated R2022 MINSERT stream parity ok"))
     return 1;
-  stream_trace_stage ("test_generated_pre_r13_stream_rejects");
-  if (test_generated_pre_r13_stream_rejects ())
+  stream_trace_stage ("test_generated_pre_r13_stream_line");
+  if (test_generated_pre_r13_stream_line ())
     return 1;
   stream_trace_stage ("test_large_stream_fixture");
   if (test_large_stream_fixture ())

@@ -106,8 +106,9 @@ cmake --build .\build-codex-stream-tdd --target stream_test
 # fixtures, plus TS1.dwg for OLE/OLE2 entity classification coverage. It also
 # verifies that every currently unsupported pre-R13 header magic rejects in
 # stream mode with DWG_ERR_NOTYETSUPPORTED, and that a generated R11 LINE
-# fixture remains readable by the blocking path while stream mode rejects it.
-# Stream APIs do not fall back to full load.
+# fixture remains readable by the blocking path while stream mode reads the
+# LINE entity through the pre-R13 entity walker. Stream APIs do not fall back to
+# full load.
 Remove-Item Env:LIBREDWG_STREAM_TEST_DWG -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_REFS -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_LARGE_DWG -ErrorAction SilentlyContinue
@@ -282,14 +283,15 @@ Default unsupported-version guard:
 ```text
 Each currently unsupported pre-R13 header magic is tested directly:
 `AC1.50`, `AC2.10`, `AC2.21`, `AC2.22`, `AC1001`, `AC1002`, `AC1003`,
-`AC1004`, `AC1005`, `AC1006`, `AC1007`, `AC1008`, and `AC1009`.
+`AC1004`, `AC1005`, `AC1006`, `AC1007`, and `AC1008`.
 Every one must return `DWG_ERR_NOTYETSUPPORTED` with no object,
 decoded-object, or decode-error callbacks.
 
-A generated R11 LINE fixture is also readable by `dwg_read_file`, then rejects
-stream reading with `DWG_ERR_NOTYETSUPPORTED` and no object, decoded-object, or
-decode-error callbacks. This proves blocking support does not imply stream
-support.
+A generated R11 LINE fixture is readable by `dwg_read_file`, then reads through
+the pure stream pre-R13 entity walker as one lightweight `DWG_TYPE_LINE_r11`
+entity with decoded-object callback coverage and `full=0`. This is not full
+R11/R12 parity yet; unsupported R11/R12 entity/table coverage must still fail
+clearly instead of falling back.
 ```
 
 Current stream hardening:
@@ -441,7 +443,8 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream supported | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2014/2015/2016/2017 are not separate enum values here; they are covered by the `R_2013` file family when the file identifies that way. |
 | Pure stream supported | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2019/2020/2021 are not separate enum values here; they are covered by the `R_2018` file family when the file identifies that way. |
 | Pure stream supported | `R_2022b` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. Current validation uses a generated R2022b MINSERT fixture because no repository R2022 fixture exists. |
-| Not pure stream supported | `R_2_0b`, `R_2_0`, `R_2_10`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_2_6`, `R_9`, `R_9c1`, `R_10`, `R_11b1`, `R_11b2`, `R_11` / `R_12` | Pre-R13 formats are not implemented in the current pure stream path. Stream APIs must return `DWG_ERR_NOTYETSUPPORTED` for these versions until a real stream reader exists. |
+| Partial pure stream support | `R_11` / `R_12` | The current pre-R13 stream reader covers generated main-entity-section `DWG_TYPE_LINE_r11` fixtures only, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. It is not full R11/R12 parity: table sections, block/extras entity sections, and the remaining R11 entity types still need implementation and validation. Unsupported R11/R12 coverage must return `DWG_ERR_NOTYETSUPPORTED` rather than falling back. |
+| Not pure stream supported | `R_2_0b`, `R_2_0`, `R_2_10`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_2_6`, `R_9`, `R_9c1`, `R_10`, `R_11b1`, `R_11b2` | These pre-R13 formats are not implemented in the current pure stream path. Stream APIs must return `DWG_ERR_NOTYETSUPPORTED` for these versions until a real stream reader exists. |
 
 Version routing is determined from the DWG file header before selecting a stream
 reader. The C decoder reads the header magic at the start of the file and maps
@@ -475,7 +478,9 @@ Header magic codes relevant to the current stream target:
 
 Pre-R13 header magic values are also version-detectable but are not current pure
 stream support: `AC1.50`, `AC2.10`, `AC2.21`, `AC2.22`, `AC1001`, `AC1002`,
-`AC1003`, `AC1004`, `AC1005`, `AC1006`, `AC1007`, `AC1008`, and `AC1009`.
+`AC1003`, `AC1004`, `AC1005`, `AC1006`, `AC1007`, and `AC1008`.
+`AC1009` is version-detectable as `R_11` / `R_12` and has only the partial
+main-entity-section LINE stream coverage described above.
 
 The important distinction is that a successful blocking read elsewhere does not
 count as stream support. A stream API call on an unsupported version must fail
@@ -487,7 +492,13 @@ The explicit missing pure-stream list is therefore:
 ```text
 Pre-R13:
 R_2_0b, R_2_0, R_2_10, R_2_21, R_2_22, R_2_4, R_2_5, R_2_6,
-R_9, R_9c1, R_10, R_11b1, R_11b2, R_11/R_12
+R_9, R_9c1, R_10, R_11b1, R_11b2
+
+R_11/R_12 remaining after the first partial stream slice:
+table sections; block entity section; extra entity section; non-LINE R11
+entity types POINT, CIRCLE, SHAPE, REPEAT, ENDREP, TEXT, ARC, TRACE, LOAD,
+SOLID, BLOCK, ENDBLK, INSERT/MINSERT, ATTDEF, ATTRIB, SEQEND, JUMP, POLYLINE,
+VERTEX, 3DLINE, 3DFACE, DIMENSION, and VIEWPORT.
 ```
 
 The explicit completed pure-stream list is:
@@ -508,7 +519,9 @@ Development targets from the current state to complete stream parity:
 
 1. Add pre-R13 pure stream support if those blocking-reader versions are in
    scope for complete coverage.
-   - Until a real pre-R13 stream reader exists, keep generated pre-R13
+   - Expand the current R11/R12 `DWG_TYPE_LINE_r11` main-entity-section stream
+     slice to the remaining R11/R12 entity and table sections.
+   - Until a real reader exists for each older pre-R13 version, keep generated
      unsupported tests returning `DWG_ERR_NOTYETSUPPORTED`.
 2. Keep unsupported-version behavior explicit.
    - Supported pure stream versions must pass with or without
