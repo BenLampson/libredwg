@@ -3008,13 +3008,14 @@ test_generated_pre_r13_stream_basic (void)
   Dwg_Object_BLOCK_HEADER *blk;
   Dwg_Object_BLOCK_HEADER *nested_blk;
   Dwg_Entity_INSERT *insert;
+  Dwg_Entity_INSERT *block_insert;
   unsigned long long expected_mask = 0;
   unsigned long long expected_block_mask = 0;
   unsigned long long expected_dim_mask = (1ULL << 7) - 1;
   unsigned long long expected_polyline_mask = (1ULL << 4) - 1;
   unsigned long long expected_vertex_mask = (1ULL << 5) - 1;
-  BITCODE_BL expected_count = 66;
-  BITCODE_BL expected_block_count = 42;
+  BITCODE_BL expected_count = 70;
+  BITCODE_BL expected_block_count = 46;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
   dwg_point_3d pt3 = { 3.0, 1.0, 0.0 };
@@ -3062,7 +3063,9 @@ test_generated_pre_r13_stream_basic (void)
   expected_block_mask |= 1ULL << DWG_TYPE_SOLID_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_3DFACE_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_SHAPE_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_ATTDEF_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_INSERT_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_ATTRIB_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_DIMENSION_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_SEQEND_r11;
   expected_block_mask |= 1ULL << DWG_TYPE_POLYLINE_r11;
@@ -3115,6 +3118,11 @@ test_generated_pre_r13_stream_basic (void)
       || !dwg_add_POLYLINE_MESH (blk, 2, 2, mesh_pts)
       || !dwg_add_POLYLINE_PFACE (blk, 3, 1, pface_pts, pface_faces)
       || !dwg_add_INSERT (blk, &pt4, "nestedblk", 1.0, 1.0, 1.0, 0.0)
+      || !dwg_add_ATTDEF (blk, 0.25, 0, "Block prompt", &pt2, "BTAG",
+                          "BValue")
+      || !(block_insert = dwg_add_INSERT (blk, &pt1, "nestedblk", 1.0,
+                                          1.0, 1.0, 0.0))
+      || !dwg_add_ATTRIB (block_insert, 0.25, 0, &pt3, "BATTR", "BAttr")
       || !dwg_add_DIMENSION_LINEAR (blk, &pt1, &pt2, &pt3, 0.0)
       || !dwg_add_DIMENSION_ALIGNED (blk, &pt1, &pt2, &pt3)
       || !dwg_add_DIMENSION_ANG2LN (blk, &pt1, &pt2, &pt3, &pt4)
