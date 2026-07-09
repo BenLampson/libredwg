@@ -21,6 +21,15 @@
 // exported only for unit-testing/decode_test
 // not part of the public API
 EXPORT int decode_preR13 (Bit_Chain *restrict dat, Dwg_Data *restrict dwg);
+EXPORT int decode_preR13_header_variables (Bit_Chain *restrict dat,
+                                           Dwg_Data *restrict dwg);
+EXPORT int decode_preR13_section_hdr (const char *restrict name,
+                                      Dwg_Section_Type_r11 id,
+                                      Bit_Chain *restrict dat,
+                                      Dwg_Data *restrict dwg);
+EXPORT int decode_preR13_section (Dwg_Section_Type_r11 id,
+                                  Bit_Chain *restrict dat,
+                                  Dwg_Data *restrict dwg);
 EXPORT int decode_entity_preR13 (Bit_Chain *restrict dat,
                                  Dwg_Object *restrict obj,
                                  Dwg_Object_Entity *ent);

@@ -73,14 +73,6 @@ void dwg_set_next_hdl (Dwg_Data *dwg, unsigned long value);
  * Private functions
  */
 
-static int decode_preR13_section_hdr (const char *restrict name,
-                                      Dwg_Section_Type_r11 id,
-                                      Bit_Chain *restrict dat,
-                                      Dwg_Data *restrict dwg);
-static int decode_preR13_section (Dwg_Section_Type_r11 id,
-                                  Bit_Chain *restrict dat,
-                                  Dwg_Data *restrict dwg);
-
 /*----------------------------------------------------------------------------
  * Public function definitions
  */
@@ -105,8 +97,9 @@ dwg_decode_preR13_handleref (Bit_Chain *restrict dat, int size,
   return ref;
 }
 
-static int
-decode_preR13_header_variables (Bit_Chain *dat, Dwg_Data *restrict dwg)
+EXPORT int
+decode_preR13_header_variables (Bit_Chain *restrict dat,
+                                Dwg_Data *restrict dwg)
 {
   Dwg_Header_Variables *_obj = &dwg->header_vars;
   Dwg_Object *obj = NULL;
@@ -122,7 +115,7 @@ decode_preR13_header_variables (Bit_Chain *dat, Dwg_Data *restrict dwg)
 
 // We put the 5 tables into sections.
 // number is num_entries in the table. >=r13 it is the id.
-static int
+EXPORT int
 decode_preR13_section_hdr (const char *restrict name, Dwg_Section_Type_r11 id,
                            Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
 {
@@ -232,7 +225,7 @@ decode_preR13_section_hdr (const char *restrict name, Dwg_Section_Type_r11 id,
 
 GCC30_DIAG_IGNORE (-Wformat-nonliteral)
 // TABLES really
-static int
+EXPORT int
 decode_preR13_section (Dwg_Section_Type_r11 id, Bit_Chain *restrict dat,
                        Dwg_Data *restrict dwg)
 {

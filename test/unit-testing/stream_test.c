@@ -83,6 +83,7 @@ typedef struct _stream_stats
   unsigned long long r11_polyline_fixedtype_mask;
   unsigned long long r11_block_polyline_fixedtype_mask;
   unsigned long long r11_vertex_fixedtype_mask;
+  unsigned long long r11_table_fixedtype_mask;
   BITCODE_BL r11_block_section_objects;
   BITCODE_BL r11_block_section_active;
   size_t min_address;
@@ -195,6 +196,7 @@ static void stats_add_owner_coverage (Stream_Semantic_Coverage *coverage,
                                       BITCODE_RLL ownerhandle);
 static void stats_add_semantic_coverage (Stream_Stats *stats,
                                          const Dwg_Object *obj);
+static unsigned long long pre_r13_table_entry_bit (BITCODE_BS fixedtype);
 static int semantic_coverage_equal (const Stream_Semantic_Coverage *a,
                                     const Stream_Semantic_Coverage *b);
 static void semantic_coverage_add (Stream_Semantic_Coverage *dst,
@@ -410,6 +412,36 @@ stats_add_r11_dimension_fixedtype (Stream_Stats *stats,
     stats->r11_block_dimension_fixedtype_mask |= bit;
 }
 
+static unsigned long long
+pre_r13_table_entry_bit (BITCODE_BS fixedtype)
+{
+  switch (fixedtype)
+    {
+    case DWG_TYPE_BLOCK_HEADER:
+      return 1ULL << 0;
+    case DWG_TYPE_LAYER:
+      return 1ULL << 1;
+    case DWG_TYPE_STYLE:
+      return 1ULL << 2;
+    case DWG_TYPE_LTYPE:
+      return 1ULL << 3;
+    case DWG_TYPE_VIEW:
+      return 1ULL << 4;
+    case DWG_TYPE_UCS:
+      return 1ULL << 5;
+    case DWG_TYPE_VPORT:
+      return 1ULL << 6;
+    case DWG_TYPE_APPID:
+      return 1ULL << 7;
+    case DWG_TYPE_DIMSTYLE:
+      return 1ULL << 8;
+    case DWG_TYPE_VX_TABLE_RECORD:
+      return 1ULL << 9;
+    default:
+      return 0;
+    }
+}
+
 static void
 stats_add_object (Stream_Stats *stats, const Dwg_Stream_Object_Info *info)
 {
@@ -424,8 +456,13 @@ stats_add_object (Stream_Stats *stats, const Dwg_Stream_Object_Info *info)
                        + ((unsigned long long)info->type << 33)
                        + ((unsigned long long)info->supertype << 49);
   if (info->decode_mode == DWG_STREAM_DECODE_PRER13_ENTITY
+      && info->supertype == DWG_SUPERTYPE_ENTITY
       && info->type < 64)
     stats->r11_type_mask |= 1ULL << info->type;
+  if (info->decode_mode == DWG_STREAM_DECODE_PRER13_ENTITY
+      && info->supertype != DWG_SUPERTYPE_ENTITY)
+    stats->r11_table_fixedtype_mask |= pre_r13_table_entry_bit (
+        info->fixedtype);
   if (info->decode_mode == DWG_STREAM_DECODE_FULL)
     stats->full_decode_objects++;
   else if (info->decode_mode == DWG_STREAM_DECODE_R2007_OBJECT_MAP)
@@ -3261,6 +3298,15 @@ test_pre_r13_minsert_opts_reject (void)
 }
 
 static int
+is_pre_r13_table_entry (const Dwg_Object *obj)
+{
+  if (!obj || obj->supertype == DWG_SUPERTYPE_ENTITY)
+    return 0;
+
+  return pre_r13_table_entry_bit (obj->fixedtype) != 0;
+}
+
+static int
 test_generated_pre_r13_stream_basic (void)
 {
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
@@ -3280,8 +3326,12 @@ test_generated_pre_r13_stream_basic (void)
   unsigned long long expected_dim_mask = (1ULL << 7) - 1;
   unsigned long long expected_polyline_mask = (1ULL << 4) - 1;
   unsigned long long expected_vertex_mask = (1ULL << 5) - 1;
-  BITCODE_BL expected_count = 71;
+  unsigned long long expected_table_mask = 0;
+  BITCODE_BL expected_entity_count = 71;
+  BITCODE_BL expected_table_count = 0;
+  BITCODE_BL expected_count = expected_entity_count;
   BITCODE_BL expected_block_count = 46;
+  BITCODE_BL i;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
   dwg_point_3d pt3 = { 3.0, 1.0, 0.0 };
@@ -3467,6 +3517,23 @@ test_generated_pre_r13_stream_basic (void)
       remove (path);
       return 1;
     }
+  for (i = 0; i < dwg.num_objects; i++)
+    {
+      if (is_pre_r13_table_entry (&dwg.object[i]))
+        {
+          expected_table_count++;
+          expected_table_mask |= pre_r13_table_entry_bit (
+              dwg.object[i].fixedtype);
+        }
+    }
+  if (!expected_table_count)
+    {
+      printf ("generated R11 blocking read did not cover table entries\n");
+      dwg_free (&dwg);
+      remove (path);
+      return 1;
+    }
+  expected_count = expected_entity_count + expected_table_count;
   dwg_free (&dwg);
 
   callbacks.object = stream_object_callback;
@@ -3475,12 +3542,16 @@ test_generated_pre_r13_stream_basic (void)
   error = dwg_stream_file_ex (path, &callbacks, &stats);
   remove (path);
   if (error >= DWG_ERR_CRITICAL || stats.num_objects != expected_count
-      || stats.num_entities != expected_count || stats.full_decode_objects
+      || stats.num_entities != expected_entity_count
+      || stats.num_non_entities != expected_table_count
+      || stats.full_decode_objects
       || stats.lightweight_objects != expected_count
       || stats.prer13_entity_objects != expected_count
       || stats.decoded_objects != expected_count
-      || stats.decoded_entities != expected_count
+      || stats.decoded_entities != expected_entity_count
+      || stats.decoded_non_entities != expected_table_count
       || stats.decode_error_objects
+      || stats.r11_table_fixedtype_mask != expected_table_mask
       || stats.r11_block_section_objects != expected_block_count
       || (stats.r11_type_mask & expected_mask) != expected_mask
       || (stats.r11_block_section_type_mask & expected_block_mask)
@@ -3497,9 +3568,12 @@ test_generated_pre_r13_stream_basic (void)
              != expected_vertex_mask)
     {
       printf ("generated R11 basic stream failed: error=0x%x objects=%lu "
-              "entities=%lu lightweight=%lu prer13=%lu full=%lu decoded=%lu "
-              "decoded_entities=%lu decode_errors=%lu mask=0x%llx "
-              "expected=0x%llx block_objects=%lu block_expected=%lu "
+              "entities=%lu entity_expected=%lu non_entities=%lu "
+              "table_expected=%lu lightweight=%lu prer13=%lu full=%lu "
+              "decoded=%lu decoded_entities=%lu decoded_non_entities=%lu "
+              "decode_errors=%lu mask=0x%llx expected=0x%llx "
+              "table_mask=0x%llx table_mask_expected=0x%llx "
+              "block_objects=%lu block_expected=%lu "
               "block_mask=0x%llx block_mask_expected=0x%llx "
               "dim_mask=0x%llx block_dim_mask=0x%llx "
               "dim_expected=0x%llx "
@@ -3509,13 +3583,19 @@ test_generated_pre_r13_stream_basic (void)
               "last_type=%u\n",
               error, (unsigned long)stats.num_objects,
               (unsigned long)stats.num_entities,
+              (unsigned long)expected_entity_count,
+              (unsigned long)stats.num_non_entities,
+              (unsigned long)expected_table_count,
               (unsigned long)stats.lightweight_objects,
               (unsigned long)stats.prer13_entity_objects,
               (unsigned long)stats.full_decode_objects,
               (unsigned long)stats.decoded_objects,
               (unsigned long)stats.decoded_entities,
+              (unsigned long)stats.decoded_non_entities,
               (unsigned long)stats.decode_error_objects, stats.r11_type_mask,
-              expected_mask, (unsigned long)stats.r11_block_section_objects,
+              expected_mask, stats.r11_table_fixedtype_mask,
+              expected_table_mask,
+              (unsigned long)stats.r11_block_section_objects,
               (unsigned long)expected_block_count,
               stats.r11_block_section_type_mask, expected_block_mask,
               stats.r11_dimension_fixedtype_mask,
