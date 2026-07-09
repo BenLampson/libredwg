@@ -109,6 +109,10 @@ static int read_pre_r2_meta_data_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     Dwg_Stream_Input_Mode input_mode, void *restrict user);
+static int read_pre_r10_meta_data_stream (
+    Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+    Dwg_Stream_Input_Mode input_mode, void *restrict user);
 static int read_pre_r13_meta_data_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
@@ -412,6 +416,27 @@ dwg_decode_stream (Bit_Chain *restrict dat,
 
       error = read_pre_r2_meta_data_stream (dat, &dwg, callbacks,
                                             input_mode, user);
+      dwg_free (&dwg);
+      return error;
+    }
+
+  if (dwg.header.from_version == R_2_10)
+    {
+      if (stream_supported)
+        *stream_supported = 1;
+      {
+        Dwg_Header *_obj = &dwg.header;
+        Bit_Chain *hdl_dat = dat;
+        int i;
+        BITCODE_BL vcount;
+
+        // clang-format off
+        #include "header.spec"
+        // clang-format on
+      }
+
+      error = read_pre_r10_meta_data_stream (dat, &dwg, callbacks,
+                                             input_mode, user);
       dwg_free (&dwg);
       return error;
     }
@@ -8686,6 +8711,40 @@ emit_pre_r13_existing_table_entries_stream (
 }
 
 static int
+emit_pre_r13_object_range_stream (
+    Dwg_Data *restrict dwg,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user,
+    const BITCODE_BL start_index, BITCODE_BL *restrict index)
+{
+  BITCODE_BL i;
+
+  for (i = start_index; i < dwg->num_objects; i++)
+    {
+      Dwg_Object *obj = &dwg->object[i];
+      Dwg_Stream_Object_Info info;
+      int callback_error;
+
+      stream_pre_r13_object_info (dwg, obj, *index, input_mode, &info);
+      if (callbacks->object)
+        {
+          callback_error = callbacks->object (&info, user);
+          if (callback_error)
+            return callback_error;
+        }
+      if (callbacks->decoded_object)
+        {
+          callback_error = callbacks->decoded_object (&info, obj, user);
+          if (callback_error)
+            return callback_error;
+        }
+      (*index)++;
+    }
+
+  return 0;
+}
+
+static int
 decode_pre_r13_polyline_variant (Bit_Chain *restrict dat,
                                  Dwg_Object *restrict obj)
 {
@@ -8850,46 +8909,25 @@ read_pre_r13_table_section_stream (
     const Dwg_Section_Type_r11 section, BITCODE_BL *restrict index)
 {
   BITCODE_BL start_index;
-  BITCODE_BL i;
   Dwg_Section *tbl;
   int error;
 
   tbl = &dwg->header.section[section];
   if (!tbl->address || !tbl->number)
     return 0;
-  if (tbl->address < 16)
+  if (dwg->header.from_version >= R_11 && tbl->address < 16)
     return DWG_ERR_INVALIDDWG;
 
-  dat->byte = tbl->address - 16;
+  dat->byte = dwg->header.from_version >= R_11 ? tbl->address - 16
+                                                : tbl->address;
   dat->bit = 0;
   start_index = dwg->num_objects;
   error = decode_preR13_section (section, dat, dwg);
   if (error >= DWG_ERR_CRITICAL)
     return error;
 
-  for (i = start_index; i < dwg->num_objects; i++)
-    {
-      Dwg_Object *obj = &dwg->object[i];
-      Dwg_Stream_Object_Info info;
-      int callback_error;
-
-      stream_pre_r13_object_info (dwg, obj, *index, input_mode, &info);
-      if (callbacks->object)
-        {
-          callback_error = callbacks->object (&info, user);
-          if (callback_error)
-            return callback_error;
-        }
-      if (callbacks->decoded_object)
-        {
-          callback_error = callbacks->decoded_object (&info, obj, user);
-          if (callback_error)
-            return callback_error;
-        }
-      (*index)++;
-    }
-
-  return 0;
+  return emit_pre_r13_object_range_stream (dwg, callbacks, input_mode, user,
+                                           start_index, index);
 }
 
 static int
@@ -9057,7 +9095,6 @@ read_pre_r2_meta_data_stream (
   BITCODE_RL size;
   BITCODE_BL start_index;
   BITCODE_BL index = 0;
-  BITCODE_BL i;
   int error = 0;
 
   if (dwg->header.from_version != R_1_4)
@@ -9086,29 +9123,132 @@ read_pre_r2_meta_data_stream (
   if (error >= DWG_ERR_CRITICAL)
     return error;
 
-  for (i = start_index; i < dwg->num_objects; i++)
-    {
-      Dwg_Object *obj = &dwg->object[i];
-      Dwg_Stream_Object_Info info;
-      int callback_error;
+  return emit_pre_r13_object_range_stream (dwg, callbacks, input_mode, user,
+                                           start_index, &index);
+}
 
-      stream_pre_r13_object_info (dwg, obj, index, input_mode, &info);
-      if (callbacks->object)
-        {
-          callback_error = callbacks->object (&info, user);
-          if (callback_error)
-            return callback_error;
-        }
-      if (callbacks->decoded_object)
-        {
-          callback_error = callbacks->decoded_object (&info, obj, user);
-          if (callback_error)
-            return callback_error;
-        }
-      index++;
+static int
+read_pre_r10_meta_data_stream (
+    Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user)
+{
+  BITCODE_RL blocks_start;
+  BITCODE_RL blocks_end;
+  BITCODE_RL blocks_size;
+  BITCODE_RL extras_start;
+  BITCODE_RL extras_end;
+  BITCODE_RL extras_size;
+  BITCODE_RL num_entities;
+  BITCODE_BL default_object_count;
+  BITCODE_BL start_index;
+  BITCODE_BL index = 0;
+  int error = 0;
+
+  if (dwg->header.from_version != R_2_10)
+    return DWG_ERR_NOTYETSUPPORTED;
+
+  blocks_start = dwg->header.blocks_start;
+  blocks_size = dwg->header.blocks_size;
+  if (blocks_size > 0xffffff)
+    blocks_size &= 0xffffff;
+  blocks_end = blocks_start + blocks_size;
+  extras_start = dwg->header.extras_start;
+  extras_size = dwg->header.extras_size;
+  if (extras_size > 0xffffff)
+    extras_size &= 0xffffff;
+  extras_end = extras_start + extras_size;
+
+  error = dwg_add_Document (dwg, 0);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+  default_object_count = dwg->num_objects;
+
+  dwg->header.section[0].number = 0;
+  dwg->header.section[0].type = (Dwg_Section_Type)SECTION_HEADER_R11;
+  strcpy (dwg->header.section[0].name, "HEADER");
+
+  error = decode_preR13_section_hdr ("BLOCK", SECTION_BLOCK, dat, dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+  error = decode_preR13_section_hdr ("LAYER", SECTION_LAYER, dat, dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+  error = decode_preR13_section_hdr ("STYLE", SECTION_STYLE, dat, dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+  error = decode_preR13_section_hdr ("LTYPE", SECTION_LTYPE, dat, dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+  error = decode_preR13_section_hdr ("VIEW", SECTION_VIEW, dat, dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+
+  error = decode_preR13_header_variables (dat, dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+  if (dat->byte + 2 >= dat->size)
+    return error | DWG_ERR_CRITICAL;
+
+  num_entities = dwg->header_vars.numentities;
+  start_index = dwg->num_objects;
+  error = decode_preR13_entities (
+      dwg->header.entities_start, dwg->header.entities_end, num_entities,
+      dwg->header.entities_end - dwg->header.entities_start, dat, dwg,
+      ENTITIES_SECTION_INDEX);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+  error = emit_pre_r13_object_range_stream (dwg, callbacks, input_mode, user,
+                                            start_index, &index);
+  if (error)
+    return error;
+
+#define STREAM_PRER10_TABLE_SECTION(section)                                  \
+  do                                                                          \
+    {                                                                         \
+      error = read_pre_r13_table_section_stream (                             \
+          dat, dwg, callbacks, input_mode, user, section, &index);            \
+      if (error)                                                              \
+        return error;                                                         \
+    }                                                                         \
+  while (0)
+
+  STREAM_PRER10_TABLE_SECTION (SECTION_BLOCK);
+  STREAM_PRER10_TABLE_SECTION (SECTION_LAYER);
+  STREAM_PRER10_TABLE_SECTION (SECTION_STYLE);
+  STREAM_PRER10_TABLE_SECTION (SECTION_LTYPE);
+  STREAM_PRER10_TABLE_SECTION (SECTION_VIEW);
+
+#undef STREAM_PRER10_TABLE_SECTION
+
+  if (blocks_size)
+    {
+      start_index = dwg->num_objects;
+      error = decode_preR13_entities (blocks_start, blocks_end, 0, blocks_size,
+                                      dat, dwg, BLOCKS_SECTION_INDEX);
+      if (error >= DWG_ERR_CRITICAL)
+        return error;
+      error = emit_pre_r13_object_range_stream (
+          dwg, callbacks, input_mode, user, start_index, &index);
+      if (error)
+        return error;
     }
 
-  return error >= DWG_ERR_CRITICAL ? error : 0;
+  if (extras_size)
+    {
+      start_index = dwg->num_objects;
+      error = decode_preR13_entities (extras_start, extras_end, 0, extras_size,
+                                      dat, dwg, EXTRAS_SECTION_INDEX);
+      if (error >= DWG_ERR_CRITICAL)
+        return error;
+      error = emit_pre_r13_object_range_stream (
+          dwg, callbacks, input_mode, user, start_index, &index);
+      if (error)
+        return error;
+    }
+
+  return emit_pre_r13_existing_table_entries_stream (
+      dwg, callbacks, input_mode, user, default_object_count, &index);
 }
 
 static int

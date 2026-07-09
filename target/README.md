@@ -283,7 +283,7 @@ Default unsupported-version guard:
 
 ```text
 Each currently unsupported pre-R13 header magic is tested directly:
-`AC1.50`, `AC2.10`, `AC2.21`, `AC2.22`, `AC1001`, `AC1002`, `AC1003`,
+`AC1.50`, `AC2.21`, `AC2.22`, `AC1001`, `AC1002`, `AC1003`,
 `AC1004`, `AC1005`, `AC1006`, `AC1007`, and `AC1008`.
 Every one must return `DWG_ERR_NOTYETSUPPORTED` with no object,
 decoded-object, or decode-error callbacks.
@@ -310,6 +310,11 @@ it with `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. A real R1.4 fixture,
 and `dwg_stream_file_ex` with `DWG_STREAM_F_NO_FULL_FALLBACK`; it verifies the
 header `numentities` count and covers the older legacy fixedtypes
 `DWG_TYPE_REPEAT`, `DWG_TYPE_ENDREP`, and `DWG_TYPE_LOAD` with no full fallback.
+A real R2.10 fixture, `test/test-data/r2.10/entities.dwg`, is read through
+both `dwg_read_file` and `dwg_stream_file_ex` with
+`DWG_STREAM_F_NO_FULL_FALLBACK`; it verifies actual file entities, pre-R13
+table-entry fixedtypes, and the version-valid legacy fixedtypes
+`DWG_TYPE_REPEAT` and `DWG_TYPE_ENDREP` with no full fallback.
 A generated R11 `DWG_TYPE_INSERT_r11` fixture also validates
 MINSERT-specific option fields: `OPTS_R11_INSERT_HAS_NUM_COLS`,
 `OPTS_R11_INSERT_HAS_NUM_ROWS`, `OPTS_R11_INSERT_HAS_COL_SPACING`, and
@@ -483,6 +488,7 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Status | Exact versions | Meaning |
 | --- | --- | --- |
 | Partial pure stream support | `R_1_4` | The pre-R2 stream reader covers the real `test/test-data/r1.4/entities.dwg` entity section with blocking-vs-stream validation of header `numentities`, `DWG_TYPE_REPEAT`, `DWG_TYPE_ENDREP`, and `DWG_TYPE_LOAD`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. This is not full R1.4 parity across all possible files. |
+| Partial pure stream support | `R_2_10` | The pre-R10 stream reader covers the real `test/test-data/r2.10/entities.dwg` entity and table sections with blocking-vs-stream validation of actual file entities, pre-R13 table entries, `DWG_TYPE_REPEAT`, and `DWG_TYPE_ENDREP`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. This is not full R2.10 parity across all possible files. |
 | Pure stream supported | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map stream reader. Must pass parity with `full=0`. |
 | Pure stream supported | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map stream reader. Must pass parity with `full=0`. AutoCAD 2005/2006 are not separate enum values here; they are covered by the `R_2004` file family when the file identifies that way. |
 | Pure stream supported | `R_2007a`, `R_2007b`, `R_2007` | Uses the R2007 object-map stream reader. Must pass parity with `full=0`. AutoCAD 2008/2009 are not separate enum values here; they are covered by the `R_2007` file family when the file identifies that way. |
@@ -491,7 +497,7 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream supported | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2019/2020/2021 are not separate enum values here; they are covered by the `R_2018` file family when the file identifies that way. |
 | Pure stream supported | `R_2022b` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. Current validation uses a generated R2022b MINSERT fixture because no repository R2022 fixture exists. |
 | Partial pure stream support | `R_11` / `R_12` | The current pre-R13 stream reader covers generated main-entity-section fixtures for `DWG_TYPE_LINE_r11`, `DWG_TYPE_POINT_r11`, `DWG_TYPE_CIRCLE_r11`, `DWG_TYPE_TEXT_r11`, `DWG_TYPE_ARC_r11`, `DWG_TYPE_TRACE_r11`, `DWG_TYPE_SOLID_r11`, `DWG_TYPE_3DFACE_r11`, `DWG_TYPE_SHAPE_r11`, ordinary `DWG_TYPE_INSERT_r11`, `DWG_TYPE_ATTDEF_r11`, `DWG_TYPE_ATTRIB_r11`, `DWG_TYPE_POLYLINE_r11`, `DWG_TYPE_VERTEX_r11`, `DWG_TYPE_SEQEND_r11`, `DWG_TYPE_JUMP_r11`, `DWG_TYPE_DIMENSION_r11`, and `DWG_TYPE_VIEWPORT_r11`, plus a generated block-entity-section fixture for `DWG_TYPE_BLOCK_r11`, block-owned `DWG_TYPE_LINE_r11`, `DWG_TYPE_POINT_r11`, `DWG_TYPE_CIRCLE_r11`, `DWG_TYPE_TEXT_r11`, `DWG_TYPE_ARC_r11`, `DWG_TYPE_TRACE_r11`, `DWG_TYPE_SOLID_r11`, `DWG_TYPE_3DFACE_r11`, `DWG_TYPE_SHAPE_r11`, nested ordinary and attributed `DWG_TYPE_INSERT_r11`, `DWG_TYPE_ATTDEF_r11`, `DWG_TYPE_ATTRIB_r11`, `DWG_TYPE_DIMENSION_r11`, `DWG_TYPE_POLYLINE_r11`, `DWG_TYPE_VERTEX_r11`, `DWG_TYPE_SEQEND_r11`, and `DWG_TYPE_ENDBLK_r11`, and generated extra-entity-section coverage for `DWG_TYPE_LINE_r11`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. `DWG_TYPE_DIMENSION_r11` is fixture-validated across linear, aligned, two-line angular, three-point angular, diameter, ordinate, and radius decoded fixedtypes in both main and block entity sections. `DWG_TYPE_POLYLINE_r11` is fixture-validated across 2D polyline, 3D polyline, polygon mesh, and polyface decoded fixedtypes in both main and block entity sections. Main- and block-section `DWG_TYPE_VERTEX_r11` are fixture-validated across 2D, 3D, mesh, polyface vertex, and polyface face decoded fixedtypes. R11 table entries are streamed from the C pre-R13 section reader and default document table entries are emitted without full fallback; generated blocking-vs-stream coverage currently verifies `DWG_TYPE_BLOCK_HEADER`, `DWG_TYPE_LAYER`, `DWG_TYPE_STYLE`, `DWG_TYPE_LTYPE`, `DWG_TYPE_VIEW`, `DWG_TYPE_UCS`, `DWG_TYPE_VPORT`, `DWG_TYPE_APPID`, `DWG_TYPE_DIMSTYLE`, and `DWG_TYPE_VX_TABLE_RECORD` by table-entry count and fixedtype mask. R11/R12 MINSERT option bits on `DWG_TYPE_INSERT_r11` are supported as legacy INSERT fields; generated blocking-vs-stream coverage verifies `OPTS_R11_INSERT_HAS_NUM_COLS`, `OPTS_R11_INSERT_HAS_NUM_ROWS`, `OPTS_R11_INSERT_HAS_COL_SPACING`, and `OPTS_R11_INSERT_HAS_ROW_SPACING` decode to matching row/column/spacing values with no full fallback. It is not full R11/R12 parity: real-file R11/R12 parity coverage still needs completion, and any not-yet-streamed entity form must return `DWG_ERR_NOTYETSUPPORTED` rather than falling back. |
-| Not pure stream supported | `R_2_0b`, `R_2_0`, `R_2_10`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_2_6`, `R_9`, `R_9c1`, `R_10`, `R_11b1`, `R_11b2` | These pre-R13 formats are not implemented in the current pure stream path. Stream APIs must return `DWG_ERR_NOTYETSUPPORTED` for these versions until a real stream reader exists. |
+| Not pure stream supported | `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_2_6`, `R_9`, `R_9c1`, `R_10`, `R_11b1`, `R_11b2` | These pre-R13 formats are not implemented in the current pure stream path. Stream APIs must return `DWG_ERR_NOTYETSUPPORTED` for these versions until a real stream reader exists. |
 
 Version routing is determined from the DWG file header before selecting a stream
 reader. The C decoder reads the header magic at the start of the file and maps
@@ -505,6 +511,7 @@ Header magic codes relevant to the current stream target:
 | Header magic | libredwg version | Pure stream status |
 | --- | --- | --- |
 | `AC1.40` | `R_1_4` | Partial support: real entity-section fixture coverage |
+| `AC2.10` | `R_2_10` | Partial support: real entity/table-section fixture coverage |
 | `AC1010` | `R_13b1` | Supported |
 | `AC1011` | `R_13b2` | Supported |
 | `AC1012` | `R_13` | Supported |
@@ -525,7 +532,7 @@ Header magic codes relevant to the current stream target:
 | `AC103-4` | `R_2022b` | Supported |
 
 Other pre-R13 header magic values are also version-detectable but are not
-current pure stream support: `AC1.50`, `AC2.10`, `AC2.21`, `AC2.22`, `AC1001`,
+current pure stream support: `AC1.50`, `AC2.21`, `AC2.22`, `AC1001`,
 `AC1002`, `AC1003`, `AC1004`, `AC1005`, `AC1006`, `AC1007`, and `AC1008`.
 `AC1009` is version-detectable as `R_11` / `R_12` and has only the partial
 entity-section and table-entry stream coverage described above.
@@ -539,13 +546,18 @@ The explicit missing pure-stream list is therefore:
 
 ```text
 Pre-R13:
-R_2_0b, R_2_0, R_2_10, R_2_21, R_2_22, R_2_4, R_2_5, R_2_6,
+R_2_0b, R_2_0, R_2_21, R_2_22, R_2_4, R_2_5, R_2_6,
 R_9, R_9c1, R_10, R_11b1, R_11b2
 
 R_1_4 partial support remaining gap:
 real R1.4 parity beyond `test/test-data/r1.4/entities.dwg` entity-section
 coverage. The covered legacy fixedtypes are `DWG_TYPE_REPEAT`,
 `DWG_TYPE_ENDREP`, and `DWG_TYPE_LOAD`.
+
+R_2_10 partial support remaining gap:
+real R2.10 parity beyond `test/test-data/r2.10/entities.dwg` entity/table
+coverage. The covered legacy fixedtypes are `DWG_TYPE_REPEAT` and
+`DWG_TYPE_ENDREP`.
 
 R_11/R_12 implemented but still needing real-file coverage:
 real R11/R12 DWG parity fixtures beyond generated coverage.
@@ -561,6 +573,8 @@ The explicit completed pure-stream list is:
 ```text
 R_1_4 entity-section fixture coverage with `DWG_TYPE_REPEAT`,
 `DWG_TYPE_ENDREP`, and `DWG_TYPE_LOAD`,
+R_2_10 entity/table-section fixture coverage with `DWG_TYPE_REPEAT`
+and `DWG_TYPE_ENDREP`,
 R_13b1, R_13b2, R_13, R_13c3,
 R_14,
 R_2000b, R_2000, R_2000i, R_2002,
@@ -577,10 +591,12 @@ Development targets from the current state to complete stream parity:
 1. Add pre-R13 pure stream support if those blocking-reader versions are in
    scope for complete coverage.
    - Complete older version-family readers for the exact unsupported list:
-     `R_2_0b`, `R_2_0`, `R_2_10`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`,
-     `R_2_6`, `R_9`, `R_9c1`, `R_10`, `R_11b1`, and `R_11b2`.
+     `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_2_6`,
+     `R_9`, `R_9c1`, `R_10`, `R_11b1`, and `R_11b2`.
    - Expand R1.4 beyond the current real `entities.dwg` entity-section fixture
      before calling R1.4 complete.
+   - Expand R2.10 beyond the current real `entities.dwg` entity/table-section
+     fixture before calling R2.10 complete.
    - Add real R11/R12 DWG parity fixtures beyond the generated coverage before
      calling R11/R12 complete.
    - Until a real reader exists for each older pre-R13 version, keep generated

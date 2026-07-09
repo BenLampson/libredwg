@@ -171,6 +171,7 @@ static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
 static int test_pre_r13_minsert_opts_stream (void);
 static int test_pre_r2_legacy_entity_stream (void);
+static int test_r2_10_legacy_entity_stream (void);
 static int test_pre_r13_legacy_entity_stream (void);
 static int test_generated_pre_r13_stream_basic (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
@@ -243,7 +244,6 @@ typedef struct _unsupported_stream_fixture
 
 static const Unsupported_Stream_Fixture unsupported_pre_r13_fixtures[] = {
   { "AC1.50", "R_2_0b/R_2_0" },
-  { "AC2.10", "R_2_10" },
   { "AC2.21", "R_2_21" },
   { "AC2.22", "R_2_22" },
   { "AC1001", "R_2_4" },
@@ -3303,6 +3303,110 @@ test_pre_r2_legacy_entity_stream (void)
 }
 
 static int
+test_r2_10_legacy_entity_stream (void)
+{
+  static const unsigned long long expected_legacy_mask
+      = (1ULL << 0) | (1ULL << 1);
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Stream_Stats stats = { 0 };
+  Dwg_Data dwg = { 0 };
+  char path[1024];
+  BITCODE_BL expected_entities = 0;
+  BITCODE_BL expected_non_entities = 0;
+  BITCODE_BL i;
+  unsigned long long expected_table_mask = 0;
+  unsigned long long baseline_legacy_mask = 0;
+  int error;
+
+  if (!stream_test_source_path (path, sizeof (path),
+                                "test/test-data/r2.10/entities.dwg"))
+    {
+      printf ("failed to resolve R2.10 legacy entity fixture path\n");
+      return 1;
+    }
+
+  error = dwg_read_file (path, &dwg);
+  if (error >= DWG_ERR_CRITICAL || !dwg.num_objects)
+    {
+      printf ("R2.10 legacy blocking read failed: error=0x%x objects=%lu\n",
+              error, (unsigned long)dwg.num_objects);
+      dwg_free (&dwg);
+      return 1;
+    }
+
+  for (i = 0; i < dwg.num_objects; i++)
+    {
+      Dwg_Object *obj = &dwg.object[i];
+      if (obj->supertype == DWG_SUPERTYPE_ENTITY && obj->size)
+        expected_entities++;
+      if (obj->supertype != DWG_SUPERTYPE_ENTITY
+          && pre_r13_table_entry_bit (obj->fixedtype))
+        {
+          expected_non_entities++;
+          expected_table_mask |= pre_r13_table_entry_bit (obj->fixedtype);
+        }
+      baseline_legacy_mask |= pre_r2_legacy_entity_bit (obj->fixedtype);
+    }
+  dwg_free (&dwg);
+  if (!expected_entities || !expected_non_entities
+      || (baseline_legacy_mask & expected_legacy_mask) != expected_legacy_mask)
+    {
+      printf ("R2.10 legacy blocking coverage failed: entities=%lu "
+              "non_entities=%lu legacy_mask=0x%llx expected=0x%llx\n",
+              (unsigned long)expected_entities,
+              (unsigned long)expected_non_entities, baseline_legacy_mask,
+              expected_legacy_mask);
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.decoded_object = stream_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
+  callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+  error = dwg_stream_file_ex (path, &callbacks, &stats);
+  if (error >= DWG_ERR_CRITICAL
+      || stats.num_objects != expected_entities + expected_non_entities
+      || stats.num_entities != expected_entities
+      || stats.num_non_entities != expected_non_entities
+      || stats.full_decode_objects
+      || stats.lightweight_objects != stats.num_objects
+      || stats.prer13_entity_objects != stats.num_objects
+      || stats.decoded_objects != stats.num_objects
+      || stats.decoded_entities != expected_entities
+      || stats.decoded_non_entities != expected_non_entities
+      || stats.decode_error_objects
+      || stats.r11_table_fixedtype_mask != expected_table_mask
+      || (stats.prer2_legacy_fixedtype_mask & expected_legacy_mask)
+             != expected_legacy_mask)
+    {
+      printf ("R2.10 legacy stream failed: error=0x%x objects=%lu "
+              "expected_objects=%lu entities=%lu expected_entities=%lu "
+              "non_entities=%lu expected_non_entities=%lu lightweight=%lu "
+              "prer13=%lu full=%lu decoded=%lu decoded_entities=%lu "
+              "decoded_non_entities=%lu decode_errors=%lu table_mask=0x%llx "
+              "expected_table_mask=0x%llx legacy_mask=0x%llx "
+              "expected_legacy_mask=0x%llx\n",
+              error, (unsigned long)stats.num_objects,
+              (unsigned long)(expected_entities + expected_non_entities),
+              (unsigned long)stats.num_entities,
+              (unsigned long)expected_entities,
+              (unsigned long)stats.num_non_entities,
+              (unsigned long)expected_non_entities,
+              (unsigned long)stats.lightweight_objects,
+              (unsigned long)stats.prer13_entity_objects,
+              (unsigned long)stats.full_decode_objects,
+              (unsigned long)stats.decoded_objects,
+              (unsigned long)stats.decoded_entities,
+              (unsigned long)stats.decoded_non_entities,
+              (unsigned long)stats.decode_error_objects,
+              stats.r11_table_fixedtype_mask, expected_table_mask,
+              stats.prer2_legacy_fixedtype_mask, expected_legacy_mask);
+      return 1;
+    }
+  return 0;
+}
+
+static int
 test_pre_r13_minsert_opts_stream (void)
 {
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
@@ -3715,6 +3819,9 @@ main (void)
     return 1;
   stream_trace_stage ("test_pre_r2_legacy_entity_stream");
   if (test_pre_r2_legacy_entity_stream ())
+    return 1;
+  stream_trace_stage ("test_r2_10_legacy_entity_stream");
+  if (test_r2_10_legacy_entity_stream ())
     return 1;
   stream_trace_stage ("test_generated_pre_r13_stream_basic");
   if (test_generated_pre_r13_stream_basic ())
