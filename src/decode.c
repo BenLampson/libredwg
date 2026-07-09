@@ -8996,9 +8996,16 @@ read_pre_r13_meta_data_stream (
     extras_size &= 0xffffff;
   if (extras_size)
     {
-      LOG_ERROR ("DWG stream reader does not support R11/R12 extra entity "
-                 "sections");
-      return DWG_ERR_NOTYETSUPPORTED;
+      error = read_pre_r13_entity_section_stream (
+          dat, dwg, callbacks, input_mode, user, dwg->header.extras_start,
+          dwg->header.extras_start + extras_size,
+          DWG_SENTINEL_R11_EXTRA_ENTITIES_BEGIN,
+          "DWG_SENTINEL_R11_EXTRA_ENTITIES_BEGIN",
+          DWG_SENTINEL_R11_EXTRA_ENTITIES_END,
+          "DWG_SENTINEL_R11_EXTRA_ENTITIES_END", EXTRAS_SECTION_INDEX,
+          &index);
+      if (error >= DWG_ERR_CRITICAL || error == DWG_ERR_NOTYETSUPPORTED)
+        return error;
     }
 
   return 0;

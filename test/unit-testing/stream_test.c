@@ -3273,12 +3273,14 @@ test_generated_pre_r13_stream_basic (void)
   Dwg_Object_BLOCK_HEADER *nested_blk;
   Dwg_Entity_INSERT *insert;
   Dwg_Entity_INSERT *block_insert;
+  Dwg_Entity_LINE *extra_gate;
+  Dwg_Entity_LINE *extra_line;
   unsigned long long expected_mask = 0;
   unsigned long long expected_block_mask = 0;
   unsigned long long expected_dim_mask = (1ULL << 7) - 1;
   unsigned long long expected_polyline_mask = (1ULL << 4) - 1;
   unsigned long long expected_vertex_mask = (1ULL << 5) - 1;
-  BITCODE_BL expected_count = 70;
+  BITCODE_BL expected_count = 71;
   BITCODE_BL expected_block_count = 46;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
@@ -3430,6 +3432,22 @@ test_generated_pre_r13_stream_basic (void)
       dwg_free (gen);
       return 1;
     }
+  extra_gate = dwg_add_LINE (hdr, &pt3, &pt4);
+  extra_line = dwg_add_LINE (hdr, &pt4, &pt1);
+  if (!extra_gate || !extra_gate->parent)
+    {
+      printf ("failed to create generated R11 extra section gate LINE\n");
+      dwg_free (gen);
+      return 1;
+    }
+  if (!extra_line || !extra_line->parent)
+    {
+      printf ("failed to create generated R11 extra section LINE\n");
+      dwg_free (gen);
+      return 1;
+    }
+  extra_gate->parent->entmode = 3;
+  extra_line->parent->entmode = 0;
   error = dwg_write_file (path, gen);
   dwg_free (gen);
   if (error >= DWG_ERR_CRITICAL)
