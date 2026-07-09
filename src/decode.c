@@ -8677,6 +8677,9 @@ read_pre_r13_meta_data_stream (
         case DWG_TYPE_3DFACE_r11:
           error |= dwg_decode__3DFACE (dat, &obj);
           break;
+        case DWG_TYPE_DIMENSION_r11:
+          error |= decode_preR13_DIMENSION (dat, &obj);
+          break;
         case DWG_TYPE_INSERT_r11:
           error |= dwg_decode_INSERT (dat, &obj);
           break;

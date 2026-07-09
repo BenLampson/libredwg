@@ -77,6 +77,7 @@ typedef struct _stream_stats
   unsigned long long total_size;
   unsigned long long handle_mix;
   unsigned long long r11_type_mask;
+  unsigned long long r11_dimension_fixedtype_mask;
   size_t min_address;
   size_t max_address;
   BITCODE_RL max_size;
@@ -272,6 +273,41 @@ stream_test_process_id (void)
 #else
   return (long)getpid ();
 #endif
+}
+
+static void
+stats_add_r11_dimension_fixedtype (Stream_Stats *stats,
+                                   const Dwg_Object *object)
+{
+  if (!object || object->type != DWG_TYPE_DIMENSION_r11)
+    return;
+
+  switch (object->fixedtype)
+    {
+    case DWG_TYPE_DIMENSION_LINEAR:
+      stats->r11_dimension_fixedtype_mask |= 1ULL << 0;
+      break;
+    case DWG_TYPE_DIMENSION_ALIGNED:
+      stats->r11_dimension_fixedtype_mask |= 1ULL << 1;
+      break;
+    case DWG_TYPE_DIMENSION_ANG2LN:
+      stats->r11_dimension_fixedtype_mask |= 1ULL << 2;
+      break;
+    case DWG_TYPE_DIMENSION_ANG3PT:
+      stats->r11_dimension_fixedtype_mask |= 1ULL << 3;
+      break;
+    case DWG_TYPE_DIMENSION_DIAMETER:
+      stats->r11_dimension_fixedtype_mask |= 1ULL << 4;
+      break;
+    case DWG_TYPE_DIMENSION_ORDINATE:
+      stats->r11_dimension_fixedtype_mask |= 1ULL << 5;
+      break;
+    case DWG_TYPE_DIMENSION_RADIUS:
+      stats->r11_dimension_fixedtype_mask |= 1ULL << 6;
+      break;
+    default:
+      break;
+    }
 }
 
 static void
@@ -1464,6 +1500,7 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
   if (!object)
     return DWG_ERR_INTERNALERROR;
   stats->decoded_objects++;
+  stats_add_r11_dimension_fixedtype (stats, object);
   stats_add_semantic_coverage (stats, object);
   if (object->supertype == DWG_SUPERTYPE_ENTITY)
     stats->decoded_entities++;
@@ -2700,7 +2737,8 @@ test_generated_pre_r13_stream_basic (void)
   Dwg_Object_BLOCK_HEADER *blk;
   Dwg_Entity_INSERT *insert;
   unsigned long long expected_mask = 0;
-  BITCODE_BL expected_count = 13;
+  unsigned long long expected_dim_mask = (1ULL << 7) - 1;
+  BITCODE_BL expected_count = 20;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
   dwg_point_3d pt3 = { 3.0, 1.0, 0.0 };
@@ -2723,6 +2761,7 @@ test_generated_pre_r13_stream_basic (void)
   expected_mask |= 1ULL << DWG_TYPE_INSERT_r11;
   expected_mask |= 1ULL << DWG_TYPE_ATTDEF_r11;
   expected_mask |= 1ULL << DWG_TYPE_ATTRIB_r11;
+  expected_mask |= 1ULL << DWG_TYPE_DIMENSION_r11;
   expected_mask |= 1ULL << DWG_TYPE_VIEWPORT_r11;
 
   snprintf (path, sizeof (path), "stream_basic_r11_fixture_%ld_%ld.dwg",
@@ -2768,6 +2807,13 @@ test_generated_pre_r13_stream_basic (void)
       || !(insert = dwg_add_INSERT (hdr, &pt3, "r11blk", 1.0, 1.0, 1.0,
                                     0.0))
       || !dwg_add_ATTRIB (insert, 0.25, 0, &pt4, "TAG2", "Attr")
+      || !dwg_add_DIMENSION_LINEAR (hdr, &pt1, &pt2, &pt3, 0.0)
+      || !dwg_add_DIMENSION_ALIGNED (hdr, &pt1, &pt2, &pt3)
+      || !dwg_add_DIMENSION_ANG2LN (hdr, &pt1, &pt2, &pt3, &pt4)
+      || !dwg_add_DIMENSION_ANG3PT (hdr, &pt1, &pt2, &pt3, &pt4)
+      || !dwg_add_DIMENSION_DIAMETER (hdr, &pt2, &pt3, 1.0)
+      || !dwg_add_DIMENSION_ORDINATE (hdr, &pt1, &pt2, true)
+      || !dwg_add_DIMENSION_RADIUS (hdr, &pt2, &pt3, 1.0)
       || !dwg_add_VIEWPORT (hdr, "vp1"))
     {
       printf ("failed to create generated R11 basic entities\n");
@@ -2807,12 +2853,15 @@ test_generated_pre_r13_stream_basic (void)
       || stats.decoded_objects != expected_count
       || stats.decoded_entities != expected_count
       || stats.decode_error_objects
-      || (stats.r11_type_mask & expected_mask) != expected_mask)
+      || (stats.r11_type_mask & expected_mask) != expected_mask
+      || (stats.r11_dimension_fixedtype_mask & expected_dim_mask)
+             != expected_dim_mask)
     {
       printf ("generated R11 basic stream failed: error=0x%x objects=%lu "
               "entities=%lu lightweight=%lu prer13=%lu full=%lu decoded=%lu "
               "decoded_entities=%lu decode_errors=%lu mask=0x%llx "
-              "expected=0x%llx last_type=%u\n",
+              "expected=0x%llx dim_mask=0x%llx dim_expected=0x%llx "
+              "last_type=%u\n",
               error, (unsigned long)stats.num_objects,
               (unsigned long)stats.num_entities,
               (unsigned long)stats.lightweight_objects,
@@ -2821,7 +2870,8 @@ test_generated_pre_r13_stream_basic (void)
               (unsigned long)stats.decoded_objects,
               (unsigned long)stats.decoded_entities,
               (unsigned long)stats.decode_error_objects, stats.r11_type_mask,
-              expected_mask, stats.last_type);
+              expected_mask, stats.r11_dimension_fixedtype_mask,
+              expected_dim_mask, stats.last_type);
       return 1;
     }
   return 0;
