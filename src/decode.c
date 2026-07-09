@@ -8757,30 +8757,23 @@ decode_pre_r13_vertex_variant (Bit_Chain *restrict dat,
 }
 
 static int
-read_pre_r13_meta_data_stream (
+read_pre_r13_entity_section_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
-    const Dwg_Stream_Input_Mode input_mode, void *restrict user)
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user,
+    const BITCODE_RL start, const BITCODE_RL end,
+    const Dwg_Sentinel begin_sentinel, const char *restrict begin_name,
+    const Dwg_Sentinel end_sentinel, const char *restrict end_name,
+    const EntitySectionIndexR11 entity_section, BITCODE_BL *restrict index)
 {
-  BITCODE_RL start = dwg->header.entities_start;
-  BITCODE_RL end = dwg->header.entities_end;
-  BITCODE_BL index = 0;
   int error = 0;
 
-  if (dwg->header.from_version != R_11)
-    return DWG_ERR_NOTYETSUPPORTED;
   if (!start || end <= start || end > dat->size || start < 16)
     return DWG_ERR_INVALIDDWG;
 
-  error = dwg_add_Document (dwg, 0);
-  if (error >= DWG_ERR_CRITICAL)
-    return error;
-
   dat->byte = start - 16;
   dat->bit = 0;
-  error |= decode_preR13_sentinel (DWG_SENTINEL_R11_ENTITIES_BEGIN,
-                                   "DWG_SENTINEL_R11_ENTITIES_BEGIN", dat,
-                                   dwg);
+  error |= decode_preR13_sentinel (begin_sentinel, begin_name, dat, dwg);
   if (error >= DWG_ERR_CRITICAL)
     return error;
   if ((BITCODE_RL)dat->byte != start)
@@ -8796,9 +8789,11 @@ read_pre_r13_meta_data_stream (
       size_t iter_start = dat->byte;
 
       memset (&obj, 0, sizeof (obj));
-      obj.index = index;
+      obj.index = *index;
       obj.parent = dwg;
       obj.address = dat->byte;
+      if (entity_section == BLOCKS_SECTION_INDEX)
+        obj.address |= 0x40000000;
       obj.supertype = DWG_SUPERTYPE_ENTITY;
       obj.type = bit_read_RC (dat);
       abstype = obj.type > 127
@@ -8830,6 +8825,12 @@ read_pre_r13_meta_data_stream (
           break;
         case DWG_TYPE_SOLID_r11:
           error |= dwg_decode_SOLID (dat, &obj);
+          break;
+        case DWG_TYPE_BLOCK_r11:
+          error |= dwg_decode_BLOCK (dat, &obj);
+          break;
+        case DWG_TYPE_ENDBLK_r11:
+          error |= dwg_decode_ENDBLK (dat, &obj);
           break;
         case DWG_TYPE_3DFACE_r11:
           error |= dwg_decode__3DFACE (dat, &obj);
@@ -8869,7 +8870,7 @@ read_pre_r13_meta_data_stream (
       error |= stream_finalize_pre_r13_entity (dat, &obj);
       if (error >= DWG_ERR_CRITICAL)
         goto object_done;
-      stream_pre_r13_object_info (dwg, &obj, index, input_mode, &info);
+      stream_pre_r13_object_info (dwg, &obj, *index, input_mode, &info);
       if (callbacks->object)
         {
           callback_error = callbacks->object (&info, user);
@@ -8897,13 +8898,68 @@ object_done:
         return error;
       if (dat->byte == iter_start)
         return DWG_ERR_INVALIDDWG;
-      index++;
+      (*index)++;
     }
   if ((BITCODE_RL)dat->byte != end)
     return DWG_ERR_INVALIDDWG;
-  error |= decode_preR13_sentinel (DWG_SENTINEL_R11_ENTITIES_END,
-                                   "DWG_SENTINEL_R11_ENTITIES_END", dat, dwg);
+  error |= decode_preR13_sentinel (end_sentinel, end_name, dat, dwg);
   return error >= DWG_ERR_CRITICAL ? error : 0;
+}
+
+static int
+read_pre_r13_meta_data_stream (
+    Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user)
+{
+  BITCODE_RL blocks_size;
+  BITCODE_RL extras_size;
+  BITCODE_BL index = 0;
+  int error = 0;
+
+  if (dwg->header.from_version != R_11)
+    return DWG_ERR_NOTYETSUPPORTED;
+
+  error = dwg_add_Document (dwg, 0);
+  if (error >= DWG_ERR_CRITICAL)
+    return error;
+
+  error = read_pre_r13_entity_section_stream (
+      dat, dwg, callbacks, input_mode, user, dwg->header.entities_start,
+      dwg->header.entities_end, DWG_SENTINEL_R11_ENTITIES_BEGIN,
+      "DWG_SENTINEL_R11_ENTITIES_BEGIN", DWG_SENTINEL_R11_ENTITIES_END,
+      "DWG_SENTINEL_R11_ENTITIES_END", ENTITIES_SECTION_INDEX, &index);
+  if (error >= DWG_ERR_CRITICAL || error == DWG_ERR_NOTYETSUPPORTED)
+    return error;
+
+  blocks_size = dwg->header.blocks_size;
+  if (blocks_size > 0xffffff)
+    blocks_size &= 0xffffff;
+  if (blocks_size)
+    {
+      error = read_pre_r13_entity_section_stream (
+          dat, dwg, callbacks, input_mode, user, dwg->header.blocks_start,
+          dwg->header.blocks_start + blocks_size,
+          DWG_SENTINEL_R11_BLOCK_ENTITIES_BEGIN,
+          "DWG_SENTINEL_R11_BLOCK_ENTITIES_BEGIN",
+          DWG_SENTINEL_R11_BLOCK_ENTITIES_END,
+          "DWG_SENTINEL_R11_BLOCK_ENTITIES_END", BLOCKS_SECTION_INDEX,
+          &index);
+      if (error >= DWG_ERR_CRITICAL || error == DWG_ERR_NOTYETSUPPORTED)
+        return error;
+    }
+
+  extras_size = dwg->header.extras_size;
+  if (extras_size > 0xffffff)
+    extras_size &= 0xffffff;
+  if (extras_size)
+    {
+      LOG_ERROR ("DWG stream reader does not support R11/R12 extra entity "
+                 "sections");
+      return DWG_ERR_NOTYETSUPPORTED;
+    }
+
+  return 0;
 }
 
 // sentinel on begin and end is part of this decoding in case of R11

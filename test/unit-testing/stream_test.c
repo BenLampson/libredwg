@@ -2798,7 +2798,7 @@ test_generated_pre_r13_stream_basic (void)
   unsigned long long expected_mask = 0;
   unsigned long long expected_dim_mask = (1ULL << 7) - 1;
   unsigned long long expected_polyline_mask = (1ULL << 4) - 1;
-  BITCODE_BL expected_count = 24;
+  BITCODE_BL expected_count = 27;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
   dwg_point_3d pt3 = { 3.0, 1.0, 0.0 };
@@ -2823,6 +2823,8 @@ test_generated_pre_r13_stream_basic (void)
   expected_mask |= 1ULL << DWG_TYPE_ARC_r11;
   expected_mask |= 1ULL << DWG_TYPE_TRACE_r11;
   expected_mask |= 1ULL << DWG_TYPE_SOLID_r11;
+  expected_mask |= 1ULL << DWG_TYPE_BLOCK_r11;
+  expected_mask |= 1ULL << DWG_TYPE_ENDBLK_r11;
   expected_mask |= 1ULL << DWG_TYPE_3DFACE_r11;
   expected_mask |= 1ULL << DWG_TYPE_SHAPE_r11;
   expected_mask |= 1ULL << DWG_TYPE_INSERT_r11;
