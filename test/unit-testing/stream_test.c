@@ -159,6 +159,7 @@ static int test_unsupported_stream_file_ex_rejects (void);
 static int test_unsupported_pre_r13_versions_reject (void);
 static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
+static int test_pre_r13_minsert_opts_reject (void);
 static int test_generated_pre_r13_stream_basic (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
                                     int test_abort_callbacks,
@@ -2812,6 +2813,175 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
 }
 
 static int
+write_generated_r11_insert_fixture (char *path, size_t path_size,
+                                    BITCODE_RL *insert_address)
+{
+  Dwg_Data dwg = { 0 };
+  Dwg_Data *gen;
+  Dwg_Object *mspace;
+  Dwg_Object_BLOCK_HEADER *hdr;
+  Dwg_Object_BLOCK_HEADER *blk;
+  Dwg_Entity_LINE *block_line;
+  BITCODE_BL i;
+  dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
+  dwg_point_3d pt2 = { 2.0, 3.0, 0.0 };
+  int error;
+
+  snprintf (path, path_size, "stream_r11_minsert_opts_%ld_%ld.dwg",
+            stream_test_process_id (), (long)time (NULL));
+  gen = dwg_new_Document (R_11, 0, 0);
+  if (!gen)
+    {
+      printf ("failed to create generated R11 INSERT document\n");
+      return 1;
+    }
+  mspace = dwg_model_space_object (gen);
+  if (!mspace || !mspace->tio.object || !mspace->tio.object->tio.BLOCK_HEADER)
+    {
+      printf ("generated R11 INSERT document has no model space\n");
+      dwg_free (gen);
+      return 1;
+    }
+  hdr = mspace->tio.object->tio.BLOCK_HEADER;
+  blk = dwg_add_BLOCK_HEADER (gen, "r11blk");
+  if (!blk || !dwg_add_BLOCK (blk, "r11blk"))
+    {
+      printf ("failed to create generated R11 INSERT block\n");
+      dwg_free (gen);
+      return 1;
+    }
+  block_line = dwg_add_LINE (blk, &pt1, &pt2);
+  if (!block_line || !block_line->parent || !dwg_add_ENDBLK (blk)
+      || !dwg_add_INSERT (hdr, &pt1, "r11blk", 1.0, 1.0, 1.0, 0.0))
+    {
+      printf ("failed to create generated R11 INSERT fixture\n");
+      dwg_free (gen);
+      return 1;
+    }
+  block_line->parent->entmode = 3;
+
+  error = dwg_write_file (path, gen);
+  dwg_free (gen);
+  if (error >= DWG_ERR_CRITICAL)
+    {
+      printf ("failed to write generated R11 INSERT fixture: error=0x%x\n",
+              error);
+      remove (path);
+      return 1;
+    }
+
+  error = dwg_read_file (path, &dwg);
+  if (error >= DWG_ERR_CRITICAL || !dwg.num_objects)
+    {
+      printf ("generated R11 INSERT blocking read failed: error=0x%x "
+              "objects=%lu\n",
+              error, (unsigned long)dwg.num_objects);
+      dwg_free (&dwg);
+      remove (path);
+      return 1;
+    }
+
+  *insert_address = 0;
+  for (i = 0; i < dwg.num_objects; i++)
+    {
+      Dwg_Object *obj = &dwg.object[i];
+      if (obj->fixedtype == DWG_TYPE_INSERT && obj->type == DWG_TYPE_INSERT_r11
+          && obj->address)
+        {
+          *insert_address = (BITCODE_RL)obj->address;
+          break;
+        }
+    }
+  dwg_free (&dwg);
+  if (!*insert_address)
+    {
+      printf ("generated R11 INSERT fixture did not find INSERT address\n");
+      remove (path);
+      return 1;
+    }
+  return 0;
+}
+
+static int
+mark_r11_insert_as_minsert_opts (const char *path,
+                                 const BITCODE_RL insert_address)
+{
+  FILE *fp;
+  long opts_pos;
+  int lo;
+  int hi;
+
+  opts_pos = (long)insert_address + 6;
+  fp = fopen (path, "r+b");
+  if (!fp)
+    return 1;
+  if (fseek (fp, opts_pos, SEEK_SET))
+    {
+      fclose (fp);
+      return 1;
+    }
+  lo = fgetc (fp);
+  hi = fgetc (fp);
+  if (lo == EOF || hi == EOF)
+    {
+      fclose (fp);
+      return 1;
+    }
+  if (fseek (fp, opts_pos, SEEK_SET))
+    {
+      fclose (fp);
+      return 1;
+    }
+  if (fputc (lo | OPTS_R11_INSERT_HAS_NUM_COLS, fp) == EOF
+      || fputc (hi, fp) == EOF)
+    {
+      fclose (fp);
+      return 1;
+    }
+  fclose (fp);
+  return 0;
+}
+
+static int
+test_pre_r13_minsert_opts_reject (void)
+{
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Stream_Stats stats = { 0 };
+  BITCODE_RL insert_address;
+  char path[128];
+  int error;
+
+  error = write_generated_r11_insert_fixture (path, sizeof (path),
+                                              &insert_address);
+  if (error)
+    return error;
+  if (mark_r11_insert_as_minsert_opts (path, insert_address))
+    {
+      printf ("failed to mark generated R11 INSERT as MINSERT opts\n");
+      remove (path);
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.decoded_object = stream_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
+  error = dwg_stream_file_ex (path, &callbacks, &stats);
+  remove (path);
+  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+      || stats.decoded_objects || stats.decode_error_objects)
+    {
+      printf ("R11 MINSERT opts reject failed: error=0x%x expected=0x%x "
+              "objects=%lu decoded=%lu decode_errors=%lu\n",
+              error, DWG_ERR_NOTYETSUPPORTED,
+              (unsigned long)stats.num_objects,
+              (unsigned long)stats.decoded_objects,
+              (unsigned long)stats.decode_error_objects);
+      return 1;
+    }
+  return 0;
+}
+
+static int
 test_generated_pre_r13_stream_basic (void)
 {
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
@@ -3066,6 +3236,9 @@ main (void)
   stream_trace_stage ("test_generated_r2022_minsert_stream_fixture");
   if (test_generated_minsert_stream_fixture (
           R_2022b, "generated R2022 MINSERT stream parity ok"))
+    return 1;
+  stream_trace_stage ("test_pre_r13_minsert_opts_reject");
+  if (test_pre_r13_minsert_opts_reject ())
     return 1;
   stream_trace_stage ("test_generated_pre_r13_stream_basic");
   if (test_generated_pre_r13_stream_basic ())
