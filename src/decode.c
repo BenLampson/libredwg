@@ -8653,6 +8653,27 @@ read_pre_r13_meta_data_stream (
         case DWG_TYPE_LINE_r11:
           error |= dwg_decode_LINE (dat, &obj);
           break;
+        case DWG_TYPE_POINT_r11:
+          error |= dwg_decode_POINT (dat, &obj);
+          break;
+        case DWG_TYPE_CIRCLE_r11:
+          error |= dwg_decode_CIRCLE (dat, &obj);
+          break;
+        case DWG_TYPE_TEXT_r11:
+          error |= dwg_decode_TEXT (dat, &obj);
+          break;
+        case DWG_TYPE_ARC_r11:
+          error |= dwg_decode_ARC (dat, &obj);
+          break;
+        case DWG_TYPE_TRACE_r11:
+          error |= dwg_decode_TRACE (dat, &obj);
+          break;
+        case DWG_TYPE_SOLID_r11:
+          error |= dwg_decode_SOLID (dat, &obj);
+          break;
+        case DWG_TYPE_3DFACE_r11:
+          error |= dwg_decode__3DFACE (dat, &obj);
+          break;
         default:
           error = DWG_ERR_NOTYETSUPPORTED;
           goto object_done;

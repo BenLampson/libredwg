@@ -76,6 +76,7 @@ typedef struct _stream_stats
   BITCODE_BL heap_objects;
   unsigned long long total_size;
   unsigned long long handle_mix;
+  unsigned long long r11_type_mask;
   size_t min_address;
   size_t max_address;
   BITCODE_RL max_size;
@@ -152,7 +153,7 @@ static int test_unsupported_stream_file_ex_rejects (void);
 static int test_unsupported_pre_r13_versions_reject (void);
 static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
-static int test_generated_pre_r13_stream_line (void);
+static int test_generated_pre_r13_stream_basic (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
                                     int test_abort_callbacks,
                                     const char *label, int skip_missing,
@@ -286,6 +287,9 @@ stats_add_object (Stream_Stats *stats, const Dwg_Stream_Object_Info *info)
   stats->handle_mix ^= (unsigned long long)info->handle.value
                        + ((unsigned long long)info->type << 33)
                        + ((unsigned long long)info->supertype << 49);
+  if (info->decode_mode == DWG_STREAM_DECODE_PRER13_ENTITY
+      && info->type < 64)
+    stats->r11_type_mask |= 1ULL << info->type;
   if (info->decode_mode == DWG_STREAM_DECODE_FULL)
     stats->full_decode_objects++;
   else if (info->decode_mode == DWG_STREAM_DECODE_R2007_OBJECT_MAP)
@@ -2685,7 +2689,7 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
 }
 
 static int
-test_generated_pre_r13_stream_line (void)
+test_generated_pre_r13_stream_basic (void)
 {
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   Stream_Stats stats = { 0 };
@@ -2693,13 +2697,27 @@ test_generated_pre_r13_stream_line (void)
   Dwg_Data *gen;
   Dwg_Object *mspace;
   Dwg_Object_BLOCK_HEADER *hdr;
-  Dwg_Entity_LINE *line;
+  unsigned long long expected_mask = 0;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
+  dwg_point_3d pt3 = { 3.0, 1.0, 0.0 };
+  dwg_point_3d pt4 = { 3.0, 3.0, 0.0 };
+  dwg_point_2d pt2d1 = { 0.0, 0.0 };
+  dwg_point_2d pt2d2 = { 1.0, 0.0 };
+  dwg_point_2d pt2d3 = { 1.0, 1.0 };
   char path[128];
   int error;
 
-  snprintf (path, sizeof (path), "stream_line_r11_fixture_%ld_%ld.dwg",
+  expected_mask |= 1ULL << DWG_TYPE_LINE_r11;
+  expected_mask |= 1ULL << DWG_TYPE_POINT_r11;
+  expected_mask |= 1ULL << DWG_TYPE_CIRCLE_r11;
+  expected_mask |= 1ULL << DWG_TYPE_TEXT_r11;
+  expected_mask |= 1ULL << DWG_TYPE_ARC_r11;
+  expected_mask |= 1ULL << DWG_TYPE_TRACE_r11;
+  expected_mask |= 1ULL << DWG_TYPE_SOLID_r11;
+  expected_mask |= 1ULL << DWG_TYPE_3DFACE_r11;
+
+  snprintf (path, sizeof (path), "stream_basic_r11_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
   gen = dwg_new_Document (R_11, 0, 0);
   if (!gen)
@@ -2715,10 +2733,16 @@ test_generated_pre_r13_stream_line (void)
       return 1;
     }
   hdr = mspace->tio.object->tio.BLOCK_HEADER;
-  line = dwg_add_LINE (hdr, &pt1, &pt2);
-  if (!line)
+  if (!dwg_add_LINE (hdr, &pt1, &pt2)
+      || !dwg_add_POINT (hdr, &pt3)
+      || !dwg_add_CIRCLE (hdr, &pt2, 1.25)
+      || !dwg_add_TEXT (hdr, "R11", &pt1, 0.25)
+      || !dwg_add_ARC (hdr, &pt3, 1.0, 0.0, 1.0)
+      || !dwg_add_TRACE (hdr, &pt1, &pt2d1, &pt2d2, &pt2d3)
+      || !dwg_add_SOLID (hdr, &pt2, &pt2d1, &pt2d2, &pt2d3)
+      || !dwg_add_3DFACE (hdr, &pt1, &pt2, &pt3, &pt4))
     {
-      printf ("failed to create generated R11 LINE\n");
+      printf ("failed to create generated R11 basic entities\n");
       dwg_free (gen);
       return 1;
     }
@@ -2726,7 +2750,7 @@ test_generated_pre_r13_stream_line (void)
   dwg_free (gen);
   if (error >= DWG_ERR_CRITICAL)
     {
-      printf ("failed to write generated R11 LINE fixture: error=0x%x\n",
+      printf ("failed to write generated R11 basic fixture: error=0x%x\n",
               error);
       remove (path);
       return 1;
@@ -2748,15 +2772,17 @@ test_generated_pre_r13_stream_line (void)
   callbacks.decode_error = stream_decode_error_callback;
   error = dwg_stream_file_ex (path, &callbacks, &stats);
   remove (path);
-  if (error >= DWG_ERR_CRITICAL || stats.num_objects != 1
-      || stats.num_entities != 1 || stats.full_decode_objects
-      || stats.lightweight_objects != 1 || stats.prer13_entity_objects != 1
-      || stats.decoded_objects != 1 || stats.decoded_entities != 1
-      || stats.decode_error_objects || stats.last_type != DWG_TYPE_LINE_r11)
+  if (error >= DWG_ERR_CRITICAL || stats.num_objects != 8
+      || stats.num_entities != 8 || stats.full_decode_objects
+      || stats.lightweight_objects != 8 || stats.prer13_entity_objects != 8
+      || stats.decoded_objects != 8 || stats.decoded_entities != 8
+      || stats.decode_error_objects
+      || (stats.r11_type_mask & expected_mask) != expected_mask)
     {
-      printf ("generated R11 LINE stream failed: error=0x%x objects=%lu "
+      printf ("generated R11 basic stream failed: error=0x%x objects=%lu "
               "entities=%lu lightweight=%lu prer13=%lu full=%lu decoded=%lu "
-              "decoded_entities=%lu decode_errors=%lu last_type=%u\n",
+              "decoded_entities=%lu decode_errors=%lu mask=0x%llx "
+              "expected=0x%llx last_type=%u\n",
               error, (unsigned long)stats.num_objects,
               (unsigned long)stats.num_entities,
               (unsigned long)stats.lightweight_objects,
@@ -2764,7 +2790,8 @@ test_generated_pre_r13_stream_line (void)
               (unsigned long)stats.full_decode_objects,
               (unsigned long)stats.decoded_objects,
               (unsigned long)stats.decoded_entities,
-              (unsigned long)stats.decode_error_objects, stats.last_type);
+              (unsigned long)stats.decode_error_objects, stats.r11_type_mask,
+              expected_mask, stats.last_type);
       return 1;
     }
   return 0;
@@ -2807,8 +2834,8 @@ main (void)
   if (test_generated_minsert_stream_fixture (
           R_2022b, "generated R2022 MINSERT stream parity ok"))
     return 1;
-  stream_trace_stage ("test_generated_pre_r13_stream_line");
-  if (test_generated_pre_r13_stream_line ())
+  stream_trace_stage ("test_generated_pre_r13_stream_basic");
+  if (test_generated_pre_r13_stream_basic ())
     return 1;
   stream_trace_stage ("test_large_stream_fixture");
   if (test_large_stream_fixture ())
