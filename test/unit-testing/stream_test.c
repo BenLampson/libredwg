@@ -149,6 +149,12 @@ typedef struct _emit_capacity_stats
   const Dwg_Stream_Object_Info *info;
 } Emit_Capacity_Stats;
 
+typedef struct _r11_minsert_opts_stats
+{
+  Stream_Stats stats;
+  BITCODE_BL found;
+} R11_Minsert_Opts_Stats;
+
 static void print_stats (const char *label, const Stream_Stats *stats);
 static void print_decode_error_buckets (const Stream_Stats *stats);
 static void stream_trace_stage (const char *stage);
@@ -162,7 +168,7 @@ static int test_unsupported_stream_file_ex_rejects (void);
 static int test_unsupported_pre_r13_versions_reject (void);
 static int test_generated_minsert_stream_fixture (
     Dwg_Version_Type version, const char *label);
-static int test_pre_r13_minsert_opts_reject (void);
+static int test_pre_r13_minsert_opts_stream (void);
 static int test_pre_r13_legacy_entity_stream (void);
 static int test_generated_pre_r13_stream_basic (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
@@ -998,6 +1004,10 @@ hash_append_insert (unsigned long long hash, const Dwg_Entity_INSERT *insert)
   hash = hash_append_u64 (hash, hash_ref_array (insert->attribs,
                                                 insert->num_owned));
   hash = hash_append_u64 (hash, ref_absolute (insert->seqend));
+  hash = hash_append_u64 (hash, insert->num_cols);
+  hash = hash_append_u64 (hash, insert->num_rows);
+  hash = hash_append_double (hash, insert->col_spacing);
+  hash = hash_append_double (hash, insert->row_spacing);
   return hash;
 }
 
@@ -1724,6 +1734,31 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
                         baseline_ref->block_base_z, decoded_ref.block_base_x,
                         decoded_ref.block_base_y, decoded_ref.block_base_z);
             }
+        }
+    }
+  return 0;
+}
+
+static int
+r11_minsert_opts_decoded_object_callback (const Dwg_Stream_Object_Info *info,
+                                          const Dwg_Object *object,
+                                          void *user)
+{
+  R11_Minsert_Opts_Stats *capture = (R11_Minsert_Opts_Stats *)user;
+  int error;
+
+  error = stream_decoded_object_callback (info, object, &capture->stats);
+  if (error)
+    return error;
+  if (object && object->fixedtype == DWG_TYPE_INSERT
+      && object->type == DWG_TYPE_INSERT_r11 && object->tio.entity
+      && object->tio.entity->tio.INSERT)
+    {
+      Dwg_Entity_INSERT *insert = object->tio.entity->tio.INSERT;
+      if (insert->num_cols == 3 && insert->num_rows == 2
+          && insert->col_spacing == 2.5 && insert->row_spacing == 1.25)
+        {
+          capture->found++;
         }
     }
   return 0;
@@ -2866,16 +2901,17 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
 }
 
 static int
-write_generated_r11_insert_fixture (char *path, size_t path_size,
-                                    BITCODE_RL *insert_address)
+write_generated_r11_minsert_opts_fixture (char *path, size_t path_size)
 {
   Dwg_Data dwg = { 0 };
   Dwg_Data *gen;
   Dwg_Object *mspace;
   Dwg_Object_BLOCK_HEADER *hdr;
   Dwg_Object_BLOCK_HEADER *blk;
+  Dwg_Entity_INSERT *insert;
   Dwg_Entity_LINE *block_line;
   BITCODE_BL i;
+  int found_opts = 0;
   dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 3.0, 0.0 };
   int error;
@@ -2905,13 +2941,22 @@ write_generated_r11_insert_fixture (char *path, size_t path_size,
     }
   block_line = dwg_add_LINE (blk, &pt1, &pt2);
   if (!block_line || !block_line->parent || !dwg_add_ENDBLK (blk)
-      || !dwg_add_INSERT (hdr, &pt1, "r11blk", 1.0, 1.0, 1.0, 0.0))
+      || !(insert = dwg_add_INSERT (hdr, &pt1, "r11blk", 1.0, 1.0, 1.0,
+                                    0.0)))
     {
       printf ("failed to create generated R11 INSERT fixture\n");
       dwg_free (gen);
       return 1;
     }
   block_line->parent->entmode = 3;
+  insert->num_cols = 3;
+  insert->num_rows = 2;
+  insert->col_spacing = 2.5;
+  insert->row_spacing = 1.25;
+  insert->parent->opts_r11 |= OPTS_R11_INSERT_HAS_NUM_COLS
+                              | OPTS_R11_INSERT_HAS_NUM_ROWS
+                              | OPTS_R11_INSERT_HAS_COL_SPACING
+                              | OPTS_R11_INSERT_HAS_ROW_SPACING;
 
   error = dwg_write_file (path, gen);
   dwg_free (gen);
@@ -2934,65 +2979,29 @@ write_generated_r11_insert_fixture (char *path, size_t path_size,
       return 1;
     }
 
-  *insert_address = 0;
   for (i = 0; i < dwg.num_objects; i++)
     {
       Dwg_Object *obj = &dwg.object[i];
       if (obj->fixedtype == DWG_TYPE_INSERT && obj->type == DWG_TYPE_INSERT_r11
-          && obj->address)
+          && obj->tio.entity && obj->tio.entity->tio.INSERT)
         {
-          *insert_address = (BITCODE_RL)obj->address;
+          Dwg_Entity_INSERT *read_insert = obj->tio.entity->tio.INSERT;
+          if (read_insert->num_cols == 3 && read_insert->num_rows == 2
+              && read_insert->col_spacing == 2.5
+              && read_insert->row_spacing == 1.25)
+            {
+              found_opts = 1;
+            }
           break;
         }
     }
   dwg_free (&dwg);
-  if (!*insert_address)
+  if (!found_opts)
     {
-      printf ("generated R11 INSERT fixture did not find INSERT address\n");
+      printf ("generated R11 INSERT fixture did not cover MINSERT opts\n");
       remove (path);
       return 1;
     }
-  return 0;
-}
-
-static int
-mark_r11_insert_as_minsert_opts (const char *path,
-                                 const BITCODE_RL insert_address,
-                                 const int opts_bit)
-{
-  FILE *fp;
-  long opts_pos;
-  int lo;
-  int hi;
-
-  opts_pos = (long)insert_address + 6;
-  fp = fopen (path, "r+b");
-  if (!fp)
-    return 1;
-  if (fseek (fp, opts_pos, SEEK_SET))
-    {
-      fclose (fp);
-      return 1;
-    }
-  lo = fgetc (fp);
-  hi = fgetc (fp);
-  if (lo == EOF || hi == EOF)
-    {
-      fclose (fp);
-      return 1;
-    }
-  if (fseek (fp, opts_pos, SEEK_SET))
-    {
-      fclose (fp);
-      return 1;
-    }
-  if (fputc (lo | opts_bit, fp) == EOF
-      || fputc (hi, fp) == EOF)
-    {
-      fclose (fp);
-      return 1;
-    }
-  fclose (fp);
   return 0;
 }
 
@@ -3242,58 +3251,38 @@ test_pre_r13_legacy_entity_stream (void)
 }
 
 static int
-test_pre_r13_minsert_opts_reject (void)
+test_pre_r13_minsert_opts_stream (void)
 {
-  static const struct
-  {
-    int opts_bit;
-    const char *name;
-  } minsert_opts[] = {
-    { OPTS_R11_INSERT_HAS_NUM_COLS, "NUM_COLS" },
-    { OPTS_R11_INSERT_HAS_NUM_ROWS, "NUM_ROWS" },
-    { OPTS_R11_INSERT_HAS_COL_SPACING, "COL_SPACING" },
-    { OPTS_R11_INSERT_HAS_ROW_SPACING, "ROW_SPACING" },
-  };
-  size_t i;
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  R11_Minsert_Opts_Stats capture = { 0 };
+  char path[128];
+  int error;
 
-  for (i = 0; i < sizeof (minsert_opts) / sizeof (minsert_opts[0]); i++)
+  error = write_generated_r11_minsert_opts_fixture (path, sizeof (path));
+  if (error)
+    return error;
+
+  callbacks.object = stream_object_callback;
+  callbacks.decoded_object = r11_minsert_opts_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
+  callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+  error = dwg_stream_file_ex (path, &callbacks, &capture);
+  remove (path);
+  if (error >= DWG_ERR_CRITICAL || capture.stats.full_decode_objects
+      || capture.stats.decode_error_objects || !capture.found
+      || !(capture.stats.r11_type_mask & (1ULL << DWG_TYPE_INSERT_r11)))
     {
-      Dwg_Stream_Callbacks_Ex callbacks = { 0 };
-      Stream_Stats stats = { 0 };
-      BITCODE_RL insert_address;
-      char path[128];
-      int error;
-
-      error = write_generated_r11_insert_fixture (path, sizeof (path),
-                                                  &insert_address);
-      if (error)
-        return error;
-      if (mark_r11_insert_as_minsert_opts (path, insert_address,
-                                           minsert_opts[i].opts_bit))
-        {
-          printf ("failed to mark generated R11 INSERT as MINSERT %s opts\n",
-                  minsert_opts[i].name);
-          remove (path);
-          return 1;
-        }
-
-      callbacks.object = stream_object_callback;
-      callbacks.decoded_object = stream_decoded_object_callback;
-      callbacks.decode_error = stream_decode_error_callback;
-      error = dwg_stream_file_ex (path, &callbacks, &stats);
-      remove (path);
-      if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
-          || stats.decoded_objects || stats.decode_error_objects)
-        {
-          printf ("R11 MINSERT %s opts reject failed: error=0x%x "
-                  "expected=0x%x objects=%lu decoded=%lu decode_errors=%lu\n",
-                  minsert_opts[i].name, error, DWG_ERR_NOTYETSUPPORTED,
-                  (unsigned long)stats.num_objects,
-                  (unsigned long)stats.decoded_objects,
-                  (unsigned long)stats.decode_error_objects);
-          return 1;
-        }
+      printf ("generated R11 MINSERT opts stream failed: error=0x%x "
+              "full=%lu decode_errors=%lu found=%lu mask=0x%llx "
+              "expected=0x%llx\n",
+              error, (unsigned long)capture.stats.full_decode_objects,
+              (unsigned long)capture.stats.decode_error_objects,
+              (unsigned long)capture.found, capture.stats.r11_type_mask,
+              1ULL << DWG_TYPE_INSERT_r11);
+      print_stats ("generated R11 MINSERT opts stream", &capture.stats);
+      return 1;
     }
+  printf ("generated R11 MINSERT opts stream parity ok\n");
   return 0;
 }
 
@@ -3666,8 +3655,8 @@ main (void)
   if (test_generated_minsert_stream_fixture (
           R_2022b, "generated R2022 MINSERT stream parity ok"))
     return 1;
-  stream_trace_stage ("test_pre_r13_minsert_opts_reject");
-  if (test_pre_r13_minsert_opts_reject ())
+  stream_trace_stage ("test_pre_r13_minsert_opts_stream");
+  if (test_pre_r13_minsert_opts_stream ())
     return 1;
   stream_trace_stage ("test_pre_r13_legacy_entity_stream");
   if (test_pre_r13_legacy_entity_stream ())

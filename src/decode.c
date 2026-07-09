@@ -8661,34 +8661,6 @@ emit_pre_r13_existing_table_entries_stream (
 }
 
 static int
-pre_r13_insert_has_minsert_opts (Bit_Chain *restrict dat,
-                                 BITCODE_RS *restrict opts)
-{
-  BITCODE_RS opts_r11;
-  size_t start_byte;
-  unsigned start_bit;
-
-  if (!dat || dat->byte + 7 > dat->size)
-    return 0;
-
-  start_byte = dat->byte;
-  start_bit = dat->bit;
-  (void)bit_read_RC (dat);
-  dat->byte += 4;
-  opts_r11 = bit_read_RS (dat);
-  dat->byte = start_byte;
-  dat->bit = start_bit;
-  if (opts)
-    *opts = opts_r11;
-
-  return (opts_r11 & (OPTS_R11_INSERT_HAS_NUM_COLS
-                      | OPTS_R11_INSERT_HAS_NUM_ROWS
-                      | OPTS_R11_INSERT_HAS_COL_SPACING
-                      | OPTS_R11_INSERT_HAS_ROW_SPACING))
-         != 0;
-}
-
-static int
 decode_pre_r13_polyline_variant (Bit_Chain *restrict dat,
                                  Dwg_Object *restrict obj)
 {
@@ -8978,17 +8950,6 @@ read_pre_r13_entity_section_stream (
           error |= decode_preR13_DIMENSION (dat, &obj);
           break;
         case DWG_TYPE_INSERT_r11:
-          {
-            BITCODE_RS opts_r11 = 0;
-            if (pre_r13_insert_has_minsert_opts (dat, &opts_r11))
-              {
-                LOG_ERROR ("DWG stream reader does not support R11/R12 "
-                           "MINSERT opts 0x%x",
-                           opts_r11);
-                error = DWG_ERR_NOTYETSUPPORTED;
-                goto object_done;
-              }
-          }
           error |= dwg_decode_INSERT (dat, &obj);
           break;
         case DWG_TYPE_ATTDEF_r11:
