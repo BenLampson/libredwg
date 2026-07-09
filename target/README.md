@@ -296,12 +296,14 @@ types are `DWG_TYPE_LINE_r11`, `DWG_TYPE_POINT_r11`, `DWG_TYPE_CIRCLE_r11`,
 `DWG_TYPE_INSERT_r11`, `DWG_TYPE_ATTDEF_r11`, `DWG_TYPE_ATTRIB_r11`, and
 `DWG_TYPE_VIEWPORT_r11`. It also covers `DWG_TYPE_DIMENSION_r11` with decoded
 fixedtype coverage for linear, aligned, two-line angular, three-point angular,
-diameter, ordinate, and radius dimensions. This is not full R11/R12 parity yet;
+diameter, ordinate, and radius dimensions. `DWG_TYPE_POLYLINE_r11` is
+covered through generated 2D polyline, 3D polyline, polygon mesh, and
+polyface fixtures. The stream walker has decoder branches for
+`DWG_TYPE_VERTEX_r11` and `DWG_TYPE_SEQEND_r11`, but the generated fixture does
+not yet emit standalone main-section VERTEX/SEQEND objects, so those are not
+counted as validated coverage. This is not full R11/R12 parity yet;
 unsupported R11/R12 entity/table coverage must still fail clearly with
-`DWG_ERR_NOTYETSUPPORTED` instead of falling back. The stream walker has a
-`DWG_TYPE_SEQEND_r11` decoder branch, but the generated fixture does not yet
-emit a standalone main-section `SEQEND`, so it is not counted as validated
-coverage.
+`DWG_ERR_NOTYETSUPPORTED` instead of falling back.
 ```
 
 Current stream hardening:
@@ -453,7 +455,7 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream supported | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2014/2015/2016/2017 are not separate enum values here; they are covered by the `R_2013` file family when the file identifies that way. |
 | Pure stream supported | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2019/2020/2021 are not separate enum values here; they are covered by the `R_2018` file family when the file identifies that way. |
 | Pure stream supported | `R_2022b` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. Current validation uses a generated R2022b MINSERT fixture because no repository R2022 fixture exists. |
-| Partial pure stream support | `R_11` / `R_12` | The current pre-R13 stream reader covers generated main-entity-section fixtures for `DWG_TYPE_LINE_r11`, `DWG_TYPE_POINT_r11`, `DWG_TYPE_CIRCLE_r11`, `DWG_TYPE_TEXT_r11`, `DWG_TYPE_ARC_r11`, `DWG_TYPE_TRACE_r11`, `DWG_TYPE_SOLID_r11`, `DWG_TYPE_3DFACE_r11`, `DWG_TYPE_SHAPE_r11`, `DWG_TYPE_INSERT_r11`, `DWG_TYPE_ATTDEF_r11`, `DWG_TYPE_ATTRIB_r11`, `DWG_TYPE_DIMENSION_r11`, and `DWG_TYPE_VIEWPORT_r11`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. `DWG_TYPE_DIMENSION_r11` is fixture-validated across linear, aligned, two-line angular, three-point angular, diameter, ordinate, and radius decoded fixedtypes. It is not full R11/R12 parity: table sections, block/extras entity sections, MINSERT-specific semantics, and the remaining R11 entity types still need implementation and validation. Unsupported R11/R12 coverage must return `DWG_ERR_NOTYETSUPPORTED` rather than falling back. `DWG_TYPE_SEQEND_r11` has a stream decoder branch but is not yet fixture-validated as standalone main-section coverage. |
+| Partial pure stream support | `R_11` / `R_12` | The current pre-R13 stream reader covers generated main-entity-section fixtures for `DWG_TYPE_LINE_r11`, `DWG_TYPE_POINT_r11`, `DWG_TYPE_CIRCLE_r11`, `DWG_TYPE_TEXT_r11`, `DWG_TYPE_ARC_r11`, `DWG_TYPE_TRACE_r11`, `DWG_TYPE_SOLID_r11`, `DWG_TYPE_3DFACE_r11`, `DWG_TYPE_SHAPE_r11`, `DWG_TYPE_INSERT_r11`, `DWG_TYPE_ATTDEF_r11`, `DWG_TYPE_ATTRIB_r11`, `DWG_TYPE_POLYLINE_r11`, `DWG_TYPE_DIMENSION_r11`, and `DWG_TYPE_VIEWPORT_r11`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. `DWG_TYPE_DIMENSION_r11` is fixture-validated across linear, aligned, two-line angular, three-point angular, diameter, ordinate, and radius decoded fixedtypes. `DWG_TYPE_POLYLINE_r11` is fixture-validated across 2D polyline, 3D polyline, polygon mesh, and polyface decoded fixedtypes. It is not full R11/R12 parity: table sections, block/extras entity sections, standalone VERTEX/SEQEND main-section coverage, MINSERT-specific semantics, and the remaining R11 entity types still need implementation and validation. Unsupported R11/R12 coverage must return `DWG_ERR_NOTYETSUPPORTED` rather than falling back. |
 | Not pure stream supported | `R_2_0b`, `R_2_0`, `R_2_10`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_2_6`, `R_9`, `R_9c1`, `R_10`, `R_11b1`, `R_11b2` | These pre-R13 formats are not implemented in the current pure stream path. Stream APIs must return `DWG_ERR_NOTYETSUPPORTED` for these versions until a real stream reader exists. |
 
 Version routing is determined from the DWG file header before selecting a stream
@@ -507,7 +509,7 @@ R_9, R_9c1, R_10, R_11b1, R_11b2
 R_11/R_12 remaining after the first partial stream slice:
 table sections; block entity section; extra entity section; MINSERT-specific
 semantics; remaining R11 entity types REPEAT, ENDREP, LOAD, BLOCK, ENDBLK,
-SEQEND, JUMP, POLYLINE, VERTEX, and 3DLINE.
+SEQEND, JUMP, VERTEX, and 3DLINE.
 ```
 
 The explicit completed pure-stream list is:

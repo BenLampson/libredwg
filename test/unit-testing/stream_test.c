@@ -78,6 +78,8 @@ typedef struct _stream_stats
   unsigned long long handle_mix;
   unsigned long long r11_type_mask;
   unsigned long long r11_dimension_fixedtype_mask;
+  unsigned long long r11_polyline_fixedtype_mask;
+  unsigned long long r11_vertex_fixedtype_mask;
   size_t min_address;
   size_t max_address;
   BITCODE_RL max_size;
@@ -273,6 +275,61 @@ stream_test_process_id (void)
 #else
   return (long)getpid ();
 #endif
+}
+
+static void
+stats_add_r11_polyline_fixedtype (Stream_Stats *stats,
+                                  const Dwg_Object *object)
+{
+  if (!object || object->type != DWG_TYPE_POLYLINE_r11)
+    return;
+
+  switch (object->fixedtype)
+    {
+    case DWG_TYPE_POLYLINE_2D:
+      stats->r11_polyline_fixedtype_mask |= 1ULL << 0;
+      break;
+    case DWG_TYPE_POLYLINE_3D:
+      stats->r11_polyline_fixedtype_mask |= 1ULL << 1;
+      break;
+    case DWG_TYPE_POLYLINE_MESH:
+      stats->r11_polyline_fixedtype_mask |= 1ULL << 2;
+      break;
+    case DWG_TYPE_POLYLINE_PFACE:
+      stats->r11_polyline_fixedtype_mask |= 1ULL << 3;
+      break;
+    default:
+      break;
+    }
+}
+
+static void
+stats_add_r11_vertex_fixedtype (Stream_Stats *stats,
+                                const Dwg_Object *object)
+{
+  if (!object || object->type != DWG_TYPE_VERTEX_r11)
+    return;
+
+  switch (object->fixedtype)
+    {
+    case DWG_TYPE_VERTEX_2D:
+      stats->r11_vertex_fixedtype_mask |= 1ULL << 0;
+      break;
+    case DWG_TYPE_VERTEX_3D:
+      stats->r11_vertex_fixedtype_mask |= 1ULL << 1;
+      break;
+    case DWG_TYPE_VERTEX_MESH:
+      stats->r11_vertex_fixedtype_mask |= 1ULL << 2;
+      break;
+    case DWG_TYPE_VERTEX_PFACE:
+      stats->r11_vertex_fixedtype_mask |= 1ULL << 3;
+      break;
+    case DWG_TYPE_VERTEX_PFACE_FACE:
+      stats->r11_vertex_fixedtype_mask |= 1ULL << 4;
+      break;
+    default:
+      break;
+    }
 }
 
 static void
@@ -1500,6 +1557,8 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
   if (!object)
     return DWG_ERR_INTERNALERROR;
   stats->decoded_objects++;
+  stats_add_r11_polyline_fixedtype (stats, object);
+  stats_add_r11_vertex_fixedtype (stats, object);
   stats_add_r11_dimension_fixedtype (stats, object);
   stats_add_semantic_coverage (stats, object);
   if (object->supertype == DWG_SUPERTYPE_ENTITY)
@@ -2738,7 +2797,8 @@ test_generated_pre_r13_stream_basic (void)
   Dwg_Entity_INSERT *insert;
   unsigned long long expected_mask = 0;
   unsigned long long expected_dim_mask = (1ULL << 7) - 1;
-  BITCODE_BL expected_count = 20;
+  unsigned long long expected_polyline_mask = (1ULL << 4) - 1;
+  BITCODE_BL expected_count = 24;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
   dwg_point_3d pt3 = { 3.0, 1.0, 0.0 };
@@ -2746,6 +2806,13 @@ test_generated_pre_r13_stream_basic (void)
   dwg_point_2d pt2d1 = { 0.0, 0.0 };
   dwg_point_2d pt2d2 = { 1.0, 0.0 };
   dwg_point_2d pt2d3 = { 1.0, 1.0 };
+  dwg_point_2d pl2d_pts[] = { { 0.0, 0.0 }, { 2.0, 0.0 } };
+  dwg_point_3d pl3d_pts[] = { { 0.0, 0.0, 0.0 }, { 1.0, 1.0, 1.0 } };
+  dwg_point_3d mesh_pts[] = { { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 },
+                              { 0.0, 1.0, 1.0 }, { 1.0, 1.0, 1.0 } };
+  dwg_point_3d pface_pts[] = { { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 },
+                               { 0.0, 1.0, 1.0 } };
+  dwg_face pface_faces[] = { { 1, 2, 3, 0 } };
   char path[128];
   int error;
 
@@ -2761,6 +2828,7 @@ test_generated_pre_r13_stream_basic (void)
   expected_mask |= 1ULL << DWG_TYPE_INSERT_r11;
   expected_mask |= 1ULL << DWG_TYPE_ATTDEF_r11;
   expected_mask |= 1ULL << DWG_TYPE_ATTRIB_r11;
+  expected_mask |= 1ULL << DWG_TYPE_POLYLINE_r11;
   expected_mask |= 1ULL << DWG_TYPE_DIMENSION_r11;
   expected_mask |= 1ULL << DWG_TYPE_VIEWPORT_r11;
 
@@ -2814,6 +2882,10 @@ test_generated_pre_r13_stream_basic (void)
       || !dwg_add_DIMENSION_DIAMETER (hdr, &pt2, &pt3, 1.0)
       || !dwg_add_DIMENSION_ORDINATE (hdr, &pt1, &pt2, true)
       || !dwg_add_DIMENSION_RADIUS (hdr, &pt2, &pt3, 1.0)
+      || !dwg_add_POLYLINE_2D (hdr, 2, pl2d_pts)
+      || !dwg_add_POLYLINE_3D (hdr, 2, pl3d_pts)
+      || !dwg_add_POLYLINE_MESH (hdr, 2, 2, mesh_pts)
+      || !dwg_add_POLYLINE_PFACE (hdr, 3, 1, pface_pts, pface_faces)
       || !dwg_add_VIEWPORT (hdr, "vp1"))
     {
       printf ("failed to create generated R11 basic entities\n");
@@ -2855,12 +2927,15 @@ test_generated_pre_r13_stream_basic (void)
       || stats.decode_error_objects
       || (stats.r11_type_mask & expected_mask) != expected_mask
       || (stats.r11_dimension_fixedtype_mask & expected_dim_mask)
-             != expected_dim_mask)
+             != expected_dim_mask
+      || (stats.r11_polyline_fixedtype_mask & expected_polyline_mask)
+             != expected_polyline_mask)
     {
       printf ("generated R11 basic stream failed: error=0x%x objects=%lu "
               "entities=%lu lightweight=%lu prer13=%lu full=%lu decoded=%lu "
               "decoded_entities=%lu decode_errors=%lu mask=0x%llx "
               "expected=0x%llx dim_mask=0x%llx dim_expected=0x%llx "
+              "pline_mask=0x%llx pline_expected=0x%llx vertex_mask=0x%llx "
               "last_type=%u\n",
               error, (unsigned long)stats.num_objects,
               (unsigned long)stats.num_entities,
@@ -2871,7 +2946,9 @@ test_generated_pre_r13_stream_basic (void)
               (unsigned long)stats.decoded_entities,
               (unsigned long)stats.decode_error_objects, stats.r11_type_mask,
               expected_mask, stats.r11_dimension_fixedtype_mask,
-              expected_dim_mask, stats.last_type);
+              expected_dim_mask, stats.r11_polyline_fixedtype_mask,
+              expected_polyline_mask, stats.r11_vertex_fixedtype_mask,
+              stats.last_type);
       return 1;
     }
   return 0;
