@@ -77,9 +77,11 @@ typedef struct _stream_stats
   unsigned long long total_size;
   unsigned long long handle_mix;
   unsigned long long r11_type_mask;
+  unsigned long long r11_block_section_type_mask;
   unsigned long long r11_dimension_fixedtype_mask;
   unsigned long long r11_polyline_fixedtype_mask;
   unsigned long long r11_vertex_fixedtype_mask;
+  BITCODE_BL r11_block_section_objects;
   size_t min_address;
   size_t max_address;
   BITCODE_RL max_size;
@@ -330,6 +332,18 @@ stats_add_r11_vertex_fixedtype (Stream_Stats *stats,
     default:
       break;
     }
+}
+
+static void
+stats_add_r11_block_section_type (Stream_Stats *stats,
+                                  const Dwg_Object *object)
+{
+  if (!object || object->type >= 64 || object->supertype != DWG_SUPERTYPE_ENTITY
+      || !object->tio.entity || object->tio.entity->entmode != 3)
+    return;
+
+  stats->r11_block_section_objects++;
+  stats->r11_block_section_type_mask |= 1ULL << object->type;
 }
 
 static void
@@ -1557,6 +1571,7 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
   if (!object)
     return DWG_ERR_INTERNALERROR;
   stats->decoded_objects++;
+  stats_add_r11_block_section_type (stats, object);
   stats_add_r11_polyline_fixedtype (stats, object);
   stats_add_r11_vertex_fixedtype (stats, object);
   stats_add_r11_dimension_fixedtype (stats, object);
@@ -2796,9 +2811,11 @@ test_generated_pre_r13_stream_basic (void)
   Dwg_Object_BLOCK_HEADER *blk;
   Dwg_Entity_INSERT *insert;
   unsigned long long expected_mask = 0;
+  unsigned long long expected_block_mask = 0;
   unsigned long long expected_dim_mask = (1ULL << 7) - 1;
   unsigned long long expected_polyline_mask = (1ULL << 4) - 1;
-  BITCODE_BL expected_count = 27;
+  BITCODE_BL expected_count = 35;
+  BITCODE_BL expected_block_count = 11;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
   dwg_point_3d pt2 = { 2.0, 1.0, 0.0 };
   dwg_point_3d pt3 = { 3.0, 1.0, 0.0 };
@@ -2834,6 +2851,18 @@ test_generated_pre_r13_stream_basic (void)
   expected_mask |= 1ULL << DWG_TYPE_DIMENSION_r11;
   expected_mask |= 1ULL << DWG_TYPE_VIEWPORT_r11;
 
+  expected_block_mask |= 1ULL << DWG_TYPE_BLOCK_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_LINE_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_POINT_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_CIRCLE_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_TEXT_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_ARC_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_TRACE_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_SOLID_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_3DFACE_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_SHAPE_r11;
+  expected_block_mask |= 1ULL << DWG_TYPE_ENDBLK_r11;
+
   snprintf (path, sizeof (path), "stream_basic_r11_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
   gen = dwg_new_Document (R_11, 0, 0);
@@ -2858,6 +2887,14 @@ test_generated_pre_r13_stream_basic (void)
       return 1;
     }
   if (!dwg_add_BLOCK (blk, "r11blk") || !dwg_add_LINE (blk, &pt1, &pt2)
+      || !dwg_add_POINT (blk, &pt3)
+      || !dwg_add_CIRCLE (blk, &pt2, 1.25)
+      || !dwg_add_TEXT (blk, "BLK", &pt1, 0.25)
+      || !dwg_add_ARC (blk, &pt3, 1.0, 0.0, 1.0)
+      || !dwg_add_TRACE (blk, &pt1, &pt2d1, &pt2d2, &pt2d3)
+      || !dwg_add_SOLID (blk, &pt2, &pt2d1, &pt2d2, &pt2d3)
+      || !dwg_add_3DFACE (blk, &pt1, &pt2, &pt3, &pt4)
+      || !dwg_add_SHAPE (blk, "bshape", &pt1, 1.0, 0.0)
       || !dwg_add_ENDBLK (blk))
     {
       printf ("failed to create generated R11 basic block definition\n");
@@ -2927,7 +2964,10 @@ test_generated_pre_r13_stream_basic (void)
       || stats.decoded_objects != expected_count
       || stats.decoded_entities != expected_count
       || stats.decode_error_objects
+      || stats.r11_block_section_objects != expected_block_count
       || (stats.r11_type_mask & expected_mask) != expected_mask
+      || (stats.r11_block_section_type_mask & expected_block_mask)
+             != expected_block_mask
       || (stats.r11_dimension_fixedtype_mask & expected_dim_mask)
              != expected_dim_mask
       || (stats.r11_polyline_fixedtype_mask & expected_polyline_mask)
@@ -2936,7 +2976,9 @@ test_generated_pre_r13_stream_basic (void)
       printf ("generated R11 basic stream failed: error=0x%x objects=%lu "
               "entities=%lu lightweight=%lu prer13=%lu full=%lu decoded=%lu "
               "decoded_entities=%lu decode_errors=%lu mask=0x%llx "
-              "expected=0x%llx dim_mask=0x%llx dim_expected=0x%llx "
+              "expected=0x%llx block_objects=%lu block_expected=%lu "
+              "block_mask=0x%llx block_mask_expected=0x%llx "
+              "dim_mask=0x%llx dim_expected=0x%llx "
               "pline_mask=0x%llx pline_expected=0x%llx vertex_mask=0x%llx "
               "last_type=%u\n",
               error, (unsigned long)stats.num_objects,
@@ -2947,7 +2989,10 @@ test_generated_pre_r13_stream_basic (void)
               (unsigned long)stats.decoded_objects,
               (unsigned long)stats.decoded_entities,
               (unsigned long)stats.decode_error_objects, stats.r11_type_mask,
-              expected_mask, stats.r11_dimension_fixedtype_mask,
+              expected_mask, (unsigned long)stats.r11_block_section_objects,
+              (unsigned long)expected_block_count,
+              stats.r11_block_section_type_mask, expected_block_mask,
+              stats.r11_dimension_fixedtype_mask,
               expected_dim_mask, stats.r11_polyline_fixedtype_mask,
               expected_polyline_mask, stats.r11_vertex_fixedtype_mask,
               stats.last_type);
