@@ -2155,7 +2155,7 @@ static const char *const dwg_section_r11_names[] = {
 const char *
 dwg_section_name (const Dwg_Data *dwg, const unsigned int sec_id)
 {
-  if (dwg->header.version >= R_2004)
+  if (dwg->header.version >= R_2004a)
     { // Dwg_Section_Type
       return (sec_id <= SECTION_SYSTEM_MAP) ? dwg_section_r2004_names[sec_id]
                                             : NULL;

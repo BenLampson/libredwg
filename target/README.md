@@ -108,8 +108,9 @@ cmake --build .\build-codex-stream-tdd --target stream_test
 # generated blocking-versus-stream parity for both. It cross-checks the real
 # R1.4, R2.10, R2.6, R9, R10, and R11 fixtures against the blocking reader and
 # checks generated fixtures for old versions without repository DWG files.
-# Modern exact-version checks include generated R13b2/R13c3/R2000b/R2010b/
-# R2018b/R2022b fixtures and synthetic AC1016/AC1017/R2004c header variants.
+# Modern exact-version checks include generated R13b1/R13b2/R13c3/R2000b,
+# R2004a/R2004b/R2004c, R2010b/R2013b/R2018b/R2022b fixtures and synthetic
+# AC1016/AC1017/R2004c header variants.
 # An unknown AC9999 header must return DWG_ERR_INVALIDDWG with no callbacks.
 # Old-version entity sections are decoded one object at a time; the tests compare
 # reference snapshots and require at most three resident host entities.
@@ -563,11 +564,11 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Partial pure stream support | `R_2_10` | The pre-R11 stream reader covers the real `test/test-data/r2.10/entities.dwg` and `block.dwg` files with blocking-vs-stream validation of entity, block, and table sections, including `DWG_TYPE_REPEAT` and `DWG_TYPE_ENDREP`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. Owner/layer references and complete `BLOCK_HEADER` chains match per-handle blocking snapshots while direct entity walking keeps at most three host entities resident. This is not full R2.10 parity across all possible files. |
 | Partial pure stream support | `R_2_6`, `R_9`, `R_10` | Real-file C parity covers `r2.6/entities.dwg`, `r2.6/dim.dwg`, `r9/entities.dwg`, `r10/entities.dwg`, and `r10/tmp_line.dwg`. Object/type counts, decoded callbacks, per-handle references, table fixedtype masks, and `_3DLINE` coverage match the blocking reader with `full=0`; R10 also streams UCS, VPORT, and APPID tables. Their entity sections use the same bounded direct walker. |
 | Partial pure stream support | `R_11b1`, `R_11b2` | The shared pre-R11 reader passes exact-version blocking-vs-stream parity on minimal C-writer LINE fixtures with table-entry coverage, decoded callbacks, `full=0`, and both stream flag settings. No real historical beta DWG fixture is present, so this remains generated coverage. |
-| Pure stream route; mixed evidence | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map reader through `R_2002`. Real fixtures cover R13, R14, and R2000. Generated MINSERT fixtures cover R13b2, R13c3, and R2000b. Synthetic exact-header variants over the real R2000 payload cover R2000i and R2002 with 750 objects and both flag settings. R13b1 has no valid exact-version fixture. |
-| Pure stream route; mixed evidence | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map reader. Real fixtures cover R2004; a synthetic exact `R_2004c` header over the real R2004 payload passes 735-object parity. R2004a and R2004b have no valid exact-version fixture. AutoCAD 2005/2006 are not separate enum values here. |
+| Pure stream route; mixed evidence | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map reader through `R_2002`. Real fixtures cover R13, R14, and R2000. Generated MINSERT fixtures cover R13b1, R13b2, R13c3, and R2000b; exact R13b1 now passes 33-object parity after correcting its file-header boundary. Synthetic exact-header variants over the real R2000 payload cover R2000i and R2002 with 750 objects and both flag settings. |
+| Pure stream route; mixed evidence | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map reader. Generated exact-version MINSERT fixtures cover R2004a, R2004b, and R2004c with 37 objects, strict references, both stream flag settings, and `full=0`. Real fixtures cover R2004; a synthetic exact R2004c header over the real R2004 payload additionally passes 735-object parity. AutoCAD 2005/2006 are not separate enum values here. |
 | Pure stream route; partial evidence | `R_2007a`, `R_2007b`, `R_2007` | Uses the R2007 object-map reader. Real fixtures cover R2007. R2007a and R2007b have no valid exact-version fixture; the current C writer upgrades attempted fixtures to another file family. AutoCAD 2008/2009 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2010b`, `R_2010` | Uses the R2004/2010+ data-section object-map reader with R2010 object headers. Real fixtures cover R2010 and a generated MINSERT fixture covers exact R2010b. AutoCAD 2011/2012 are not separate enum values here. |
-| Pure stream route; partial evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013. R2013b has no valid exact-version fixture; current generated attempts contain invalid non-finite default block data. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
+| Pure stream route; mixed evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013, and a generated exact R2013b MINSERT fixture passes 37-object strict parity with `full=0`. The beta object layout is aligned by reading `has_ds_data` from the same R2013b boundary used by the encoder. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2018 and a generated MINSERT fixture covers exact R2018b. AutoCAD 2019/2020/2021 are not separate enum values here. |
 | Pure stream route; generated evidence | `R_2022b` | Uses the R2004/2010+ data-section object-map reader. Current validation uses a generated exact-version R2022b MINSERT fixture because no repository R2022 fixture exists. |
 | Partial pure stream support | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. It also passes C blocking-vs-stream parity on the real `ACEB10.dwg`, `entities-2d.dwg`, and `entities-3d.dwg` R11 files; `ACEB10.dwg` covers 1815 entities and 67 table entries. Each direct-walker entity uses one reusable object slot and an isolated handle map, so legacy EED lookup works without retaining the full entity graph. Per-handle owner/layer references and completed `BLOCK_HEADER` chains match the blocking reader, with at most three host entities resident. `R_12` aliases `R_11` in the enum and has no separate repository DWG fixture. This is substantial real-file coverage, not proof for every possible R11/R12 file. |
@@ -608,7 +609,7 @@ Header magic codes relevant to the current stream target:
 | `AC1007` | `R_11b1` | Partial support: generated fixture coverage |
 | `AC1008` | `R_11b2` | Partial support: generated fixture coverage |
 | `AC1009` | `R_11` / `R_12` | Partial support: generated and three real R11 fixtures |
-| `AC1010` | `R_13b1` | Route present; no valid exact-version fixture |
+| `AC1010` | `R_13b1` | Generated exact-version parity |
 | `AC1011` | `R_13b2` | Generated exact-version parity |
 | `AC1012` | `R_13` | Real fixture parity |
 | `AC1013` | `R_13c3` | Generated exact-version parity |
@@ -617,13 +618,13 @@ Header magic codes relevant to the current stream target:
 | `AC1015` | `R_2000` | Real fixture parity |
 | `AC1016` | `R_2000i` | Synthetic exact-header family parity; no real fixture |
 | `AC1017` | `R_2002` | Synthetic exact-header family parity; no real fixture |
-| `AC402a` | `R_2004a` | Route present; no valid exact-version fixture |
-| `AC402b` | `R_2004b` | Route present; no valid exact-version fixture |
-| `AC1018` | `R_2004c` / `R_2004` | Internal version refines the enum; synthetic beta and real release parity |
+| `AC402a` | `R_2004a` | Generated exact-version parity |
+| `AC402b` | `R_2004b` | Generated exact-version parity |
+| `AC1018` | `R_2004c` / `R_2004` | Internal version refines the enum; generated and synthetic candidate parity plus real release parity |
 | `AC701a` | `R_2007a` | Route present; no valid exact-version fixture |
 | `AC1021` | `R_2007b` / `R_2007` | Internal version refines the enum; no beta fixture, real release parity |
 | `AC1024` | `R_2010b` / `R_2010` | Generated beta and real release parity |
-| `AC1027` | `R_2013b` / `R_2013` | No valid beta fixture; real release parity |
+| `AC1027` | `R_2013b` / `R_2013` | Generated beta and real release parity |
 | `AC1032` | `R_2018b` / `R_2018` | Generated beta and real release parity |
 | `AC103-4` | `R_2022b` | Generated exact-version parity |
 
@@ -635,6 +636,15 @@ family, but it is not an independently sourced historical file of that exact
 version. A route-only entry proves dispatch exists, not that the unrepresented
 format variant has passed parity. Real fixture coverage is broader but still
 cannot prove every file variant.
+
+The 2026-07-10 exact-fixture audit checked every DWG blob in this repository's
+Git history, 43 DWG files under the local user profile, all tracked DWG history
+in the MIT-licensed ACadSharp repository, and 73 DWG fixtures from LibreCAD's
+`dwgsupp2` branch. The libdxfrw repository has no tracked DWG fixture. These
+sources contained release magics only and no `AC701a` or `AC701b`. Public
+search found definitions for those headers but no downloadable sample with a
+verifiable reusable license. This records the current evidence boundary; it
+does not assert that historical R2007 beta files cannot exist elsewhere.
 
 The important distinction is that a successful blocking read elsewhere does not
 count as stream support. Every current legal enum version now has an explicit
@@ -651,14 +661,14 @@ none
 
 Generated-only exact-version support still needing real historical DWG files:
 R_1_1, R_1_2, R_1_3, R_2_0b, R_2_0, R_2_21, R_2_22, R_2_4, R_2_5,
-R_9c1, R_11b1, R_11b2, R_13b2, R_13c3, R_2000b, R_2010b, R_2018b,
-R_2022b
+R_9c1, R_11b1, R_11b2, R_13b1, R_13b2, R_13c3, R_2000b, R_2004a,
+R_2004b, R_2004c, R_2010b, R_2013b, R_2018b, R_2022b
 
 Synthetic exact-header support still needing real historical DWG files:
-R_2000i, R_2002, R_2004c
+R_2000i, R_2002
 
 Pure stream routes with no valid exact-version fixture at all:
-R_13b1, R_2004a, R_2004b, R_2007a, R_2007b, R_2013b
+R_2007a, R_2007b
 
 R_1_4 partial support remaining gap:
 real R1.4 parity beyond `test/test-data/r1.4/entities.dwg` entity-section
@@ -693,13 +703,13 @@ coverage,
 R_2_6, R_9, and R_10 real fixture coverage,
 R_11b1 and R_11b2 generated fixture coverage,
 R_11/R_12 generated coverage plus three real R11 fixtures,
-R_13b1 route-only, R_13b2 generated, R_13 real, R_13c3 generated,
+R_13b1 and R_13b2 generated, R_13 real, R_13c3 generated,
 R_14,
 R_2000b generated, R_2000 real, R_2000i and R_2002 synthetic,
-R_2004a and R_2004b route-only, R_2004c synthetic, R_2004 real,
+R_2004a, R_2004b, and R_2004c generated, R_2004c also synthetic, R_2004 real,
 R_2007a and R_2007b route-only, R_2007 real,
 R_2010b generated, R_2010 real,
-R_2013b route-only, R_2013 real,
+R_2013b generated, R_2013 real,
 R_2018b generated, R_2018 real,
 R_2022b generated
 ```
@@ -710,14 +720,15 @@ Development targets from the current state to complete stream parity:
    - Replace generated-only evidence for `R_1_1`, `R_1_2`, `R_1_3`,
      `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_9c1`,
      `R_11b1`, and `R_11b2` with real historical DWG fixtures.
-   - Obtain valid exact-version fixtures for `R_13b1`, `R_2004a`, `R_2004b`,
-     `R_2007a`, `R_2007b`, and `R_2013b`; current writer attempts are invalid
-     or are upgraded to another file family.
-   - Replace generated-only modern evidence for `R_13b2`, `R_13c3`,
-     `R_2000b`, `R_2010b`, `R_2018b`, and `R_2022b` with real historical DWG
-     files.
-   - Replace synthetic exact-header evidence for `R_2000i`, `R_2002`, and
-     `R_2004c` with independently sourced historical files.
+   - Obtain valid exact-version fixtures for `R_2007a` and `R_2007b`. The C
+     writer explicitly upgrades R2007-family output to R2010 because R2007
+     section encoding is not implemented, so it cannot generate this proof.
+   - Replace generated-only modern evidence for `R_13b1`, `R_13b2`, `R_13c3`,
+     `R_2000b`, `R_2004a`, `R_2004b`, `R_2004c`, `R_2010b`, `R_2013b`,
+     `R_2018b`, and `R_2022b` with real historical DWG files.
+   - Replace synthetic exact-header evidence for `R_2000i` and `R_2002` with
+     independently sourced historical files. R2004c also retains a synthetic
+     real-family payload check in addition to its generated exact fixture.
    - Expand R1.4 beyond the current real `entities.dwg` entity-section fixture
      before calling R1.4 complete.
    - Expand R2.10 beyond the current real `entities.dwg` entity/table-section
@@ -741,11 +752,11 @@ The project status is: every current legal `Dwg_Version_Type` has a C pure
 stream route. C stream parity is real for the modern families and has real
 pre-R13 coverage for R1.4, R2.10, R2.6, R9, R10, and R11. Generated coverage
 additionally reaches R1.1-R1.3, R2.0 beta, R2.0, R2.21, R2.22, R2.4, R2.5,
-R9c1, R11b1, R11b2, R13b2, R13c3, R2000b, R2010b, R2018b, and R2022b.
-Synthetic exact-header parity reaches R2000i, R2002, and R2004c. Complete
-historical evidence coverage is not done: R13b1, R2004a/b, R2007a/b, and
-R2013b have no valid exact-version fixture, and the generated, synthetic, and
-partial real-fixture gaps above remain open.
+R9c1, R11b1, R11b2, R13b1, R13b2, R13c3, R2000b, R2004a/b/c, R2010b,
+R2013b, R2018b, and R2022b. Synthetic exact-header parity reaches R2000i,
+R2002, and R2004c. Complete historical evidence coverage is not done:
+R2007a/b still have no valid exact-version fixture, and the generated,
+synthetic, and partial real-fixture gaps above remain open.
 
 ## 9. C-side work items
 

@@ -2524,7 +2524,7 @@ encode_objects_handles (Dwg_Data *restrict dwg, Bit_Chain *restrict dat,
 #ifndef NDEBUG
       // check if this object overwrote at address 0. but with r2004 it starts
       // fresh.
-      if (dwg->header.version >= R_1_2 && dwg->header.version < R_2004)
+      if (dwg->header.version >= R_1_2 && dwg->header.version < R_2004a)
         {
           if (dat->size < 6 || dat->chain[0] != 'A' || dat->chain[1] != 'C')
             {
@@ -2604,7 +2604,7 @@ encode_objects_handles (Dwg_Data *restrict dwg, Bit_Chain *restrict dat,
       if (dat->byte - size_adr > 2030) // 2029
         {
           ckr_missing = 0;
-          assert (size_adr || dwg->header.version >= R_2004);
+          assert (size_adr || dwg->header.version >= R_2004a);
 #ifdef ENCODE_PATCH_RSSIZE
           encode_patch_RSsize (dat, size_adr);
 #else
@@ -2643,7 +2643,7 @@ encode_objects_handles (Dwg_Data *restrict dwg, Bit_Chain *restrict dat,
       bit_write_CRC_BE (dat, size_adr, 0xC0C1);
     }
 #ifndef NDEBUG
-  if (dwg->header.version >= R_1_2 && dwg->header.version < R_2004)
+  if (dwg->header.version >= R_1_2 && dwg->header.version < R_2004a)
     {
       if (dat->size < 4 || dat->chain[0] != 'A' || dat->chain[1] != 'C')
         {
@@ -2680,7 +2680,7 @@ encode_objfreespace_2ndheader (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
    * ObjFreeSpace and Second header - r13-r2000 only.
    * Note: partially also since r2004.
    */
-  if (dwg->header.version >= R_13 && dwg->header.version < R_2004
+  if (dwg->header.version >= R_13 && dwg->header.version < R_2004a
       && dwg->header.num_sections > 3)
     {
       assert (dat->byte);
@@ -2697,7 +2697,7 @@ encode_objfreespace_2ndheader (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
         }
     }
 
-  if (dwg->header.version >= R_13 && dwg->header.version < R_2004
+  if (dwg->header.version >= R_13 && dwg->header.version < R_2004a
       && dwg->secondheader.codepage)
     {
       struct _dwg_secondheader *_obj = &dwg->secondheader;
@@ -3008,7 +3008,7 @@ dwg_encode (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
       _obj->blocks_size = 0x40000000;
     if (!_obj->extras_size)
       _obj->extras_size = 0x80000000;
-    VERSIONS (R_2_0b, R_13b1)
+    VERSIONS (R_2_0b, R_11)
     {
       _obj->numentity_sections = 3;
     }
@@ -3498,7 +3498,7 @@ dwg_encode (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
 
     // on downconvert or DXF import add the missing VX_CONTROL object
     // (DXF never contains VX tables nor table records)
-    if (dwg->header.version < R_2004 && !dwg->header_vars.VX_CONTROL_OBJECT)
+    if (dwg->header.version < R_2004a && !dwg->header_vars.VX_CONTROL_OBJECT)
       {
         Dwg_Object *obj = dwg_find_first_type (dwg, DWG_TYPE_VX_CONTROL);
         if (!obj)
@@ -3639,11 +3639,9 @@ dwg_encode (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
               break;
             if (type == SECTION_HANDLES)
               {
-                // Don't bit_chain_init_dat here; encode_objects_handles
-                // allocates sec_dat[SECTION_HANDLES] itself. Just set
-                // version so it can be copied to SECTION_OBJECTS.
-                bit_chain_set_version (&sec_dat[type], dat);
-                str_dat = hdl_dat = dat = &sec_dat[type];
+                // encode_objects_handles allocates both output chains. Use
+                // the file chain as its version template, not either output.
+                str_dat = hdl_dat = dat = old_dat;
                 error |= encode_objects_handles (dwg, dat, sec_dat);
               }
             break;

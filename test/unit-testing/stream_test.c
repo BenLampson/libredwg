@@ -4234,6 +4234,9 @@ main (void)
     return 1;
   stream_trace_stage ("test_generated_minsert_stream_fixture");
   if (test_generated_minsert_stream_fixture (
+          R_13b1, "generated R13 beta 1 MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
           R_13b2, "generated R13 beta 2 MINSERT stream parity ok"))
     return 1;
   if (test_generated_minsert_stream_fixture (
@@ -4246,7 +4249,19 @@ main (void)
           R_2000, "generated R2000 MINSERT stream parity ok"))
     return 1;
   if (test_generated_minsert_stream_fixture (
+          R_2004a, "generated R2004 alpha MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_2004b, "generated R2004 beta MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_2004c, "generated R2004 candidate MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
           R_2010b, "generated R2010 beta MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_2013b, "generated R2013 beta MINSERT stream parity ok"))
     return 1;
   if (test_generated_minsert_stream_fixture (
           R_2018b, "generated R2018 beta MINSERT stream parity ok"))
