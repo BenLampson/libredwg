@@ -3896,6 +3896,8 @@ test_pre_r11_real_fixture_stream (void)
     { "test/test-data/r10/entities.dwg", "R10 entities", R_10, 0,
       DWG_TYPE__3DLINE },
     { "test/test-data/r10/tmp_line.dwg", "R10 line", R_10, 0, 0 },
+    { "test/test-data/r12-oda/Constraints.dwg", "ODA ACAD12 Constraints", R_11,
+      0, 0 },
     { "test/test-data/r11/ACEB10.dwg", "R11 ACEB10", R_11, 0, 0 },
     { "test/test-data/r11/entities-2d.dwg", "R11 2D entities", R_11, 0, 0 },
     { "test/test-data/r11/entities-3d.dwg", "R11 3D entities", R_11, 0, 0 },

@@ -234,6 +234,8 @@ decode_preR13_section (Dwg_Section_Type_r11 id, Bit_Chain *restrict dat,
   // Bit_Chain *hdl_dat = dat;
   Dwg_Object *obj;
   int error = 0;
+  int sentinel_error = 0;
+  int table_bounds_valid;
   BITCODE_RLd i;
   // BITCODE_RL vcount;
   BITCODE_RL num = dwg->num_objects;
@@ -243,6 +245,13 @@ decode_preR13_section (Dwg_Section_Type_r11 id, Bit_Chain *restrict dat,
   // BITCODE_TF name;
   // BITCODE_RSd used = -1;
   // BITCODE_RC flag;
+
+  table_bounds_valid
+      = tbl->number >= 0 && tbl->address <= dat->size
+        && (!tbl->number
+            || (tbl->size
+                && (size_t)tbl->number
+                       <= (dat->size - tbl->address) / tbl->size));
 
   LOG_TRACE ("\ncontents table %-8s [%2d]: size:%-4u num:%-3ld (" FORMAT_RLL
              "-" FORMAT_RLL ")\n\n",
@@ -268,9 +277,19 @@ decode_preR13_section (Dwg_Section_Type_r11 id, Bit_Chain *restrict dat,
   SINCE (R_11)
   {
 #define DECODE_PRER13_SENTINEL(ID)                                            \
-  error |= decode_preR13_sentinel (ID, #ID, dat, dwg);                        \
-  if (error >= DWG_ERR_SECTIONNOTFOUND)                                       \
-  return error
+  sentinel_error = decode_preR13_sentinel (ID, #ID, dat, dwg);                \
+  if (sentinel_error == DWG_ERR_SECTIONNOTFOUND && table_bounds_valid)        \
+    {                                                                         \
+      LOG_WARN ("Ignoring mismatched %s around bounded table %s", #ID,        \
+                tbl->name);                                                   \
+      error |= DWG_ERR_WRONGCRC;                                              \
+    }                                                                         \
+  else                                                                        \
+    {                                                                         \
+      error |= sentinel_error;                                                \
+      if (error >= DWG_ERR_SECTIONNOTFOUND)                                   \
+        return error;                                                         \
+    }
 
     switch (id)
       {

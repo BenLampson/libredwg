@@ -437,9 +437,11 @@ strict object/type/table counts, and per-handle blocking reference snapshots.
 The direct R11 walker decodes each entity in a reusable `dwg->object[]` slot
 with an isolated handle map, then releases it after the callback; this is
 required by legacy EED decoding without retaining the complete entity graph.
-This is still not proof for every possible R11/R12 file, and there is no
-separately identified R12 DWG fixture. Any future known version without a stream
-route must fail clearly with `DWG_ERR_NOTYETSUPPORTED` instead of falling back.
+This is still not proof for every possible R11/R12 file. An ODA 27.1
+`ACAD12` conversion now supplies a separately identified R12 fixture generated
+by an implementation independent of LibreDWG. It is not represented as a
+historical R12 file. Any future known version without a stream route must fail
+clearly with `DWG_ERR_NOTYETSUPPORTED` instead of falling back.
 ```
 
 Current stream hardening:
@@ -619,7 +621,7 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream route; mixed evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013, and a generated exact R2013b MINSERT fixture passes 37-object strict parity with `full=0`. The beta object layout is aligned by reading `has_ds_data` from the same R2013b boundary used by the encoder. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2018 and a generated MINSERT fixture covers exact R2018b. AutoCAD 2019/2020/2021 are not separate enum values here. |
 | Pure stream route; generated evidence | `R_2022b` | Uses the R2004/2010+ data-section object-map reader. Current validation uses a generated exact-version R2022b MINSERT fixture because no repository R2022 fixture exists. |
-| Partial pure stream support | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. Real C blocking-vs-stream parity now covers 23 R11 DWGs from two independent sources: the original three repository files plus 20 BSD-2-Clause AC1009 entity fixtures. The independent set covers 3DFACE, ARC, CIRCLE, aligned DIMENSION, INSERT, JUMP, LINE, POINT, POLYLINE, SHAPE, TEXT, and EED variants. Each direct-walker entity uses one reusable object slot and an isolated handle map. Per-handle owner/layer references and completed `BLOCK_HEADER` chains match the blocking reader, with at most three host entities resident. `R_12` aliases `R_11` in the enum and still has no separately identified real R12 DWG fixture. |
+| Pure stream route; real R11 plus ODA R12 evidence | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. Real C parity covers 23 R11 DWGs from two independent sources. An ODA 27.1 `ACAD12` conversion adds explicit R12 provenance and covers two entities plus 24 table records. Its table pointers are valid although several table sentinels do not occur at the R11-assumed offsets; blocking and Stream now retain strict bounds while treating a missing table sentinel as noncritical. Both Stream flag settings, per-handle references, and `full=0` pass. `R_12` aliases `R_11` in the enum, and no independently sourced historical R12 file is present. |
 
 Version routing is determined from the DWG file header before selecting a stream
 reader. The C decoder reads the header magic at the start of the file and maps
@@ -656,7 +658,7 @@ Header magic codes relevant to the current stream target:
 | `AC1006` | `R_10` | Partial support: real fixture coverage |
 | `AC1007` | `R_11b1` | Partial support: generated fixture coverage |
 | `AC1008` | `R_11b2` | Partial support: generated fixture coverage |
-| `AC1009` | `R_11` / `R_12` | Generated coverage plus 23 real R11 fixtures from two independent sources; no separately identified R12 fixture |
+| `AC1009` | `R_11` / `R_12` | Generated coverage, 23 real R11 fixtures from two independent sources, and one ODA 27.1 `ACAD12` fixture; no independently sourced historical R12 file |
 | `AC1010` | `R_13b1` | Generated exact-version parity |
 | `AC1011` | `R_13b2` | Generated exact-version parity |
 | `AC1012` | `R_13` | Real fixture parity |
@@ -701,6 +703,19 @@ identifies its fixtures as AutoCAD 11 AC1009 files. Twenty entity DWGs were
 imported with the upstream license and exact commit recorded in
 `test/test-data/r11-ac1009/README.md`. This closes the independent-source R11
 entity gap, but it is not evidence for a separately identified R12 file.
+
+ODA File Converter 27.1.0.0 was then run with the repository's
+`test/test-data/r12/Constraints.dxf` input and the explicit `ACAD12 DWG`
+target. The resulting `AC1009` file initially failed both `dwg_read_file` and
+the pure Stream path because valid table addresses were paired with table
+sentinels that did not match the R11 positional assumption. Table record and
+file bounds remain mandatory, but a missing table sentinel is now a
+noncritical integrity warning. The fixed artifact passes blocking read and
+both Stream flag settings with 26 decoded objects, including two entities and
+24 table records, zero decode-error callbacks, strict per-handle references,
+and `full=0`. Its command, input/output hashes, and independent-implementation
+provenance are recorded in `test/test-data/r12-oda/README.md`. This is explicit
+R12 format evidence, but not a historical R12 sample.
 
 The same audit inspected the BSD-2-Clause AC1.40, AC2.10, AC1003, AC1004, and
 AC1006 repositories. Decoded Stream screening passed all 80 AC1.40 files, all
@@ -750,10 +765,12 @@ R_9: 1
 R_10: 19
 R_11: 23
 
-R_12 partial support remaining gap:
-a separately identified, reusable-license R12 DWG file. `R_12` aliases `R_11`
-in the enum, so the header route is already exercised by 23 real R11 AC1009
-files, but those files must not be relabeled as R12 evidence.
+R_12 remaining historical-evidence gap:
+an independently sourced historical R12 DWG file. The committed ODA 27.1
+`ACAD12` fixture supplies explicit R12 provenance from an independent writer,
+but it was generated in 2026 and must not be relabeled as a historical sample.
+`R_12` aliases `R_11` in the enum, so header bytes alone cannot distinguish
+the two releases.
 
 `DWG_TYPE_REPEAT` and `DWG_TYPE_ENDREP` are version-valid before `R_2_10`;
 `DWG_TYPE_LOAD` is version-valid before `R_2_0b`; `_3DLINE` is valid for
@@ -772,6 +789,7 @@ coverage,
 R_2_6 strict parity on 10 real fixtures, R_9 on one, and R_10 on 19,
 R_11b1 and R_11b2 generated fixture coverage,
 R_11 generated coverage plus 23 real R11 fixtures from two independent sources,
+R_12 ODA 27.1 `ACAD12` fixture coverage with 26 decoded objects,
 R_13b1 and R_13b2 generated, R_13 real, R_13c3 generated,
 R_14,
 R_2000b generated, R_2000 real, R_2000i and R_2002 synthetic,
@@ -799,9 +817,10 @@ Development targets from the current state to complete stream parity:
    - Replace synthetic exact-header evidence for `R_2000i` and `R_2002` with
      independently sourced historical files. R2004c also retains a synthetic
      real-family payload check in addition to its generated exact fixture.
-   - Add a separately identified, reusable-license R12 DWG before calling the
-     shared R11/R12 family historically complete. R11 now has 23 real fixtures
-     from two independent sources.
+   - Add an independently sourced historical R12 DWG before calling the shared
+     R11/R12 family historically complete. The ODA `ACAD12` fixture closes the
+     independent-writer format gap but not the historical-evidence gap. R11
+     has 23 real fixtures from two independent sources.
 2. Keep unsupported-version behavior explicit.
    - Supported pure stream versions must pass with or without
      `DWG_STREAM_F_NO_FULL_FALLBACK`.

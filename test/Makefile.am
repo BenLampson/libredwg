@@ -422,6 +422,8 @@ TESTDATA = \
     test-data/r11-ac1009/TEXT1.DWG \
     test-data/r12/Constraints.dxf \
     test-data/r12/Leader.dxf \
+    test-data/r12-oda/Constraints.dwg \
+    test-data/r12-oda/README.md \
     test-data/r13/v.dxf \
     test-data/r14/Constraints.dwg \
     test-data/r14/Leader.dwg \
