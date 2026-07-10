@@ -392,8 +392,9 @@ walked and released one object at a time; `stream_test` fails if more than three
 host entities are resident during these callbacks. Table objects remain only as
 the retained metadata needed to resolve those old-format relationships.
 The default test also cross-checks `test/test-data/r2.10/block.dwg`, both real
-R2.6 fixtures, the real R9 fixture, both real R10 fixtures, and all three real
-R11 DWG files. For versions without repository DWG files it writes and then
+R2.6 fixtures, the real R9 fixture, both real R10 fixtures, all three original
+R11 DWG files, and 20 independently sourced BSD-2-Clause AC1009 entity
+fixtures. For versions without repository DWG files it writes and then
 blocking-reads minimal C-generated fixtures for `R_2_0b`, `R_2_0`, `R_2_21`,
 `R_2_22`, `R_2_4`, `R_2_5`, `R_9c1`, `R_11b1`, and `R_11b2` before running
 stream parity with both zero flags and `DWG_STREAM_F_NO_FULL_FALLBACK`. The R11
@@ -426,11 +427,17 @@ and `DWG_TYPE_VX_TABLE_RECORD`, including the default entries created by
 `dwg_add_Document` and the entries decoded from R11 table sections.
 Real R11 coverage now includes `ACEB10.dwg`, `entities-2d.dwg`, and
 `entities-3d.dwg`. `ACEB10.dwg` validates 1815 entities and 67 table entries.
+It also includes 20 entity fixtures from the independently maintained,
+BSD-2-Clause licensed `michal-josef-spacek/CAD-Format-DWG-AC1009` repository at
+commit `186656e511fa1d1145ebdcfbe89fc002e018759e`. Those files cover 3DFACE, ARC,
+CIRCLE, aligned DIMENSION, INSERT, JUMP, LINE, POINT, POLYLINE, SHAPE, and TEXT,
+including several EED variants. Every file passes both Stream flag settings,
+strict object/type/table counts, and per-handle blocking reference snapshots.
 The direct R11 walker decodes each entity in a reusable `dwg->object[]` slot
 with an isolated handle map, then releases it after the callback; this is
 required by legacy EED decoding without retaining the complete entity graph.
 This is still not proof for every possible R11/R12 file, and there is no
-separate repository R12 DWG fixture. Any future known version without a stream
+separately identified R12 DWG fixture. Any future known version without a stream
 route must fail clearly with `DWG_ERR_NOTYETSUPPORTED` instead of falling back.
 ```
 
@@ -469,6 +476,8 @@ object_map are not borrowed or mutated by decoded callback emission.
 `stream_test` directly covers this host-state isolation and verifies that the
 host object_ref, HANDSEED, dirty_refs, and object_map state is preserved after a
 decode-error path.
+`dwgprobe` reports this old-format incremental route as `prer13-entity` rather
+than the previous misleading `none` decode mode.
 ```
 
 Latest local large-file smoke:
@@ -609,7 +618,7 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream route; mixed evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013, and a generated exact R2013b MINSERT fixture passes 37-object strict parity with `full=0`. The beta object layout is aligned by reading `has_ds_data` from the same R2013b boundary used by the encoder. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2018 and a generated MINSERT fixture covers exact R2018b. AutoCAD 2019/2020/2021 are not separate enum values here. |
 | Pure stream route; generated evidence | `R_2022b` | Uses the R2004/2010+ data-section object-map reader. Current validation uses a generated exact-version R2022b MINSERT fixture because no repository R2022 fixture exists. |
-| Partial pure stream support | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. It also passes C blocking-vs-stream parity on the real `ACEB10.dwg`, `entities-2d.dwg`, and `entities-3d.dwg` R11 files; `ACEB10.dwg` covers 1815 entities and 67 table entries. Each direct-walker entity uses one reusable object slot and an isolated handle map, so legacy EED lookup works without retaining the full entity graph. Per-handle owner/layer references and completed `BLOCK_HEADER` chains match the blocking reader, with at most three host entities resident. `R_12` aliases `R_11` in the enum and has no separate repository DWG fixture. This is substantial real-file coverage, not proof for every possible R11/R12 file. |
+| Partial pure stream support | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. Real C blocking-vs-stream parity now covers 23 R11 DWGs from two independent sources: the original three repository files plus 20 BSD-2-Clause AC1009 entity fixtures. The independent set covers 3DFACE, ARC, CIRCLE, aligned DIMENSION, INSERT, JUMP, LINE, POINT, POLYLINE, SHAPE, TEXT, and EED variants. Each direct-walker entity uses one reusable object slot and an isolated handle map. Per-handle owner/layer references and completed `BLOCK_HEADER` chains match the blocking reader, with at most three host entities resident. `R_12` aliases `R_11` in the enum and still has no separately identified real R12 DWG fixture. |
 
 Version routing is determined from the DWG file header before selecting a stream
 reader. The C decoder reads the header magic at the start of the file and maps
@@ -646,7 +655,7 @@ Header magic codes relevant to the current stream target:
 | `AC1006` | `R_10` | Partial support: real fixture coverage |
 | `AC1007` | `R_11b1` | Partial support: generated fixture coverage |
 | `AC1008` | `R_11b2` | Partial support: generated fixture coverage |
-| `AC1009` | `R_11` / `R_12` | Partial support: generated and three real R11 fixtures |
+| `AC1009` | `R_11` / `R_12` | Generated coverage plus 23 real R11 fixtures from two independent sources; no separately identified R12 fixture |
 | `AC1010` | `R_13b1` | Generated exact-version parity |
 | `AC1011` | `R_13b2` | Generated exact-version parity |
 | `AC1012` | `R_13` | Real fixture parity |
@@ -685,6 +694,13 @@ downloadable sample with a verifiable reusable license. This records the
 current evidence boundary; it does not assert that historical R2007 alpha or
 beta files cannot exist elsewhere.
 
+The 2026-07-11 follow-up audit found the BSD-2-Clause licensed
+`michal-josef-spacek/CAD-Format-DWG-AC1009` repository. Its README explicitly
+identifies its fixtures as AutoCAD 11 AC1009 files. Twenty entity DWGs were
+imported with the upstream license and exact commit recorded in
+`test/test-data/r11-ac1009/README.md`. This closes the independent-source R11
+entity gap, but it is not evidence for a separately identified R12 file.
+
 The important distinction is that a successful blocking read elsewhere does not
 count as stream support. Every current legal enum version now has an explicit
 stream route. A future known version without a route must fail clearly with
@@ -720,9 +736,10 @@ real R2.10 parity beyond `test/test-data/r2.10/entities.dwg` entity/table
 coverage. The covered legacy fixedtypes are `DWG_TYPE_REPEAT` and
 `DWG_TYPE_ENDREP`.
 
-R_11/R_12 partial support remaining gap:
-real coverage beyond the three repository R11 files, especially a separately
-sourced R12 file even though `R_12` aliases `R_11` in the enum.
+R_12 partial support remaining gap:
+a separately identified, reusable-license R12 DWG file. `R_12` aliases `R_11`
+in the enum, so the header route is already exercised by 23 real R11 AC1009
+files, but those files must not be relabeled as R12 evidence.
 
 `DWG_TYPE_REPEAT` and `DWG_TYPE_ENDREP` are version-valid before `R_2_10`;
 `DWG_TYPE_LOAD` is version-valid before `R_2_0b`; `_3DLINE` is valid for
@@ -742,7 +759,7 @@ R_2_0b, R_2_0, R_2_21, R_2_22, R_2_4, R_2_5, and R_9c1 generated fixture
 coverage,
 R_2_6, R_9, and R_10 real fixture coverage,
 R_11b1 and R_11b2 generated fixture coverage,
-R_11/R_12 generated coverage plus three real R11 fixtures,
+R_11 generated coverage plus 23 real R11 fixtures from two independent sources,
 R_13b1 and R_13b2 generated, R_13 real, R_13c3 generated,
 R_14,
 R_2000b generated, R_2000 real, R_2000i and R_2002 synthetic,
@@ -774,8 +791,9 @@ Development targets from the current state to complete stream parity:
      before calling R1.4 complete.
    - Expand R2.10 beyond the current real `entities.dwg` entity/table-section
      fixture before calling R2.10 complete.
-   - Expand the three real R11 fixtures and add a separately sourced R12 DWG
-     before calling R11/R12 complete.
+   - Add a separately identified, reusable-license R12 DWG before calling the
+     shared R11/R12 family historically complete. R11 now has 23 real fixtures
+     from two independent sources.
 2. Keep unsupported-version behavior explicit.
    - Supported pure stream versions must pass with or without
      `DWG_STREAM_F_NO_FULL_FALLBACK`.

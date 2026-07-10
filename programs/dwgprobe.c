@@ -48,6 +48,7 @@ typedef struct _probe_stats
   BITCODE_BL r13_object_map_objects;
   BITCODE_BL r2007_object_map_objects;
   BITCODE_BL r2004_object_map_objects;
+  BITCODE_BL prer13_entity_objects;
   BITCODE_BL full_decode_objects;
   BITCODE_BL file_map_objects;
   BITCODE_BL heap_objects;
@@ -136,6 +137,11 @@ probe_object (const Dwg_Stream_Object_Info *info, void *user)
       stats->lightweight_objects++;
       stats->r13_object_map_objects++;
     }
+  else if (info->decode_mode == DWG_STREAM_DECODE_PRER13_ENTITY)
+    {
+      stats->lightweight_objects++;
+      stats->prer13_entity_objects++;
+    }
   else if (info->decode_mode == DWG_STREAM_DECODE_FULL)
     stats->full_decode_objects++;
 
@@ -194,6 +200,8 @@ decode_mode_name (const Probe_Stats *stats)
   if (stats->num_objects
       && stats->r13_object_map_objects == stats->num_objects)
     return "r13-object-map";
+  if (stats->num_objects && stats->prer13_entity_objects == stats->num_objects)
+    return "prer13-entity";
   if (stats->num_objects && stats->full_decode_objects == stats->num_objects)
     return "full";
   if (stats->lightweight_objects || stats->full_decode_objects)

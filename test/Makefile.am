@@ -353,6 +353,28 @@ TESTDATA = \
     test-data/r11/entities-3d.dwg \
     test-data/r11/entities-3d.dxf \
     test-data/r11/entities-3d.scr \
+    test-data/r11-ac1009/3DFACE1.DWG \
+    test-data/r11-ac1009/3DFACE2.DWG \
+    test-data/r11-ac1009/ARC1.DWG \
+    test-data/r11-ac1009/ARC2.DWG \
+    test-data/r11-ac1009/CIRCLE1.DWG \
+    test-data/r11-ac1009/CIRCLE2.DWG \
+    test-data/r11-ac1009/CIRCLE3.DWG \
+    test-data/r11-ac1009/DIM1.DWG \
+    test-data/r11-ac1009/DIM2.DWG \
+    test-data/r11-ac1009/INSERT1.DWG \
+    test-data/r11-ac1009/INSERT2.DWG \
+    test-data/r11-ac1009/JUMP1.DWG \
+    test-data/r11-ac1009/LICENSE \
+    test-data/r11-ac1009/LINE1.DWG \
+    test-data/r11-ac1009/LINE2.DWG \
+    test-data/r11-ac1009/LINE3.DWG \
+    test-data/r11-ac1009/PL1.DWG \
+    test-data/r11-ac1009/POINT1.DWG \
+    test-data/r11-ac1009/POINT2.DWG \
+    test-data/r11-ac1009/README.md \
+    test-data/r11-ac1009/SHAPE1.DWG \
+    test-data/r11-ac1009/TEXT1.DWG \
     test-data/r12/Constraints.dxf \
     test-data/r12/Leader.dxf \
     test-data/r13/v.dxf \
