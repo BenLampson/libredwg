@@ -2822,6 +2822,7 @@ write_generated_minsert_fixture (Dwg_Version_Type version, const char *label,
   dwg_point_3d pt1 = { 1.5, 2.5, 0.2 };
   dwg_point_3d pt2 = { 2.5, 1.5, 0.0 };
   const char *tag;
+  unsigned i;
   int error;
 
   tag = dwg_version_type (version);
@@ -2859,6 +2860,19 @@ write_generated_minsert_fixture (Dwg_Version_Type version, const char *label,
   block_line->parent->entmode = 3;
   dwg_add_ENDBLK (blk);
   dwg_add_MINSERT (hdr, &pt1, "bloko", 1.0, 1.0, 1.0, 0.0, 2, 1, 1.0, 0.0);
+  if (version == R_2007)
+    {
+      for (i = 0; i < 2000; i++)
+        {
+          if (!dwg_add_LINE (hdr, &pt1, &pt2))
+            {
+              printf ("failed to create generated %s multipage LINE %u\n",
+                      label, i);
+              dwg_free (dwg);
+              return 1;
+            }
+        }
+    }
 
   error = dwg_write_file (path, dwg);
   dwg_free (dwg);
@@ -2893,6 +2907,18 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
               "version=%u expected=%u\n",
               label, error, (unsigned)blocking.header.from_version,
               (unsigned)version);
+      dwg_free (&blocking);
+      remove (path);
+      return 1;
+    }
+  if (version == R_2007
+      && blocking.fhdr.r2007_file_header.pages_amount
+             <= blocking.fhdr.r2007_file_header.num_sections + 3)
+    {
+      printf ("generated %s did not cover a multipage data section: "
+              "pages=%ld sections=%ld\n",
+              label, (long)blocking.fhdr.r2007_file_header.pages_amount,
+              (long)blocking.fhdr.r2007_file_header.num_sections);
       dwg_free (&blocking);
       remove (path);
       return 1;
@@ -4256,6 +4282,15 @@ main (void)
     return 1;
   if (test_generated_minsert_stream_fixture (
           R_2004c, "generated R2004 candidate MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_2007a, "generated R2007 alpha MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_2007b, "generated R2007 beta MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_2007, "generated R2007 MINSERT stream parity ok"))
     return 1;
   if (test_generated_minsert_stream_fixture (
           R_2010b, "generated R2010 beta MINSERT stream parity ok"))

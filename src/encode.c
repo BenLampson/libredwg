@@ -58,6 +58,7 @@
 #include "classes.h"
 #include "dynapi.h"
 #include "free.h"
+#include "reedsolomon.h"
 
 // from dwg_api
 BITCODE_T dwg_add_u8_input (Dwg_Data *restrict dwg,
@@ -996,6 +997,492 @@ security_is_empty (const Dwg_Security *obj)
          && obj->crypto_id == 0 && (!obj->crypto_name || !obj->crypto_name[0])
          && obj->algo_id == 0 && obj->key_len == 0 && obj->encr_size == 0
          && (!obj->encr_buffer || !obj->encr_buffer[0]);
+}
+
+#define R2007_FILE_HEADER_POS 0x80U
+#define R2007_FILE_HEADER_SIZE 0x400U
+#define R2007_FIRST_PAGE_POS 0x480U
+#define R2007_DATA_PAGE_MAX 0xf800U
+
+typedef struct _r2007_encode_page
+{
+  Dwg_Section_Type type;
+  size_t source_offset;
+  size_t data_size;
+  size_t disk_size;
+  int64_t id;
+} r2007_encode_page;
+
+static size_t
+r2007_align_size (size_t size, size_t alignment)
+{
+  return (size + alignment - 1) & ~(alignment - 1);
+}
+
+static size_t
+r2007_data_page_disk_size (size_t data_size)
+{
+  return r2007_align_size (MAX (data_size, 0x20U), 0x20U);
+}
+
+static size_t
+r2007_system_page_size (size_t data_size)
+{
+  size_t aligned_size = r2007_align_size (data_size, 8);
+  size_t page_size = ((aligned_size * 2U + 238U) / 239U) * 255U;
+
+  if (page_size < 0x400U)
+    return 0x400U;
+  return r2007_align_size (page_size, 0x20U);
+}
+
+static size_t
+r2007_system_page_repeat (size_t data_size, size_t page_size)
+{
+  size_t aligned_size = r2007_align_size (data_size, 8);
+  size_t repeat;
+
+  if (!aligned_size)
+    return 0;
+  repeat = ((page_size / 255U) * 239U) / aligned_size;
+  return repeat ? repeat : 1;
+}
+
+/* Write the interleaved RS layout used by R2007 file headers and system
+   pages.  Uncompressed data pages are stored directly and do not use this
+   helper. */
+static int
+r2007_write_rs_page (BITCODE_RC *restrict dst, size_t dst_size,
+                     const BITCODE_RC *restrict src, size_t src_size,
+                     size_t data_block_size, size_t repeat_count,
+                     bool align_input)
+{
+  BITCODE_RC *blocks;
+  BITCODE_RC parity[16];
+  size_t aligned_size;
+  size_t payload_size;
+  size_t block_count;
+  size_t encoded_size;
+  size_t i, j, r;
+
+  if (!dst || !src || !src_size || !repeat_count || data_block_size != 239U)
+    return DWG_ERR_INVALIDDWG;
+  aligned_size = align_input ? r2007_align_size (src_size, 8) : src_size;
+  if (aligned_size > SIZE_MAX / repeat_count)
+    return DWG_ERR_OUTOFMEM;
+  payload_size = aligned_size * repeat_count;
+  block_count = (payload_size + data_block_size - 1U) / data_block_size;
+  if (!block_count || block_count > SIZE_MAX / data_block_size)
+    return DWG_ERR_OUTOFMEM;
+  encoded_size = block_count * 255U;
+  if (encoded_size > dst_size)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+
+  blocks = (BITCODE_RC *)calloc (block_count, data_block_size);
+  if (!blocks)
+    return DWG_ERR_OUTOFMEM;
+  for (r = 0; r < repeat_count; r++)
+    memcpy (&blocks[r * aligned_size], src, src_size);
+
+  memset (dst, 0, dst_size);
+  for (i = 0; i < block_count; i++)
+    {
+      BITCODE_RC *block = &blocks[i * data_block_size];
+      for (j = 0; j < data_block_size; j++)
+        dst[j * block_count + i] = block[j];
+      rs_encode_block (parity, block, 239);
+      for (j = 0; j < 16U; j++)
+        dst[(239U + j) * block_count + i] = parity[j];
+    }
+  free (blocks);
+  return 0;
+}
+
+static size_t
+r2007_section_max_size (Dwg_Section_Type type, size_t data_size)
+{
+  size_t size;
+
+  switch (type)
+    {
+    case SECTION_SUMMARYINFO:
+      size = 0x80U;
+      break;
+    case SECTION_APPINFO:
+      size = 0x300U;
+      break;
+    case SECTION_TEMPLATE:
+      size = 0x400U;
+      break;
+    case SECTION_AUXHEADER:
+    case SECTION_HEADER:
+      size = 0x800U;
+      break;
+    case SECTION_REVHISTORY:
+      size = 0x1000U;
+      break;
+    case SECTION_PREVIEW:
+      size = MAX (0x400U, r2007_align_size (data_size, 0x20U));
+      break;
+    default:
+      size = R2007_DATA_PAGE_MAX;
+      break;
+    }
+  if (size < data_size && type != SECTION_OBJECTS && type != SECTION_HANDLES
+      && type != SECTION_CLASSES && type != SECTION_OBJFREESPACE)
+    size = r2007_align_size (data_size, 0x20U);
+  return size;
+}
+
+static uint64_t
+r2007_section_hashcode (Dwg_Section_Type type)
+{
+  static const uint32_t hashes[SECTION_ACDS + 1]
+      = { 0,          0x32b803d9, 0x54f0050a, 0x3f54045f, 0x3f6e0450,
+          0x4a1404ce, 0x77e2061f, 0x674c05a9, 0x60a205b3, 0x717a060f,
+          0x40aa0473, 0x3fa0043e, 0x96de0737, 0x6c4205ca, 0x4a0204ea,
+          0x586e0544, 0,          0 };
+
+  return type <= SECTION_ACDS ? hashes[type] : 0;
+}
+
+static int
+r2007_ensure_raw_section (Bit_Chain *section, const Bit_Chain *template_dat)
+{
+  if (section->chain && section->byte)
+    return 0;
+  if (section->chain)
+    bit_chain_free (section);
+  bit_chain_init_dat (section, 1, template_dat);
+  if (!section->chain)
+    return DWG_ERR_OUTOFMEM;
+  section->chain[0] = 0;
+  section->byte = section->size = 1;
+  return 0;
+}
+
+static int
+r2007_build_file_header (BITCODE_RC *restrict dst,
+                         const Dwg_R2007_Header *restrict header,
+                         const Bit_Chain *restrict template_dat)
+{
+  Bit_Chain pre = { 0 };
+  int error;
+
+  bit_chain_init_dat (&pre, 3U * 239U, template_dat);
+  if (!pre.chain)
+    return DWG_ERR_OUTOFMEM;
+  bit_write_RLL (&pre, 0);
+  bit_write_RLL (&pre, 0);
+  bit_write_RLL (&pre, 0);
+  bit_write_RL (&pre, (BITCODE_RL)(-(int32_t)sizeof (*header)));
+  bit_write_RL (&pre, (BITCODE_RL)sizeof (*header));
+#define WRITE_R2007_HEADER_FIELD(name) bit_write_RLL (&pre, header->name)
+  WRITE_R2007_HEADER_FIELD (header_size);
+  WRITE_R2007_HEADER_FIELD (file_size);
+  WRITE_R2007_HEADER_FIELD (pages_map_crc_compressed);
+  WRITE_R2007_HEADER_FIELD (pages_map_correction);
+  WRITE_R2007_HEADER_FIELD (pages_map_crc_seed);
+  WRITE_R2007_HEADER_FIELD (pages_map2_offset);
+  WRITE_R2007_HEADER_FIELD (pages_map2_id);
+  WRITE_R2007_HEADER_FIELD (pages_map_offset);
+  WRITE_R2007_HEADER_FIELD (pages_map_id);
+  WRITE_R2007_HEADER_FIELD (header2_offset);
+  WRITE_R2007_HEADER_FIELD (pages_map_size_comp);
+  WRITE_R2007_HEADER_FIELD (pages_map_size_uncomp);
+  WRITE_R2007_HEADER_FIELD (pages_amount);
+  WRITE_R2007_HEADER_FIELD (pages_maxid);
+  WRITE_R2007_HEADER_FIELD (unknown1);
+  WRITE_R2007_HEADER_FIELD (unknown2);
+  WRITE_R2007_HEADER_FIELD (pages_map_crc_uncomp);
+  WRITE_R2007_HEADER_FIELD (unknown3);
+  WRITE_R2007_HEADER_FIELD (unknown4);
+  WRITE_R2007_HEADER_FIELD (unknown5);
+  WRITE_R2007_HEADER_FIELD (num_sections);
+  WRITE_R2007_HEADER_FIELD (sections_map_crc_uncomp);
+  WRITE_R2007_HEADER_FIELD (sections_map_size_comp);
+  WRITE_R2007_HEADER_FIELD (sections_map2_id);
+  WRITE_R2007_HEADER_FIELD (sections_map_id);
+  WRITE_R2007_HEADER_FIELD (sections_map_size_uncomp);
+  WRITE_R2007_HEADER_FIELD (sections_map_crc_comp);
+  WRITE_R2007_HEADER_FIELD (sections_map_correction);
+  WRITE_R2007_HEADER_FIELD (sections_map_crc_seed);
+  WRITE_R2007_HEADER_FIELD (stream_version);
+  WRITE_R2007_HEADER_FIELD (crc_seed);
+  WRITE_R2007_HEADER_FIELD (crc_seed_encoded);
+  WRITE_R2007_HEADER_FIELD (random_seed);
+  WRITE_R2007_HEADER_FIELD (header_crc);
+#undef WRITE_R2007_HEADER_FIELD
+
+  error = r2007_write_rs_page (dst, 0x3d8U, pre.chain, pre.size, 239U, 1U,
+                               false);
+  bit_chain_free (&pre);
+  if (!error)
+    memset (&dst[0x3d8U], 0, 0x28U);
+  return error;
+}
+
+static int
+encode_r2007_container (Dwg_Data *restrict dwg, Bit_Chain *restrict dat,
+                        Bit_Chain sec_dat[SECTION_SYSTEM_MAP + 1])
+{
+  static const Dwg_Section_Type stream_order[]
+      = { SECTION_SUMMARYINFO, SECTION_PREVIEW,        SECTION_VBAPROJECT,
+          SECTION_APPINFO,     SECTION_APPINFOHISTORY, SECTION_FILEDEPLIST,
+          SECTION_ACDS,        SECTION_REVHISTORY,     SECTION_SECURITY,
+          SECTION_OBJECTS,     SECTION_OBJFREESPACE,   SECTION_TEMPLATE,
+          SECTION_HANDLES,     SECTION_CLASSES,        SECTION_AUXHEADER,
+          SECTION_HEADER,      SECTION_SIGNATURE };
+  Bit_Chain pages_map = { 0 };
+  Bit_Chain sections_map = { 0 };
+  r2007_encode_page *pages = NULL;
+  Dwg_R2007_Header *header = &dwg->fhdr.r2007_file_header;
+  size_t data_page_count = 0;
+  size_t section_count = 0;
+  size_t sections_map_size = 0;
+  size_t pages_map_size;
+  size_t pages_page_size;
+  size_t sections_page_size;
+  size_t pages_repeat;
+  size_t sections_repeat;
+  size_t current_pos;
+  size_t final_header_pos;
+  size_t final_size;
+  size_t page_index = 0;
+  size_t i, j;
+  int64_t sections_map_id;
+  int64_t sections_map2_id;
+  int64_t pages_map_id;
+  int64_t pages_map2_id;
+  int error = 0;
+
+  error |= r2007_ensure_raw_section (&sec_dat[SECTION_APPINFOHISTORY], dat);
+  if (error)
+    return error;
+
+  for (i = 0; i < ARRAY_SIZE (stream_order); i++)
+    {
+      Dwg_Section_Type type = stream_order[i];
+      Bit_Chain *section = &sec_dat[type];
+      size_t max_size;
+      size_t num_pages;
+      size_t name_size;
+
+      if (!section->chain || !section->byte)
+        continue;
+      max_size = r2007_section_max_size (type, section->byte);
+      num_pages = (section->byte + max_size - 1U) / max_size;
+      name_size = strlen (dwg_section_name (dwg, type)) * 2U;
+      if (data_page_count > SIZE_MAX - num_pages
+          || sections_map_size
+                 > SIZE_MAX - (64U + name_size + 56U * num_pages))
+        return DWG_ERR_OUTOFMEM;
+      data_page_count += num_pages;
+      sections_map_size += 64U + name_size + 56U * num_pages;
+      section_count++;
+    }
+  if (!data_page_count || !section_count)
+    return DWG_ERR_SECTIONNOTFOUND;
+
+  pages = (r2007_encode_page *)calloc (data_page_count, sizeof (*pages));
+  if (!pages)
+    return DWG_ERR_OUTOFMEM;
+  for (i = 0; i < ARRAY_SIZE (stream_order); i++)
+    {
+      Dwg_Section_Type type = stream_order[i];
+      Bit_Chain *section = &sec_dat[type];
+      size_t max_size;
+      size_t offset;
+
+      if (!section->chain || !section->byte)
+        continue;
+      max_size = r2007_section_max_size (type, section->byte);
+      for (offset = 0; offset < section->byte; offset += max_size)
+        {
+          size_t data_size = MIN (max_size, section->byte - offset);
+          pages[page_index].type = type;
+          pages[page_index].source_offset = offset;
+          pages[page_index].data_size = data_size;
+          pages[page_index].disk_size = r2007_data_page_disk_size (data_size);
+          pages[page_index].id = (int64_t)page_index + 1;
+          page_index++;
+        }
+    }
+
+  sections_map_id = (int64_t)data_page_count + 1;
+  sections_map2_id = sections_map_id + 1;
+  pages_map_id = sections_map2_id + 1;
+  pages_map2_id = pages_map_id + 1;
+  pages_map_size = (data_page_count + 4U) * 16U;
+  pages_page_size = r2007_system_page_size (pages_map_size);
+  sections_page_size = r2007_system_page_size (sections_map_size);
+  pages_repeat = r2007_system_page_repeat (pages_map_size, pages_page_size);
+  sections_repeat
+      = r2007_system_page_repeat (sections_map_size, sections_page_size);
+
+  bit_chain_init_dat (&pages_map, pages_map_size, dat);
+  bit_chain_init_dat (&sections_map, sections_map_size, dat);
+  if (!pages_map.chain || !sections_map.chain)
+    {
+      error = DWG_ERR_OUTOFMEM;
+      goto cleanup;
+    }
+
+  bit_write_RLL (&pages_map, pages_page_size);
+  bit_write_RLL (&pages_map, pages_map_id);
+  bit_write_RLL (&pages_map, pages_page_size);
+  bit_write_RLL (&pages_map, pages_map2_id);
+  for (i = 0; i < data_page_count; i++)
+    {
+      bit_write_RLL (&pages_map, pages[i].disk_size);
+      bit_write_RLL (&pages_map, pages[i].id);
+    }
+  bit_write_RLL (&pages_map, sections_page_size);
+  bit_write_RLL (&pages_map, sections_map_id);
+  bit_write_RLL (&pages_map, sections_page_size);
+  bit_write_RLL (&pages_map, sections_map2_id);
+
+  page_index = 0;
+  for (i = 0; i < ARRAY_SIZE (stream_order); i++)
+    {
+      Dwg_Section_Type type = stream_order[i];
+      Bit_Chain *section = &sec_dat[type];
+      const char *name;
+      size_t max_size;
+      size_t num_pages;
+      size_t name_len;
+
+      if (!section->chain || !section->byte)
+        continue;
+      name = dwg_section_name (dwg, type);
+      name_len = strlen (name);
+      max_size = r2007_section_max_size (type, section->byte);
+      num_pages = (section->byte + max_size - 1U) / max_size;
+      bit_write_RLL (&sections_map, section->byte);
+      bit_write_RLL (&sections_map, max_size);
+      bit_write_RLL (&sections_map, 0);
+      bit_write_RLL (&sections_map, r2007_section_hashcode (type));
+      bit_write_RLL (&sections_map, name_len * 2U);
+      bit_write_RLL (&sections_map, 0);
+      bit_write_RLL (&sections_map, 4);
+      bit_write_RLL (&sections_map, num_pages);
+      for (j = 0; j < name_len; j++)
+        bit_write_RS (&sections_map, (BITCODE_RS)(unsigned char)name[j]);
+      for (j = 0; j < num_pages; j++, page_index++)
+        {
+          bit_write_RLL (&sections_map, pages[page_index].source_offset);
+          bit_write_RLL (&sections_map, max_size);
+          bit_write_RLL (&sections_map, pages[page_index].id);
+          bit_write_RLL (&sections_map, pages[page_index].data_size);
+          bit_write_RLL (&sections_map, pages[page_index].data_size);
+          bit_write_RLL (&sections_map, 0);
+          bit_write_RLL (&sections_map, 0);
+        }
+    }
+  if (pages_map.byte != pages_map_size
+      || sections_map.byte != sections_map_size)
+    {
+      error = DWG_ERR_INTERNALERROR;
+      goto cleanup;
+    }
+
+  current_pos = R2007_FIRST_PAGE_POS + (2U * pages_page_size);
+  for (i = 0; i < data_page_count; i++)
+    current_pos += pages[i].disk_size;
+  current_pos += 2U * sections_page_size;
+  final_header_pos = current_pos;
+  final_size = final_header_pos + R2007_FILE_HEADER_SIZE;
+  if (final_size < final_header_pos)
+    {
+      error = DWG_ERR_OUTOFMEM;
+      goto cleanup;
+    }
+  if (dat->size < final_size)
+    bit_chain_alloc_size (dat, final_size - dat->size);
+  if (!dat->chain || dat->size < final_size)
+    {
+      error = DWG_ERR_OUTOFMEM;
+      goto cleanup;
+    }
+  memset (&dat->chain[R2007_FILE_HEADER_POS], 0,
+          final_size - R2007_FILE_HEADER_POS);
+
+  memset (header, 0, sizeof (*header));
+  header->header_size = 0x70;
+  header->file_size = (int64_t)final_size;
+  header->pages_map_correction = (int64_t)pages_repeat;
+  header->pages_map2_offset = (int64_t)pages_page_size;
+  header->pages_map2_id = pages_map2_id;
+  header->pages_map_offset = 0;
+  header->pages_map_id = pages_map_id;
+  header->header2_offset = (int64_t)(final_header_pos - R2007_FIRST_PAGE_POS);
+  header->pages_map_size_comp = (int64_t)pages_map_size;
+  header->pages_map_size_uncomp = (int64_t)pages_map_size;
+  header->pages_amount = (int64_t)data_page_count + 4;
+  header->pages_maxid = pages_map2_id;
+  header->unknown1 = 0x20;
+  header->unknown2 = 0x40;
+  header->unknown3 = R2007_DATA_PAGE_MAX;
+  header->unknown4 = 4;
+  header->unknown5 = 1;
+  header->num_sections = (int64_t)section_count + 1;
+  header->sections_map_size_comp = (int64_t)sections_map_size;
+  header->sections_map2_id = sections_map2_id;
+  header->sections_map_id = sections_map_id;
+  header->sections_map_size_uncomp = (int64_t)sections_map_size;
+  header->sections_map_correction = (int64_t)sections_repeat;
+  header->stream_version = 0x60100;
+
+  error = r2007_build_file_header (&dat->chain[R2007_FILE_HEADER_POS], header,
+                                   dat);
+  if (error)
+    goto cleanup;
+  current_pos = R2007_FIRST_PAGE_POS;
+  error = r2007_write_rs_page (&dat->chain[current_pos], pages_page_size,
+                               pages_map.chain, pages_map_size, 239U,
+                               pages_repeat, true);
+  if (error)
+    goto cleanup;
+  current_pos += pages_page_size;
+  memcpy (&dat->chain[current_pos], &dat->chain[R2007_FIRST_PAGE_POS],
+          pages_page_size);
+  current_pos += pages_page_size;
+  for (i = 0; i < data_page_count; i++)
+    {
+      Bit_Chain *section = &sec_dat[pages[i].type];
+      memset (&dat->chain[current_pos], 0, pages[i].disk_size);
+      memcpy (&dat->chain[current_pos],
+              &section->chain[pages[i].source_offset], pages[i].data_size);
+      current_pos += pages[i].disk_size;
+    }
+  error = r2007_write_rs_page (&dat->chain[current_pos], sections_page_size,
+                               sections_map.chain, sections_map_size, 239U,
+                               sections_repeat, true);
+  if (error)
+    goto cleanup;
+  current_pos += sections_page_size;
+  memcpy (&dat->chain[current_pos],
+          &dat->chain[current_pos - sections_page_size], sections_page_size);
+  current_pos += sections_page_size;
+  if (current_pos != final_header_pos)
+    {
+      error = DWG_ERR_INTERNALERROR;
+      goto cleanup;
+    }
+  memcpy (&dat->chain[final_header_pos], &dat->chain[R2007_FILE_HEADER_POS],
+          R2007_FILE_HEADER_SIZE);
+  dat->byte = dat->size = final_size;
+  LOG_INFO ("R2007 container: sections=%u pages=%u size=%u\n",
+            (unsigned)section_count, (unsigned)data_page_count,
+            (unsigned)final_size);
+
+cleanup:
+  if (pages_map.chain)
+    bit_chain_free (&pages_map);
+  if (sections_map.chain)
+    bit_chain_free (&sections_map);
+  free (pages);
+  return error;
 }
 
 /* r2004 compressed sections, LZ77 WIP */
@@ -2957,17 +3444,6 @@ dwg_encode (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
       remove_EXEMPT_FROM_CAD_STANDARDS_APPID (dat, dwg);
     }
 
-#define WE_CAN                                                          \
-  "This version of LibreDWG is not capable of encoding "                \
-  "versions r2007 DWG files.\n"
-
-  /* r2007 encoding is not supported. fall back to r2010 */
-  if (dwg->header.version >= R_2007a && dwg->header.version <= R_2007)
-    {
-      LOG_ERROR (WE_CAN);
-      dwg->header.version = dat->version = R_2010;
-    }
-
   /*------------------------------------------------------------
    * Header
    */
@@ -3035,7 +3511,7 @@ dwg_encode (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
     if (dwg->header.version == R_INVALID
         || dwg->header.from_version == R_INVALID)
       {
-        LOG_ERROR (WE_CAN "Invalid or missing FILEHEADER.version");
+        LOG_ERROR ("Invalid or missing FILEHEADER.version");
         return DWG_ERR_INVALIDDWG;
       }
 
@@ -3790,6 +4266,15 @@ dwg_encode (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
       }
     // and write system and data section maps.
     dat = old_dat;
+
+    if (dwg->header.version >= R_2007a && dwg->header.version <= R_2007)
+      {
+        error |= encode_r2007_container (dwg, dat, sec_dat);
+        for (type = SECTION_HEADER; type < SECTION_SYSTEM_MAP; type++)
+          if (sec_dat[type].chain)
+            bit_chain_free (&sec_dat[type]);
+        return error;
+      }
 
     /*-------------------------------------------------------------------------
      * Section map and info
