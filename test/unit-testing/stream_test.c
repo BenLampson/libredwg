@@ -67,6 +67,7 @@ typedef struct _stream_stats
   BITCODE_BL decoded_objects;
   BITCODE_BL decoded_entities;
   BITCODE_BL decoded_non_entities;
+  BITCODE_BL max_host_entities;
   unsigned long long decoded_handle_mix;
   BITCODE_BL r13_object_map_objects;
   BITCODE_BL r2007_object_map_objects;
@@ -1678,9 +1679,21 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
   Stream_Stats *stats = (Stream_Stats *)user;
   const Stream_Ref_Snapshot *baseline_ref;
   Stream_Ref_Snapshot decoded_ref;
+  BITCODE_BL host_entities = 0;
+  BITCODE_BL i;
 
   if (!object)
     return DWG_ERR_INTERNALERROR;
+  if (object->parent)
+    {
+      for (i = 0; i < object->parent->num_objects; i++)
+        {
+          if (object->parent->object[i].supertype == DWG_SUPERTYPE_ENTITY)
+            host_entities++;
+        }
+      if (host_entities > stats->max_host_entities)
+        stats->max_host_entities = host_entities;
+    }
   stats->decoded_objects++;
   stats_add_r11_block_section_type (stats, info, object);
   stats_add_r11_polyline_fixedtype (stats, object);
@@ -2380,7 +2393,8 @@ print_stats (const char *label, const Stream_Stats *stats)
       "%s: objects=%lu entities=%lu non_entities=%lu total_size=%llu "
       "max_size=%lu min_address=%zu max_address=%zu handle_mix=%llu "
       "lightweight=%lu decoded=%lu decoded_entities=%lu "
-      "decoded_non_entities=%lu decoded_handle_mix=%llu decode_errors=%lu "
+      "decoded_non_entities=%lu max_host_entities=%lu "
+      "decoded_handle_mix=%llu decode_errors=%lu "
       "decode_error_entities=%lu decode_error_non_entities=%lu "
       "first_decode_error=0x%x decode_error_handle_mix=%llu r2007=%lu "
       "r2004=%lu r13=%lu prer13=%lu full=%lu file_map=%lu heap=%lu "
@@ -2393,7 +2407,8 @@ print_stats (const char *label, const Stream_Stats *stats)
       stats->handle_mix, (unsigned long)stats->lightweight_objects,
       (unsigned long)stats->decoded_objects,
       (unsigned long)stats->decoded_entities,
-      (unsigned long)stats->decoded_non_entities, stats->decoded_handle_mix,
+      (unsigned long)stats->decoded_non_entities,
+      (unsigned long)stats->max_host_entities, stats->decoded_handle_mix,
       (unsigned long)stats->decode_error_objects,
       (unsigned long)stats->decode_error_entities,
       (unsigned long)stats->decode_error_non_entities,
@@ -3269,13 +3284,14 @@ test_pre_r2_legacy_entity_stream (void)
       || stats.prer13_entity_objects != stats.num_objects
       || stats.decoded_objects != stats.num_objects
       || stats.decoded_entities != stats.num_objects
-      || stats.decode_error_objects
+      || stats.max_host_entities > 3 || stats.decode_error_objects
       || (stats.prer2_legacy_fixedtype_mask & expected_mask) != expected_mask)
     {
       printf ("R1.4 legacy stream failed: error=0x%x objects=%lu "
               "entities=%lu expected_entities=%lu non_entities=%lu "
               "lightweight=%lu prer13=%lu full=%lu decoded=%lu "
-              "decoded_entities=%lu decode_errors=%lu mask=0x%llx "
+              "decoded_entities=%lu max_host_entities=%lu decode_errors=%lu "
+              "mask=0x%llx "
               "expected=0x%llx\n",
               error, (unsigned long)stats.num_objects,
               (unsigned long)stats.num_entities,
@@ -3286,6 +3302,7 @@ test_pre_r2_legacy_entity_stream (void)
               (unsigned long)stats.full_decode_objects,
               (unsigned long)stats.decoded_objects,
               (unsigned long)stats.decoded_entities,
+              (unsigned long)stats.max_host_entities,
               (unsigned long)stats.decode_error_objects,
               stats.prer2_legacy_fixedtype_mask, expected_mask);
       return 1;
@@ -3401,12 +3418,14 @@ test_generated_pre_r2_version_stream (void)
           || stats.prer13_entity_objects != expected_entities
           || stats.decoded_objects != expected_entities
           || stats.decoded_entities != expected_entities
-          || stats.decoded_non_entities || stats.decode_error_objects)
+          || stats.decoded_non_entities || stats.max_host_entities > 3
+          || stats.decode_error_objects)
         {
           printf ("%s stream failed: error=0x%x objects=%lu expected=%lu "
                   "entities=%lu non_entities=%lu lightweight=%lu prer13=%lu "
                   "full=%lu decoded=%lu decoded_entities=%lu "
-                  "decoded_non_entities=%lu decode_errors=%lu\n",
+                  "decoded_non_entities=%lu max_host_entities=%lu "
+                  "decode_errors=%lu\n",
                   versions[i].label, error, (unsigned long)stats.num_objects,
                   (unsigned long)expected_entities,
                   (unsigned long)stats.num_entities,
@@ -3417,6 +3436,7 @@ test_generated_pre_r2_version_stream (void)
                   (unsigned long)stats.decoded_objects,
                   (unsigned long)stats.decoded_entities,
                   (unsigned long)stats.decoded_non_entities,
+                  (unsigned long)stats.max_host_entities,
                   (unsigned long)stats.decode_error_objects);
           return 1;
         }
@@ -3447,6 +3467,8 @@ test_pre_r11_fixture_path (const char *restrict path,
   BITCODE_BL expected_entities = 0;
   BITCODE_BL expected_non_entities = 0;
   BITCODE_BL i;
+  Stream_Ref_Snapshot *baseline_refs;
+  size_t baseline_ref_count;
   unsigned long long expected_table_mask = 0;
   unsigned long long expected_type_mask = 0;
   unsigned long long baseline_legacy_mask = 0;
@@ -3467,9 +3489,18 @@ test_pre_r11_fixture_path (const char *restrict path,
       return 1;
     }
 
+  baseline_ref_count = dwg.num_objects;
+  baseline_refs = (Stream_Ref_Snapshot *)calloc (baseline_ref_count,
+                                                 sizeof (baseline_refs[0]));
+  if (!baseline_refs)
+    {
+      dwg_free (&dwg);
+      return 1;
+    }
   for (i = 0; i < dwg.num_objects; i++)
     {
       Dwg_Object *obj = &dwg.object[i];
+      snapshot_object_refs (obj, &baseline_refs[i]);
       if (obj->supertype == DWG_SUPERTYPE_ENTITY && obj->size)
         {
           expected_entities++;
@@ -3487,6 +3518,8 @@ test_pre_r11_fixture_path (const char *restrict path,
           && obj->fixedtype == fixture->required_fixedtype)
         found_required_fixedtype = 1;
     }
+  qsort (baseline_refs, baseline_ref_count, sizeof (baseline_refs[0]),
+         compare_ref_snapshot_handle);
   dwg_free (&dwg);
   if (!expected_entities || !expected_non_entities
       || (baseline_legacy_mask & fixture->required_legacy_mask)
@@ -3500,6 +3533,7 @@ test_pre_r11_fixture_path (const char *restrict path,
               (unsigned long)expected_non_entities, baseline_legacy_mask,
               fixture->required_legacy_mask,
               (unsigned)fixture->required_fixedtype, found_required_fixedtype);
+      free (baseline_refs);
       return 1;
     }
 
@@ -3511,6 +3545,8 @@ test_pre_r11_fixture_path (const char *restrict path,
        flags_index++)
     {
       memset (&stats, 0, sizeof (stats));
+      stats.baseline_refs = baseline_refs;
+      stats.baseline_ref_count = baseline_ref_count;
       callbacks.flags = stream_flags[flags_index];
       error = dwg_stream_file_ex (path, &callbacks, &stats);
       if (error >= DWG_ERR_CRITICAL
@@ -3523,7 +3559,8 @@ test_pre_r11_fixture_path (const char *restrict path,
           || stats.decoded_objects != stats.num_objects
           || stats.decoded_entities != expected_entities
           || stats.decoded_non_entities != expected_non_entities
-          || stats.decode_error_objects
+          || stats.max_host_entities > 3 || stats.decode_error_objects
+          || stats.decoded_ref_missing || stats.decoded_ref_mismatches
           || stats.r11_type_mask != expected_type_mask
           || stats.r11_table_fixedtype_mask != expected_table_mask
           || (stats.prer2_legacy_fixedtype_mask
@@ -3535,7 +3572,8 @@ test_pre_r11_fixture_path (const char *restrict path,
                   "non_entities=%lu expected_non_entities=%lu "
                   "lightweight=%lu prer13=%lu full=%lu decoded=%lu "
                   "decoded_entities=%lu decoded_non_entities=%lu "
-                  "decode_errors=%lu type_mask=0x%llx "
+                  "max_host_entities=%lu decode_errors=%lu ref_missing=%lu "
+                  "ref_mismatches=%lu type_mask=0x%llx "
                   "expected_type_mask=0x%llx table_mask=0x%llx "
                   "expected_table_mask=0x%llx legacy_mask=0x%llx "
                   "expected_legacy_mask=0x%llx\n",
@@ -3552,14 +3590,19 @@ test_pre_r11_fixture_path (const char *restrict path,
                   (unsigned long)stats.decoded_objects,
                   (unsigned long)stats.decoded_entities,
                   (unsigned long)stats.decoded_non_entities,
+                  (unsigned long)stats.max_host_entities,
                   (unsigned long)stats.decode_error_objects,
+                  (unsigned long)stats.decoded_ref_missing,
+                  (unsigned long)stats.decoded_ref_mismatches,
                   stats.r11_type_mask, expected_type_mask,
                   stats.r11_table_fixedtype_mask, expected_table_mask,
                   stats.prer2_legacy_fixedtype_mask,
                   fixture->required_legacy_mask);
+          free (baseline_refs);
           return 1;
         }
     }
+  free (baseline_refs);
   return 0;
 }
 

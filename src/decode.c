@@ -8584,6 +8584,12 @@ stream_clear_pre_r13_refs (Dwg_Data *restrict dwg,
 {
   BITCODE_BL i;
 
+  if (base_ref_count < dwg->num_object_refs)
+    {
+      free (dwg->object_ordered_ref);
+      dwg->object_ordered_ref = NULL;
+      dwg->num_object_ordered_refs = (BITCODE_BL)-1;
+    }
   for (i = base_ref_count; i < dwg->num_object_refs; i++)
     {
       free (dwg->object_ref[i]);
@@ -8592,29 +8598,124 @@ stream_clear_pre_r13_refs (Dwg_Data *restrict dwg,
   dwg->num_object_refs = base_ref_count;
 }
 
+static void
+stream_update_pre_r13_handle_marker (Dwg_Data *restrict dwg,
+                                     Dwg_Object_Ref *restrict marker,
+                                     const Dwg_Object *restrict obj)
+{
+  Dwg_Object_Ref *handseed = dwg->header_vars.HANDSEED;
+
+  if (!obj->handle.value || obj->handle.value <= marker->absolute_ref)
+    return;
+  marker->absolute_ref = obj->handle.value;
+  marker->handleref.value = obj->handle.value;
+  if (handseed && obj->handle.value > handseed->absolute_ref)
+    {
+      handseed->absolute_ref = obj->handle.value;
+      handseed->handleref.value = obj->handle.value;
+      dwg->auxheader.HANDSEED = obj->handle.value;
+    }
+}
+
+static int
+stream_set_pre_r13_header_ref (BITCODE_H *restrict field,
+                               const BITCODE_RLL handle)
+{
+  if (!*field)
+    *field = dwg_add_handleref_free (3, handle);
+  if (!*field)
+    return DWG_ERR_OUTOFMEM;
+
+  (*field)->handleref.code = 3;
+  (*field)->handleref.value = handle;
+  (*field)->absolute_ref = handle;
+  (*field)->obj = NULL;
+  return 0;
+}
+
+static int
+stream_append_pre_r13_header_entity (Dwg_Object_BLOCK_HEADER *restrict header,
+                                     const BITCODE_RLL handle)
+{
+  BITCODE_H ref = dwg_add_handleref_free (3, handle);
+  BITCODE_H *entities;
+
+  if (!ref)
+    return DWG_ERR_OUTOFMEM;
+  ref->absolute_ref = handle;
+  entities = (BITCODE_H *)realloc (header->entities, (header->num_owned + 1)
+                                                         * sizeof (BITCODE_H));
+  if (!entities)
+    {
+      free (ref);
+      return DWG_ERR_OUTOFMEM;
+    }
+  header->entities = entities;
+  header->entities[header->num_owned++] = ref;
+  return 0;
+}
+
 static int
 stream_finalize_pre_r13_entity (Bit_Chain *restrict dat,
                                 Dwg_Object *restrict obj)
 {
+  const size_t address = obj->address & 0x3FFFFFFF;
   int error = 0;
 
   if (obj->type == DWG_TYPE_JUMP_r11)
     return 0;
+  if (address > dat->size)
+    return DWG_ERR_INVALIDDWG;
 
-  if (obj->size > dat->size - obj->address
-      || obj->size + obj->address > dat->byte + 2)
+  if (dat->version < R_2_0b)
+    {
+      obj->size = (dat->byte - address) & 0xFFFFFFFF;
+      return 0;
+    }
+
+  if (dat->version < R_11)
+    {
+      if (obj->size > dat->size - address
+          || obj->size + address > dat->byte + 1)
+        {
+          LOG_ERROR ("Invalid obj->size " FORMAT_RL " changed to %" PRIuSIZE,
+                     obj->size, dat->byte - address);
+          error |= DWG_ERR_VALUEOUTOFBOUNDS;
+          obj->size = (dat->byte - address) & 0xFFFFFFFF;
+        }
+      else if (address + obj->size != dat->byte)
+        {
+          if (address + obj->size > dat->byte)
+            {
+              BITCODE_RL offset
+                  = (BITCODE_RL)(address + obj->size - dat->byte);
+              obj->num_unknown_rest = 8 * offset;
+              obj->unknown_rest = bit_read_TF (dat, offset);
+              if (!obj->unknown_rest)
+                {
+                  LOG_ERROR ("Out of memory");
+                  obj->num_unknown_rest = 0;
+                }
+            }
+          if (obj->size > 2)
+            dat->byte = address + obj->size;
+        }
+      return error;
+    }
+
+  if (obj->size > dat->size - address || obj->size + address > dat->byte + 2)
     {
       LOG_ERROR ("Invalid obj->size " FORMAT_RL " changed to %" PRIuSIZE,
-                 obj->size, dat->byte + 2 - obj->address);
+                 obj->size, dat->byte + 2 - address);
       error |= DWG_ERR_VALUEOUTOFBOUNDS;
-      obj->size = ((dat->byte + 2) - obj->address) & 0xFFFFFFFF;
+      obj->size = ((dat->byte + 2) - address) & 0xFFFFFFFF;
     }
-  else if (obj->address + obj->size != dat->byte + 2)
+  else if (address + obj->size != dat->byte + 2)
     {
-      if (obj->address + obj->size > dat->byte + 2)
+      if (address + obj->size > dat->byte + 2)
         {
           BITCODE_RL offset
-              = (BITCODE_RL)(obj->address + obj->size - (dat->byte + 2));
+              = (BITCODE_RL)(address + obj->size - (dat->byte + 2));
           obj->num_unknown_rest = 8 * offset;
           obj->unknown_rest = bit_read_TF (dat, offset);
           if (!obj->unknown_rest)
@@ -8623,10 +8724,10 @@ stream_finalize_pre_r13_entity (Bit_Chain *restrict dat,
               obj->num_unknown_rest = 0;
             }
         }
-      if (obj->address + obj->size > dat->byte + 2)
-        dat->byte = obj->address + obj->size - 2;
+      if (address + obj->size > dat->byte + 2)
+        dat->byte = address + obj->size - 2;
     }
-  if (!bit_check_CRC (dat, obj->address, 0xC0C1))
+  if (!bit_check_CRC (dat, address, 0xC0C1))
     error |= DWG_ERR_WRONGCRC;
   return error;
 }
@@ -8693,39 +8794,6 @@ emit_pre_r13_existing_table_entries_stream (
 
       if (!is_pre_r13_table_entry_object (obj))
         continue;
-
-      stream_pre_r13_object_info (dwg, obj, *index, input_mode, &info);
-      if (callbacks->object)
-        {
-          callback_error = callbacks->object (&info, user);
-          if (callback_error)
-            return callback_error;
-        }
-      if (callbacks->decoded_object)
-        {
-          callback_error = callbacks->decoded_object (&info, obj, user);
-          if (callback_error)
-            return callback_error;
-        }
-      (*index)++;
-    }
-
-  return 0;
-}
-
-static int
-emit_pre_r13_object_range_stream (
-    Dwg_Data *restrict dwg, const Dwg_Stream_Callbacks_Ex *restrict callbacks,
-    const Dwg_Stream_Input_Mode input_mode, void *restrict user,
-    const BITCODE_BL start_index, BITCODE_BL *restrict index)
-{
-  BITCODE_BL i;
-
-  for (i = start_index; i < dwg->num_objects; i++)
-    {
-      Dwg_Object *obj = &dwg->object[i];
-      Dwg_Stream_Object_Info info;
-      int callback_error;
 
       stream_pre_r13_object_info (dwg, obj, *index, input_mode, &info);
       if (callbacks->object)
@@ -8904,15 +8972,11 @@ decode_pre_r13_vertex_variant (Bit_Chain *restrict dat,
 }
 
 static int
-read_pre_r13_table_section_stream (
-    Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
-    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
-    const Dwg_Stream_Input_Mode input_mode, void *restrict user,
-    const Dwg_Section_Type_r11 section, BITCODE_BL *restrict index)
+decode_pre_r13_table_section_stream (Bit_Chain *restrict dat,
+                                     Dwg_Data *restrict dwg,
+                                     const Dwg_Section_Type_r11 section)
 {
-  BITCODE_BL start_index;
   Dwg_Section *tbl;
-  int error;
 
   tbl = &dwg->header.section[section];
   if (!tbl->address || !tbl->number)
@@ -8923,13 +8987,7 @@ read_pre_r13_table_section_stream (
   dat->byte
       = dwg->header.from_version >= R_11 ? tbl->address - 16 : tbl->address;
   dat->bit = 0;
-  start_index = dwg->num_objects;
-  error = decode_preR13_section (section, dat, dwg);
-  if (error >= DWG_ERR_CRITICAL)
-    return error;
-
-  return emit_pre_r13_object_range_stream (dwg, callbacks, input_mode, user,
-                                           start_index, index);
+  return decode_preR13_section (section, dat, dwg);
 }
 
 static int
@@ -8943,17 +9001,51 @@ read_pre_r13_entity_section_stream (
     const EntitySectionIndexR11 entity_section, BITCODE_BL *restrict index)
 {
   int error = 0;
+  BITCODE_BL owner_index = 0;
+  BITCODE_BL block_index = 0;
+  Dwg_Object_Ref *handle_marker;
+  BITCODE_RLL next_handle;
+  int have_owner = 0;
 
-  if (!start || end <= start || end > dat->size || start < 16)
+  if (entity_section != BLOCKS_SECTION_INDEX)
+    {
+      Dwg_Object *owner = dwg_model_space_object (dwg);
+
+      if (owner && owner->fixedtype == DWG_TYPE_BLOCK_HEADER)
+        {
+          Dwg_Object_BLOCK_HEADER *header
+              = owner->tio.object->tio.BLOCK_HEADER;
+
+          owner_index = owner->index;
+          have_owner = 1;
+          header->block_offset_r11 = (BITCODE_RL)-1;
+        }
+    }
+
+  if (end < start || end > dat->size
+      || (dwg->header.from_version >= R_11 && start < 16))
+    return DWG_ERR_INVALIDDWG;
+  if (end == start)
+    return 0;
+  if (!start)
     return DWG_ERR_INVALIDDWG;
 
-  dat->byte = start - 16;
+  dat->byte = dwg->header.from_version >= R_11 ? start - 16 : start;
   dat->bit = 0;
-  error |= decode_preR13_sentinel (begin_sentinel, begin_name, dat, dwg);
-  if (error >= DWG_ERR_CRITICAL)
-    return error;
+  if (dwg->header.from_version >= R_11)
+    {
+      error |= decode_preR13_sentinel (begin_sentinel, begin_name, dat, dwg);
+      if (error >= DWG_ERR_CRITICAL)
+        return error;
+    }
   if ((BITCODE_RL)dat->byte != start)
     return DWG_ERR_INVALIDDWG;
+
+  next_handle = dwg_next_handle (dwg);
+  handle_marker
+      = dwg_add_handleref (dwg, 0, next_handle ? next_handle - 1 : 0, NULL);
+  if (!handle_marker)
+    return DWG_ERR_OUTOFMEM;
 
   while ((BITCODE_RL)dat->byte < end)
     {
@@ -8985,10 +9077,20 @@ read_pre_r13_entity_section_stream (
       if (entity_section == BLOCKS_SECTION_INDEX)
         obj->address |= 0x40000000;
       obj->supertype = DWG_SUPERTYPE_ENTITY;
-      obj->type = bit_read_RC (dat);
-      abstype = obj->type > 127
-                    ? (Dwg_Object_Type_r11)((unsigned)obj->type & 0x7F)
-                    : (Dwg_Object_Type_r11)obj->type;
+      if (dwg->header.from_version < R_2_0b)
+        {
+          obj->type = bit_read_RS (dat);
+          abstype = obj->type > 127
+                        ? (Dwg_Object_Type_r11)abs ((int8_t)obj->type)
+                        : (Dwg_Object_Type_r11)obj->type;
+        }
+      else
+        {
+          obj->type = bit_read_RC (dat);
+          abstype = obj->type > 127
+                        ? (Dwg_Object_Type_r11)((unsigned)obj->type & 0x7F)
+                        : (Dwg_Object_Type_r11)obj->type;
+        }
 
       switch (abstype)
         {
@@ -9004,6 +9106,12 @@ read_pre_r13_entity_section_stream (
         case DWG_TYPE_SHAPE_r11:
           error |= dwg_decode_SHAPE (dat, obj);
           break;
+        case DWG_TYPE_REPEAT_r11:
+          error |= dwg_decode_REPEAT (dat, obj);
+          break;
+        case DWG_TYPE_ENDREP_r11:
+          error |= dwg_decode_ENDREP (dat, obj);
+          break;
         case DWG_TYPE_TEXT_r11:
           error |= dwg_decode_TEXT (dat, obj);
           break;
@@ -9013,14 +9121,66 @@ read_pre_r13_entity_section_stream (
         case DWG_TYPE_TRACE_r11:
           error |= dwg_decode_TRACE (dat, obj);
           break;
+        case DWG_TYPE_LOAD_r11:
+          error |= dwg_decode_LOAD (dat, obj);
+          break;
         case DWG_TYPE_SOLID_r11:
           error |= dwg_decode_SOLID (dat, obj);
           break;
         case DWG_TYPE_BLOCK_r11:
           error |= dwg_decode_BLOCK (dat, obj);
+          if (entity_section == BLOCKS_SECTION_INDEX)
+            {
+              BITCODE_RL offset = (BITCODE_RL)(iter_start - start);
+              BITCODE_BL i;
+
+              if (dwg->header.from_version > R_2_22)
+                offset |= 0x40000000;
+              have_owner = 0;
+              for (i = 0; i < base_object_count; i++)
+                {
+                  Dwg_Object *candidate = &dwg->object[i];
+                  Dwg_Object_BLOCK_HEADER *header;
+
+                  if (candidate->fixedtype != DWG_TYPE_BLOCK_HEADER
+                      || !candidate->tio.object
+                      || !candidate->tio.object->tio.BLOCK_HEADER)
+                    continue;
+                  header = candidate->tio.object->tio.BLOCK_HEADER;
+                  if (header->block_offset_r11 != offset)
+                    continue;
+                  owner_index = i;
+                  have_owner = 1;
+                  block_index++;
+                  if (!obj->handle.value)
+                    obj->handle.value = dwg_next_handle (dwg);
+                  error |= stream_set_pre_r13_header_ref (
+                      &header->block_entity, obj->handle.value);
+                  if (error >= DWG_ERR_CRITICAL)
+                    goto object_done;
+                  if (obj->tio.entity && obj->tio.entity->tio.BLOCK
+                      && !obj->tio.entity->tio.BLOCK->name && header->name)
+                    obj->tio.entity->tio.BLOCK->name = strdup (header->name);
+                  break;
+                }
+            }
           break;
         case DWG_TYPE_ENDBLK_r11:
           error |= dwg_decode_ENDBLK (dat, obj);
+          if (have_owner && owner_index < base_object_count)
+            {
+              Dwg_Object *owner = &dwg->object[owner_index];
+              Dwg_Object_BLOCK_HEADER *header
+                  = owner->tio.object->tio.BLOCK_HEADER;
+
+              if (!obj->handle.value)
+                obj->handle.value = dwg_next_handle (dwg);
+              error |= stream_set_pre_r13_header_ref (&header->endblk_entity,
+                                                      obj->handle.value);
+              if (error >= DWG_ERR_CRITICAL)
+                goto object_done;
+            }
+          have_owner = 0;
           break;
         case DWG_TYPE_3DFACE_r11:
           error |= dwg_decode__3DFACE (dat, obj);
@@ -9049,11 +9209,14 @@ read_pre_r13_entity_section_stream (
         case DWG_TYPE_VERTEX_r11:
           error |= decode_pre_r13_vertex_variant (dat, obj);
           break;
+        case DWG_TYPE_3DLINE_r11:
+          error |= dwg_decode__3DLINE (dat, obj);
+          break;
         case DWG_TYPE_VIEWPORT_r11:
           error |= dwg_decode_VIEWPORT (dat, obj);
           break;
         default:
-          LOG_ERROR ("DWG stream reader does not support R11/R12 entity type "
+          LOG_ERROR ("DWG stream reader does not support pre-R13 entity type "
                      "%u",
                      (unsigned)abstype);
           error = DWG_ERR_NOTYETSUPPORTED;
@@ -9063,6 +9226,34 @@ read_pre_r13_entity_section_stream (
       error |= stream_finalize_pre_r13_entity (dat, obj);
       if (error >= DWG_ERR_CRITICAL)
         goto object_done;
+      stream_update_pre_r13_handle_marker (dwg, handle_marker, obj);
+      if (have_owner && obj->supertype == DWG_SUPERTYPE_ENTITY
+          && obj->tio.entity && !obj->tio.entity->ownerhandle
+          && obj->fixedtype != DWG_TYPE_UNUSED
+          && obj->fixedtype != DWG_TYPE_JUMP
+          && obj->type != DWG_TYPE_VERTEX_r11
+          && obj->fixedtype != DWG_TYPE_SEQEND
+          && owner_index < base_object_count)
+        {
+          Dwg_Object *owner = &dwg->object[owner_index];
+
+          if (owner->handle.value)
+            {
+              Dwg_Object_BLOCK_HEADER *header
+                  = owner->tio.object->tio.BLOCK_HEADER;
+
+              if (obj->fixedtype != DWG_TYPE_BLOCK)
+                {
+                  error |= stream_append_pre_r13_header_entity (
+                      header, obj->handle.value);
+                  if (error >= DWG_ERR_CRITICAL)
+                    goto object_done;
+                }
+              obj->tio.entity->ownerhandle
+                  = dwg_add_handleref (dwg, 4, owner->handle.value, obj);
+              obj->tio.entity->ownerhandle->r11_idx = block_index;
+            }
+        }
       stream_pre_r13_object_info (dwg, obj, *index, input_mode, &info);
       if (callbacks->object)
         {
@@ -9098,7 +9289,8 @@ read_pre_r13_entity_section_stream (
     }
   if ((BITCODE_RL)dat->byte != end)
     return DWG_ERR_INVALIDDWG;
-  error |= decode_preR13_sentinel (end_sentinel, end_name, dat, dwg);
+  if (dwg->header.from_version >= R_11)
+    error |= decode_preR13_sentinel (end_sentinel, end_name, dat, dwg);
   return error >= DWG_ERR_CRITICAL ? error : 0;
 }
 
@@ -9108,11 +9300,8 @@ read_pre_r2_meta_data_stream (
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     const Dwg_Stream_Input_Mode input_mode, void *restrict user)
 {
-  BITCODE_RL num_entities;
   BITCODE_RL start;
   BITCODE_RL end;
-  BITCODE_RL size;
-  BITCODE_BL start_index;
   BITCODE_BL index = 0;
   int error = 0;
 
@@ -9129,21 +9318,16 @@ read_pre_r2_meta_data_stream (
   if (dat->byte + 2 >= dat->size)
     return error | DWG_ERR_CRITICAL;
 
-  num_entities = dwg->header_vars.numentities;
   dwg->header.entities_start = dat->byte & 0xFFFFFFFF;
   dwg->header.entities_end = dwg->header_vars.dwg_size;
   start = dwg->header.entities_start;
   end = dwg->header.entities_end;
-  size = end > start ? end - start : 0;
-  start_index = dwg->num_objects;
 
-  error = decode_preR13_entities (start, end, num_entities, size, dat, dwg,
-                                  ENTITIES_SECTION_INDEX);
-  if (error >= DWG_ERR_CRITICAL)
-    return error;
-
-  return emit_pre_r13_object_range_stream (dwg, callbacks, input_mode, user,
-                                           start_index, &index);
+  return read_pre_r13_entity_section_stream (
+      dat, dwg, callbacks, input_mode, user, start, end,
+      DWG_SENTINEL_R11_ENTITIES_BEGIN, "DWG_SENTINEL_R11_ENTITIES_BEGIN",
+      DWG_SENTINEL_R11_ENTITIES_END, "DWG_SENTINEL_R11_ENTITIES_END",
+      ENTITIES_SECTION_INDEX, &index);
 }
 
 static int
@@ -9158,9 +9342,6 @@ read_pre_r10_meta_data_stream (
   BITCODE_RL extras_start;
   BITCODE_RL extras_end;
   BITCODE_RL extras_size;
-  BITCODE_RL num_entities;
-  BITCODE_BL default_object_count;
-  BITCODE_BL start_index;
   BITCODE_BL index = 0;
   int error = 0;
 
@@ -9181,8 +9362,6 @@ read_pre_r10_meta_data_stream (
   error = dwg_add_Document (dwg, 0);
   if (error >= DWG_ERR_CRITICAL)
     return error;
-  default_object_count = dwg->num_objects;
-
   dwg->header.section[0].number = 0;
   dwg->header.section[0].type = (Dwg_Section_Type)SECTION_HEADER_R11;
   strcpy (dwg->header.section[0].name, "HEADER");
@@ -9209,25 +9388,19 @@ read_pre_r10_meta_data_stream (
   if (dat->byte + 2 >= dat->size)
     return error | DWG_ERR_CRITICAL;
 
-  num_entities = dwg->header_vars.numentities;
-  start_index = dwg->num_objects;
-  error = decode_preR13_entities (
-      dwg->header.entities_start, dwg->header.entities_end, num_entities,
-      dwg->header.entities_end - dwg->header.entities_start, dat, dwg,
-      ENTITIES_SECTION_INDEX);
-  if (error >= DWG_ERR_CRITICAL)
-    return error;
-  error = emit_pre_r13_object_range_stream (dwg, callbacks, input_mode, user,
-                                            start_index, &index);
-  if (error)
+  error = read_pre_r13_entity_section_stream (
+      dat, dwg, callbacks, input_mode, user, dwg->header.entities_start,
+      dwg->header.entities_end, DWG_SENTINEL_R11_ENTITIES_BEGIN,
+      "DWG_SENTINEL_R11_ENTITIES_BEGIN", DWG_SENTINEL_R11_ENTITIES_END,
+      "DWG_SENTINEL_R11_ENTITIES_END", ENTITIES_SECTION_INDEX, &index);
+  if (error >= DWG_ERR_CRITICAL || error == DWG_ERR_NOTYETSUPPORTED)
     return error;
 
 #define STREAM_PRER10_TABLE_SECTION(section)                                  \
   do                                                                          \
     {                                                                         \
-      error = read_pre_r13_table_section_stream (                             \
-          dat, dwg, callbacks, input_mode, user, section, &index);            \
-      if (error)                                                              \
+      error = decode_pre_r13_table_section_stream (dat, dwg, section);        \
+      if (error >= DWG_ERR_CRITICAL)                                          \
         return error;                                                         \
     }                                                                         \
   while (0)
@@ -9254,32 +9427,30 @@ read_pre_r10_meta_data_stream (
 
   if (blocks_size)
     {
-      start_index = dwg->num_objects;
-      error = decode_preR13_entities (blocks_start, blocks_end, 0, blocks_size,
-                                      dat, dwg, BLOCKS_SECTION_INDEX);
-      if (error >= DWG_ERR_CRITICAL)
-        return error;
-      error = emit_pre_r13_object_range_stream (dwg, callbacks, input_mode,
-                                                user, start_index, &index);
-      if (error)
+      error = read_pre_r13_entity_section_stream (
+          dat, dwg, callbacks, input_mode, user, blocks_start, blocks_end,
+          DWG_SENTINEL_R11_BLOCK_ENTITIES_BEGIN,
+          "DWG_SENTINEL_R11_BLOCK_ENTITIES_BEGIN",
+          DWG_SENTINEL_R11_BLOCK_ENTITIES_END,
+          "DWG_SENTINEL_R11_BLOCK_ENTITIES_END", BLOCKS_SECTION_INDEX, &index);
+      if (error >= DWG_ERR_CRITICAL || error == DWG_ERR_NOTYETSUPPORTED)
         return error;
     }
 
   if (extras_size)
     {
-      start_index = dwg->num_objects;
-      error = decode_preR13_entities (extras_start, extras_end, 0, extras_size,
-                                      dat, dwg, EXTRAS_SECTION_INDEX);
-      if (error >= DWG_ERR_CRITICAL)
-        return error;
-      error = emit_pre_r13_object_range_stream (dwg, callbacks, input_mode,
-                                                user, start_index, &index);
-      if (error)
+      error = read_pre_r13_entity_section_stream (
+          dat, dwg, callbacks, input_mode, user, extras_start, extras_end,
+          DWG_SENTINEL_R11_EXTRA_ENTITIES_BEGIN,
+          "DWG_SENTINEL_R11_EXTRA_ENTITIES_BEGIN",
+          DWG_SENTINEL_R11_EXTRA_ENTITIES_END,
+          "DWG_SENTINEL_R11_EXTRA_ENTITIES_END", EXTRAS_SECTION_INDEX, &index);
+      if (error >= DWG_ERR_CRITICAL || error == DWG_ERR_NOTYETSUPPORTED)
         return error;
     }
 
   return emit_pre_r13_existing_table_entries_stream (
-      dwg, callbacks, input_mode, user, default_object_count, &index);
+      dwg, callbacks, input_mode, user, dwg->num_objects, &index);
 }
 
 static int
@@ -9290,7 +9461,6 @@ read_pre_r13_meta_data_stream (
 {
   BITCODE_RL blocks_size;
   BITCODE_RL extras_size;
-  BITCODE_BL default_object_count;
   BITCODE_BL index = 0;
   int error = 0;
 
@@ -9324,8 +9494,6 @@ read_pre_r13_meta_data_stream (
   error = decode_preR13_header_variables (dat, dwg);
   if (error >= DWG_ERR_CRITICAL)
     return error;
-  default_object_count = dwg->num_objects;
-
   error = read_pre_r13_entity_section_stream (
       dat, dwg, callbacks, input_mode, user, dwg->header.entities_start,
       dwg->header.entities_end, DWG_SENTINEL_R11_ENTITIES_BEGIN,
@@ -9337,9 +9505,8 @@ read_pre_r13_meta_data_stream (
 #define STREAM_PRER13_TABLE_SECTION(section)                                  \
   do                                                                          \
     {                                                                         \
-      error = read_pre_r13_table_section_stream (                             \
-          dat, dwg, callbacks, input_mode, user, section, &index);            \
-      if (error)                                                              \
+      error = decode_pre_r13_table_section_stream (dat, dwg, section);        \
+      if (error >= DWG_ERR_CRITICAL)                                          \
         return error;                                                         \
     }                                                                         \
   while (0)
@@ -9397,7 +9564,7 @@ read_pre_r13_meta_data_stream (
     }
 
   error = emit_pre_r13_existing_table_entries_stream (
-      dwg, callbacks, input_mode, user, default_object_count, &index);
+      dwg, callbacks, input_mode, user, dwg->num_objects, &index);
   if (error)
     return error;
 

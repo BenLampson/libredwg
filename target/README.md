@@ -108,6 +108,8 @@ cmake --build .\build-codex-stream-tdd --target stream_test
 # stream mode with DWG_ERR_NOTYETSUPPORTED. It cross-checks the real R1.4,
 # R2.10, R2.6, R9, R10, and R11 fixtures against the blocking reader and also
 # checks generated fixtures for old versions without repository DWG files.
+# Old-version entity sections are decoded one object at a time; the tests compare
+# reference snapshots and require at most three resident host entities.
 # Stream APIs do not fall back to full load.
 Remove-Item Env:LIBREDWG_STREAM_TEST_DWG -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_REFS -ErrorAction SilentlyContinue
@@ -180,6 +182,8 @@ Strict C parity requirements against `dwg_read_file`:
   match.
 - `BLOCK_HEADER` name/base/owned-entity snapshots must match.
 - POLYLINE vertex ownership snapshots must match.
+- Pre-R13 direct-walker tests must keep resident host entities bounded at three
+  or fewer while matching the blocking result.
 - Semantic hashes for common entities, color/ltype/material/plotstyle, text,
   insert, line, dimension, vertex, LWPOLYLINE, HATCH, and WIPEOUT must match.
 - Semantic coverage counters for block headers, anonymous dimension blocks,
@@ -320,6 +324,13 @@ both `dwg_read_file` and `dwg_stream_file_ex` with
 `DWG_STREAM_F_NO_FULL_FALLBACK`; it verifies actual file entities, pre-R13
 table-entry fixedtypes, and the version-valid legacy fixedtypes
 `DWG_TYPE_REPEAT` and `DWG_TYPE_ENDREP` with no full fallback.
+The complete real pre-R11/R11 fixture set also compares per-handle reference
+snapshots against the blocking reader with both stream flag settings. This
+includes entity owner/layer references and complete `BLOCK_HEADER` block,
+end-block, and owned-entity chains. Pre-R2 and pre-R11 entity sections are now
+walked and released one object at a time; `stream_test` fails if more than three
+host entities are resident during these callbacks. Table objects remain only as
+the retained metadata needed to resolve those old-format relationships.
 The default test also cross-checks `test/test-data/r2.10/block.dwg`, both real
 R2.6 fixtures, the real R9 fixture, both real R10 fixtures, and all three real
 R11 DWG files. For versions without repository DWG files it writes and then
@@ -446,7 +457,7 @@ programs/dwgprobe.c, and test/unit-testing/stream_test.c
 passed
 ```
 
-Earlier local Autotools validation for this stream target:
+Latest local Autotools validation for this stream target:
 
 ```text
 MSYS2 packages installed for canonical Autotools validation:
@@ -466,6 +477,9 @@ programs: 3/3 passed
 examples: 2/2 passed
 test/unit-testing: 255/255 passed
 doc: makeinfo passed after installing texinfo
+
+This run includes the incremental pre-R2/pre-R11 entity walker and its strict
+blocking-reference snapshot checks.
 
 Shared out-of-tree Autotools builds are not the local acceptance route on this
 Windows/MSYS setup because libtool executable wrappers can return success
@@ -509,8 +523,8 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Partial pure stream support | `R_1_1`, `R_1_2`, `R_1_3` | The pre-R2 stream reader passes exact-version blocking-vs-stream parity on minimal LINE fixtures produced by the LibreDWG C writer. No repository historical DWG fixtures exist for these versions, so this remains generated coverage. |
 | Partial pure stream support | `R_1_4` | The pre-R2 stream reader covers the real `test/test-data/r1.4/entities.dwg` entity section with blocking-vs-stream validation of header `numentities`, `DWG_TYPE_REPEAT`, `DWG_TYPE_ENDREP`, and `DWG_TYPE_LOAD`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. This is not full R1.4 parity across all possible files. |
 | Partial pure stream support | `R_2_0`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_9c1` | The shared pre-R11 reader passes blocking-vs-stream parity on minimal fixtures produced by the LibreDWG C writer and accepted by `dwg_read_file`. These versions have no repository DWG fixture, so this is generated single-entity/table coverage rather than broad real-file proof. |
-| Partial pure stream support | `R_2_10` | The pre-R11 stream reader covers the real `test/test-data/r2.10/entities.dwg` and `block.dwg` files with blocking-vs-stream validation of entity, block, and table sections, including `DWG_TYPE_REPEAT` and `DWG_TYPE_ENDREP`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. This is not full R2.10 parity across all possible files. |
-| Partial pure stream support | `R_2_6`, `R_9`, `R_10` | Real-file C parity covers `r2.6/entities.dwg`, `r2.6/dim.dwg`, `r9/entities.dwg`, `r10/entities.dwg`, and `r10/tmp_line.dwg`. Object/type counts, decoded callbacks, table fixedtype masks, and `_3DLINE` coverage match the blocking reader with `full=0`; R10 also streams UCS, VPORT, and APPID tables. |
+| Partial pure stream support | `R_2_10` | The pre-R11 stream reader covers the real `test/test-data/r2.10/entities.dwg` and `block.dwg` files with blocking-vs-stream validation of entity, block, and table sections, including `DWG_TYPE_REPEAT` and `DWG_TYPE_ENDREP`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. Owner/layer references and complete `BLOCK_HEADER` chains match per-handle blocking snapshots while direct entity walking keeps at most three host entities resident. This is not full R2.10 parity across all possible files. |
+| Partial pure stream support | `R_2_6`, `R_9`, `R_10` | Real-file C parity covers `r2.6/entities.dwg`, `r2.6/dim.dwg`, `r9/entities.dwg`, `r10/entities.dwg`, and `r10/tmp_line.dwg`. Object/type counts, decoded callbacks, per-handle references, table fixedtype masks, and `_3DLINE` coverage match the blocking reader with `full=0`; R10 also streams UCS, VPORT, and APPID tables. Their entity sections use the same bounded direct walker. |
 | Partial pure stream support | `R_11b1`, `R_11b2` | The shared pre-R11 reader passes exact-version blocking-vs-stream parity on minimal C-writer LINE fixtures with table-entry coverage, decoded callbacks, `full=0`, and both stream flag settings. No real historical beta DWG fixture is present, so this remains generated coverage. |
 | Pure stream supported | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map stream reader. Must pass parity with `full=0`. |
 | Pure stream supported | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map stream reader. Must pass parity with `full=0`. AutoCAD 2005/2006 are not separate enum values here; they are covered by the `R_2004` file family when the file identifies that way. |
@@ -519,7 +533,7 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream supported | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2014/2015/2016/2017 are not separate enum values here; they are covered by the `R_2013` file family when the file identifies that way. |
 | Pure stream supported | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2019/2020/2021 are not separate enum values here; they are covered by the `R_2018` file family when the file identifies that way. |
 | Pure stream supported | `R_2022b` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. Current validation uses a generated R2022b MINSERT fixture because no repository R2022 fixture exists. |
-| Partial pure stream support | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. It also passes C blocking-vs-stream parity on the real `ACEB10.dwg`, `entities-2d.dwg`, and `entities-3d.dwg` R11 files; `ACEB10.dwg` covers 1815 entities and 67 table entries. Each direct-walker entity uses one reusable object slot and an isolated handle map, so legacy EED lookup works without retaining the full entity graph. `R_12` aliases `R_11` in the enum and has no separate repository DWG fixture. This is substantial real-file coverage, not proof for every possible R11/R12 file. |
+| Partial pure stream support | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. It also passes C blocking-vs-stream parity on the real `ACEB10.dwg`, `entities-2d.dwg`, and `entities-3d.dwg` R11 files; `ACEB10.dwg` covers 1815 entities and 67 table entries. Each direct-walker entity uses one reusable object slot and an isolated handle map, so legacy EED lookup works without retaining the full entity graph. Per-handle owner/layer references and completed `BLOCK_HEADER` chains match the blocking reader, with at most three host entities resident. `R_12` aliases `R_11` in the enum and has no separate repository DWG fixture. This is substantial real-file coverage, not proof for every possible R11/R12 file. |
 | Not pure stream supported | `R_2_0b` | It rejects with `DWG_ERR_NOTYETSUPPORTED`. `R_2_0b` is refined from shared magic `AC1.50` by `numheader_vars <= 74`; its generated fixture is identified correctly but is not accepted by the blocking reader. |
 
 Version routing is determined from the DWG file header before selecting a stream
