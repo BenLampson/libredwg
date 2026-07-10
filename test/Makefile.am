@@ -338,12 +338,57 @@ TESTDATA = \
     test-data/example_r14.dxf \
     test-data/r1.4/entities.dwg \
     test-data/r1.4/entities.dxf \
+    test-data/r1.4-ac1_40/ARC1.DWG \
+    test-data/r1.4-ac1_40/BLOCK1.DWG \
+    test-data/r1.4-ac1_40/BLOCK2.DWG \
+    test-data/r1.4-ac1_40/CIRCLE1.DWG \
+    test-data/r1.4-ac1_40/CIRCLE2.DWG \
+    test-data/r1.4-ac1_40/LICENSE \
+    test-data/r1.4-ac1_40/LINE1.DWG \
+    test-data/r1.4-ac1_40/LINE2.DWG \
+    test-data/r1.4-ac1_40/LOAD1.DWG \
+    test-data/r1.4-ac1_40/POINT1.DWG \
+    test-data/r1.4-ac1_40/POINT2.DWG \
+    test-data/r1.4-ac1_40/README.md \
+    test-data/r1.4-ac1_40/REPEAT1.DWG \
+    test-data/r1.4-ac1_40/SHAPE1.DWG \
+    test-data/r1.4-ac1_40/SOLID1.DWG \
+    test-data/r1.4-ac1_40/TEXT1.DWG \
+    test-data/r1.4-ac1_40/TMP_ARC.DWG \
+    test-data/r1.4-ac1_40/TMP_CIR.DWG \
+    test-data/r1.4-ac1_40/TMP_INS.DWG \
+    test-data/r1.4-ac1_40/TMP_LINE.DWG \
+    test-data/r1.4-ac1_40/TMP_PO.DWG \
+    test-data/r1.4-ac1_40/TMP_SHA.DWG \
+    test-data/r1.4-ac1_40/TMP_SOL.DWG \
+    test-data/r1.4-ac1_40/TMP_TEXT.DWG \
+    test-data/r1.4-ac1_40/TMP_TR.DWG \
+    test-data/r1.4-ac1_40/TRACE1.DWG \
     test-data/r10/entities.dwg \
     test-data/r10/entities.dxf \
     test-data/r10/entities.scr \
     test-data/r10/tmp_line.scr \
     test-data/r10/tmp_line.dwg \
     test-data/r10/tmp_line.dxf \
+    test-data/r10-ac1006/3DFACE1.DWG \
+    test-data/r10-ac1006/3DFACE2.DWG \
+    test-data/r10-ac1006/3DLINE1.DWG \
+    test-data/r10-ac1006/ARC1.DWG \
+    test-data/r10-ac1006/CIRCLE1.DWG \
+    test-data/r10-ac1006/CIRCLE2.DWG \
+    test-data/r10-ac1006/DIM1.DWG \
+    test-data/r10-ac1006/INSERT1.DWG \
+    test-data/r10-ac1006/INSERT2.DWG \
+    test-data/r10-ac1006/JUMP1.DWG \
+    test-data/r10-ac1006/LICENSE \
+    test-data/r10-ac1006/LINE1.DWG \
+    test-data/r10-ac1006/LINE2.DWG \
+    test-data/r10-ac1006/PL1.DWG \
+    test-data/r10-ac1006/POINT1.DWG \
+    test-data/r10-ac1006/README.md \
+    test-data/r10-ac1006/SHAPE1.DWG \
+    test-data/r10-ac1006/SOLID1.DWG \
+    test-data/r10-ac1006/TEXT1.DWG \
     test-data/r11/ACEB10.dwg \
     test-data/r11/ACEB10.stp \
     test-data/r11/Constraints_12.dxf \
@@ -388,12 +433,39 @@ TESTDATA = \
     test-data/r2.6/entities.dwg \
     test-data/r2.6/entities.dxf \
     test-data/r2.6/entities.scr \
+    test-data/r2.6-ac1003/3DFACE1.DWG \
+    test-data/r2.6-ac1003/3DFACE2.DWG \
+    test-data/r2.6-ac1003/3DFACE3.DWG \
+    test-data/r2.6-ac1003/ARC1.DWG \
+    test-data/r2.6-ac1003/ARC2.DWG \
+    test-data/r2.6-ac1003/ATTDEF1.DWG \
+    test-data/r2.6-ac1003/ATTDEF2.DWG \
+    test-data/r2.6-ac1003/CIRCLE1.DWG \
+    test-data/r2.6-ac1003/LICENSE \
+    test-data/r2.6-ac1003/README.md \
     test-data/r2.10/block.dwg \
     test-data/r2.10/block.dxf \
     test-data/r2.10/block.scr \
     test-data/r2.10/entities.dwg \
     test-data/r2.10/entities.dxf \
     test-data/r2.10/entities.scr \
+    test-data/r2.10-ac2_10/ARC1.DWG \
+    test-data/r2.10-ac2_10/ATTDEF1.DWG \
+    test-data/r2.10-ac2_10/ATTDEF2.DWG \
+    test-data/r2.10-ac2_10/ATTRIB1.DWG \
+    test-data/r2.10-ac2_10/CIRCLE1.DWG \
+    test-data/r2.10-ac2_10/LICENSE \
+    test-data/r2.10-ac2_10/LINE1.DWG \
+    test-data/r2.10-ac2_10/LINE2.DWG \
+    test-data/r2.10-ac2_10/PLINE1.DWG \
+    test-data/r2.10-ac2_10/POINT1.DWG \
+    test-data/r2.10-ac2_10/POINT2.DWG \
+    test-data/r2.10-ac2_10/README.md \
+    test-data/r2.10-ac2_10/REPEAT1.DWG \
+    test-data/r2.10-ac2_10/SHAPE1.DWG \
+    test-data/r2.10-ac2_10/SOLID1.DWG \
+    test-data/r2.10-ac2_10/TEXT1.DWG \
+    test-data/r2.10-ac2_10/TRACE1.DWG \
     test-data/r9/entities.dwg \
     test-data/r9/entities.dxf \
     test-data/r9/entities.scr \

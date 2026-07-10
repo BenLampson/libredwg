@@ -8997,6 +8997,7 @@ decode_pre_r13_table_section_stream (Bit_Chain *restrict dat,
                                      const Dwg_Section_Type_r11 section)
 {
   Dwg_Section *tbl;
+  int error;
 
   tbl = &dwg->header.section[section];
   if (!tbl->address || !tbl->number)
@@ -9007,7 +9008,11 @@ decode_pre_r13_table_section_stream (Bit_Chain *restrict dat,
   dat->byte
       = dwg->header.from_version >= R_11 ? tbl->address - 16 : tbl->address;
   dat->bit = 0;
-  return decode_preR13_section (section, dat, dwg);
+  error = decode_preR13_section (section, dat, dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    LOG_ERROR ("Failed to decode pre-R13 stream table %s at " FORMAT_RLL,
+               tbl->name, tbl->address);
+  return error;
 }
 
 static int
@@ -9308,7 +9313,12 @@ read_pre_r13_entity_section_stream (
       (*index)++;
     }
   if ((BITCODE_RL)dat->byte != end)
-    return DWG_ERR_INVALIDDWG;
+    {
+      LOG_ERROR ("Pre-R13 stream entity section ended at %" PRIuSIZE
+                 ", expected " FORMAT_RL,
+                 dat->byte, end);
+      return DWG_ERR_INVALIDDWG;
+    }
   if (dwg->header.from_version >= R_11)
     error |= decode_preR13_sentinel (end_sentinel, end_name, dat, dwg);
   return error >= DWG_ERR_CRITICAL ? error : 0;
@@ -9372,11 +9382,15 @@ read_pre_r10_meta_data_stream (
   blocks_size = dwg->header.blocks_size;
   if (blocks_size > 0xffffff)
     blocks_size &= 0xffffff;
+  if (!blocks_start)
+    blocks_size = 0;
   blocks_end = blocks_start + blocks_size;
   extras_start = dwg->header.extras_start;
   extras_size = dwg->header.extras_size;
   if (extras_size > 0xffffff)
     extras_size &= 0xffffff;
+  if (!extras_start)
+    extras_size = 0;
   extras_end = extras_start + extras_size;
 
   error = dwg_add_Document (dwg, 0);
