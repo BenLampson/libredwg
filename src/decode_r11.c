@@ -74,7 +74,8 @@ void dwg_set_next_hdl (Dwg_Data *dwg, unsigned long value);
  */
 
 /*----------------------------------------------------------------------------
- * Public function definitions
+
+ * * Public function definitions
  */
 
 EXPORT Dwg_Object_Ref *
@@ -641,6 +642,14 @@ decode_preR13 (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
     #include "header.spec"
     // clang-format on
   }
+  if (dwg->header.from_version == R_2_0 && dwg->header.numheader_vars <= 74)
+    {
+      dwg->header.from_version = dat->from_version = R_2_0b;
+      if (dwg->header.version == R_2_0)
+        dwg->header.version = R_2_0b;
+      if (dat->version == R_2_0)
+        dat->version = R_2_0b;
+    }
   LOG_TRACE ("@0x%zx\n", dat->byte); // 0x14
   SINCE (R_2_0b)
   {

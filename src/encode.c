@@ -1562,13 +1562,13 @@ calc_preR13_ctrl_size (Dwg_Data *restrict dwg, Dwg_Object *obj)
     case DWG_TYPE_BLOCK_CONTROL:
       if (ver == R_11)
         obj->size = 45;
-      else if (ver <= R_10)
+      else if (ver < R_11)
         obj->size = 37;
       break;
     case DWG_TYPE_LAYER_CONTROL:
       if (ver == R_11)
         obj->size = 41;
-      else if (ver <= R_10)
+      else if (ver < R_11)
         obj->size = 37;
       break;
     case DWG_TYPE_STYLE_CONTROL:
@@ -1576,19 +1576,19 @@ calc_preR13_ctrl_size (Dwg_Data *restrict dwg, Dwg_Object *obj)
         obj->size = 198;
       else if (ver == R_2_10)
         obj->size = 130;
-      else if (ver <= R_10) // also r2.4, r2.5
+      else if (ver < R_11) // also r2.4, r2.5 and r11 betas
         obj->size = 194;
       break;
     case DWG_TYPE_LTYPE_CONTROL:
       if (ver == R_11)
         obj->size = 191;
-      else if (ver <= R_10)
+      else if (ver < R_11)
         obj->size = 187;
       break;
     case DWG_TYPE_VIEW_CONTROL:
-      if (ver <= R_11)
+      if (ver == R_11)
         obj->size = 153;
-      else if (ver == R_10)
+      else if (ver >= R_10)
         obj->size = 149;
       else if (ver <= R_9)
         obj->size = 91;
@@ -1596,17 +1596,17 @@ calc_preR13_ctrl_size (Dwg_Data *restrict dwg, Dwg_Object *obj)
     case DWG_TYPE_UCS_CONTROL:
       if (ver == R_11)
         obj->size = 109;
-      else if (ver == R_10)
+      else if (ver >= R_10 && ver < R_11)
         obj->size = 105;
       break;
     case DWG_TYPE_VPORT_CONTROL:
       if (ver == R_11)
         obj->size = 253;
-      else if (ver == R_10)
+      else if (ver >= R_10 && ver < R_11)
         obj->size = 249;
       break;
     case DWG_TYPE_APPID_CONTROL:
-      obj->size = 37;
+      obj->size = ver == R_11 ? 37 : 33;
       break;
     case DWG_TYPE_DIMSTYLE_CONTROL:
       obj->size = 324;

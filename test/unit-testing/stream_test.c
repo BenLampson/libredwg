@@ -167,11 +167,13 @@ static int test_repository_stream_fixtures (void);
 static int test_repository_stream_sweep (int compare_refs);
 static int test_unsupported_stream_file_ex_rejects (void);
 static int test_unsupported_pre_r13_versions_reject (void);
-static int test_generated_minsert_stream_fixture (
-    Dwg_Version_Type version, const char *label);
+static int test_generated_minsert_stream_fixture (Dwg_Version_Type version,
+                                                  const char *label);
 static int test_pre_r13_minsert_opts_stream (void);
 static int test_pre_r2_legacy_entity_stream (void);
-static int test_r2_10_legacy_entity_stream (void);
+static int test_generated_pre_r2_version_stream (void);
+static int test_pre_r11_real_fixture_stream (void);
+static int test_generated_pre_r11_version_stream (void);
 static int test_pre_r13_legacy_entity_stream (void);
 static int test_generated_pre_r13_stream_basic (void);
 static int test_stream_file_parity (const char *path, int compare_refs,
@@ -193,8 +195,7 @@ static unsigned long long hash_append_3bd (unsigned long long hash,
                                            BITCODE_3BD point);
 static unsigned long long hash_ref_array (BITCODE_H *refs,
                                           BITCODE_BL num_refs);
-static unsigned long long utf8_field_hash (void *entity,
-                                           const char *name,
+static unsigned long long utf8_field_hash (void *entity, const char *name,
                                            const char *field);
 static int utf8_field_has_prefix (void *entity, const char *name,
                                   const char *field, const char *prefix);
@@ -219,8 +220,8 @@ static void snapshot_object_refs (const Dwg_Object *obj,
 static void snapshot_block_header_refs (const Dwg_Object *obj,
                                         Stream_Ref_Snapshot *snapshot);
 static int compare_ref_snapshot_handle (const void *a, const void *b);
-static const Stream_Ref_Snapshot *
-find_ref_snapshot (const Stream_Stats *stats, BITCODE_RLL handle);
+static const Stream_Ref_Snapshot *find_ref_snapshot (const Stream_Stats *stats,
+                                                     BITCODE_RLL handle);
 static int ref_snapshots_equal (const Stream_Ref_Snapshot *a,
                                 const Stream_Ref_Snapshot *b);
 static void stream_record_decode_error_bucket (
@@ -243,17 +244,7 @@ typedef struct _unsupported_stream_fixture
 } Unsupported_Stream_Fixture;
 
 static const Unsupported_Stream_Fixture unsupported_pre_r13_fixtures[] = {
-  { "AC1.50", "R_2_0b/R_2_0" },
-  { "AC2.21", "R_2_21" },
-  { "AC2.22", "R_2_22" },
-  { "AC1001", "R_2_4" },
-  { "AC1002", "R_2_5" },
-  { "AC1003", "R_2_6" },
-  { "AC1004", "R_9" },
-  { "AC1005", "R_9c1" },
-  { "AC1006", "R_10" },
-  { "AC1007", "R_11b1" },
-  { "AC1008", "R_11b2" },
+  { "AC1.50", "R_2_0b" },
 };
 
 static int
@@ -262,6 +253,36 @@ write_unsupported_fixture (const char *path, const char *magic)
   unsigned char buffer[64] = { 0 };
   FILE *fp;
   size_t len;
+
+  if (strcmp (magic, "AC1.50") == 0)
+    {
+      Dwg_Data *gen;
+      Dwg_Object *mspace;
+      Dwg_Object_BLOCK_HEADER *hdr;
+      dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
+      dwg_point_3d pt2 = { 3.0, 4.0, 0.0 };
+      int error;
+
+      gen = dwg_new_Document (R_2_0b, 0, 0);
+      if (!gen)
+        return 0;
+      mspace = dwg_model_space_object (gen);
+      if (!mspace || !mspace->tio.object
+          || !mspace->tio.object->tio.BLOCK_HEADER)
+        {
+          dwg_free (gen);
+          return 0;
+        }
+      hdr = mspace->tio.object->tio.BLOCK_HEADER;
+      if (!dwg_add_LINE (hdr, &pt1, &pt2))
+        {
+          dwg_free (gen);
+          return 0;
+        }
+      error = dwg_write_file (path, gen);
+      dwg_free (gen);
+      return error < DWG_ERR_CRITICAL;
+    }
 
   fp = fopen (path, "wb");
   if (!fp)
@@ -329,8 +350,7 @@ stats_add_r11_polyline_fixedtype (Stream_Stats *stats,
 }
 
 static void
-stats_add_r11_vertex_fixedtype (Stream_Stats *stats,
-                                const Dwg_Object *object)
+stats_add_r11_vertex_fixedtype (Stream_Stats *stats, const Dwg_Object *object)
 {
   if (!object || object->type != DWG_TYPE_VERTEX_r11)
     return;
@@ -480,13 +500,12 @@ stats_add_object (Stream_Stats *stats, const Dwg_Stream_Object_Info *info)
                        + ((unsigned long long)info->type << 33)
                        + ((unsigned long long)info->supertype << 49);
   if (info->decode_mode == DWG_STREAM_DECODE_PRER13_ENTITY
-      && info->supertype == DWG_SUPERTYPE_ENTITY
-      && info->type < 64)
+      && info->supertype == DWG_SUPERTYPE_ENTITY && info->type < 64)
     stats->r11_type_mask |= 1ULL << info->type;
   if (info->decode_mode == DWG_STREAM_DECODE_PRER13_ENTITY
       && info->supertype != DWG_SUPERTYPE_ENTITY)
-    stats->r11_table_fixedtype_mask |= pre_r13_table_entry_bit (
-        info->fixedtype);
+    stats->r11_table_fixedtype_mask
+        |= pre_r13_table_entry_bit (info->fixedtype);
   if (info->decode_mode == DWG_STREAM_DECODE_FULL)
     stats->full_decode_objects++;
   else if (info->decode_mode == DWG_STREAM_DECODE_R2007_OBJECT_MAP)
@@ -701,8 +720,10 @@ stats_add_owner_coverage (Stream_Semantic_Coverage *coverage,
     return;
   if (obj && obj->parent)
     {
-      model_handle = ref_absolute (obj->parent->header_vars.BLOCK_RECORD_MSPACE);
-      paper_handle = ref_absolute (obj->parent->header_vars.BLOCK_RECORD_PSPACE);
+      model_handle
+          = ref_absolute (obj->parent->header_vars.BLOCK_RECORD_MSPACE);
+      paper_handle
+          = ref_absolute (obj->parent->header_vars.BLOCK_RECORD_PSPACE);
     }
 
   if (ownerhandle)
@@ -751,9 +772,8 @@ stats_add_semantic_coverage (Stream_Stats *stats, const Dwg_Object *obj)
           coverage->block_headers++;
           if (block->num_owned)
             coverage->block_headers_with_owned++;
-          if (block->block_entity || block->first_entity
-              || block->last_entity || block->endblk_entity
-              || block->num_owned)
+          if (block->block_entity || block->first_entity || block->last_entity
+              || block->endblk_entity || block->num_owned)
             coverage->block_entity_chains++;
           if (utf8_field_has_prefix (block, "BLOCK_HEADER", "name", "*D"))
             coverage->anonymous_dimension_blocks++;
@@ -810,8 +830,7 @@ stats_add_semantic_coverage (Stream_Stats *stats, const Dwg_Object *obj)
     case DWG_TYPE_DIMENSION_RADIUS:
     case DWG_TYPE_ARC_DIMENSION:
     case DWG_TYPE_LARGE_RADIAL_DIMENSION:
-      if (entity->tio.DIMENSION_common
-          && entity->tio.DIMENSION_common->block)
+      if (entity->tio.DIMENSION_common && entity->tio.DIMENSION_common->block)
         coverage->dimension_blocks++;
       break;
     case DWG_TYPE_POLYLINE_3D:
@@ -990,9 +1009,8 @@ hash_append_common_entity (unsigned long long hash,
   hash = hash_append_u64 (hash, ref_absolute (entity->plotstyle));
   hash = hash_append_u64 (hash, ref_absolute (entity->xdicobjhandle));
   hash = hash_append_u64 (hash, entity->num_reactors);
-  hash = hash_append_u64 (hash,
-                          hash_ref_array (entity->reactors,
-                                          entity->num_reactors));
+  hash = hash_append_u64 (
+      hash, hash_ref_array (entity->reactors, entity->num_reactors));
   hash = hash_append_color (hash, entity->color);
   hash = hash_append_double (hash, entity->ltype_scale);
   hash = hash_append_u64 (hash, entity->ltype_flags);
@@ -1019,8 +1037,8 @@ hash_append_insert (unsigned long long hash, const Dwg_Entity_INSERT *insert)
   hash = hash_append_u64 (hash, ref_absolute (insert->block_header));
   hash = hash_append_u64 (hash, ref_absolute (insert->first_attrib));
   hash = hash_append_u64 (hash, ref_absolute (insert->last_attrib));
-  hash = hash_append_u64 (hash, hash_ref_array (insert->attribs,
-                                                insert->num_owned));
+  hash = hash_append_u64 (hash,
+                          hash_ref_array (insert->attribs, insert->num_owned));
   hash = hash_append_u64 (hash, ref_absolute (insert->seqend));
   hash = hash_append_u64 (hash, insert->num_cols);
   hash = hash_append_u64 (hash, insert->num_rows);
@@ -1046,8 +1064,8 @@ hash_append_minsert (unsigned long long hash, const Dwg_Entity_MINSERT *insert)
   hash = hash_append_u64 (hash, ref_absolute (insert->block_header));
   hash = hash_append_u64 (hash, ref_absolute (insert->first_attrib));
   hash = hash_append_u64 (hash, ref_absolute (insert->last_attrib));
-  hash = hash_append_u64 (hash, hash_ref_array (insert->attribs,
-                                                insert->num_owned));
+  hash = hash_append_u64 (hash,
+                          hash_ref_array (insert->attribs, insert->num_owned));
   hash = hash_append_u64 (hash, ref_absolute (insert->seqend));
   return hash;
 }
@@ -1063,7 +1081,8 @@ hash_append_dimension_common (unsigned long long hash,
   hash = hash_append_double (hash, dimension->elevation);
   hash = hash_append_u64 (hash, dimension->flag);
   hash = hash_append_u64 (hash, dimension->flag1);
-  hash = hash_append_u64 (hash, hash_text ((const char *)dimension->user_text));
+  hash
+      = hash_append_u64 (hash, hash_text ((const char *)dimension->user_text));
   hash = hash_append_double (hash, dimension->text_rotation);
   hash = hash_append_double (hash, dimension->horiz_dir);
   hash = hash_append_3bd (hash, dimension->ins_scale);
@@ -1122,7 +1141,8 @@ hash_append_hatch (unsigned long long hash, const Dwg_Entity_HATCH *hatch)
       hash = hash_append_double (hash, hatch->colors[i].shift_value);
       hash = hash_append_color (hash, hatch->colors[i].color);
     }
-  hash = hash_append_u64 (hash, hash_text ((const char *)hatch->gradient_name));
+  hash
+      = hash_append_u64 (hash, hash_text ((const char *)hatch->gradient_name));
   hash = hash_append_double (hash, hatch->elevation);
   hash = hash_append_3bd (hash, hatch->extrusion);
   hash = hash_append_u64 (hash, hash_text ((const char *)hatch->name));
@@ -1139,8 +1159,9 @@ hash_append_hatch (unsigned long long hash, const Dwg_Entity_HATCH *hatch)
       hash = hash_append_u64 (hash, path->bulges_present);
       hash = hash_append_u64 (hash, path->closed);
       hash = hash_append_u64 (hash, path->num_boundary_handles);
-      hash = hash_append_u64 (hash, hash_ref_array (path->boundary_handles,
-                                                    path->num_boundary_handles));
+      hash = hash_append_u64 (
+          hash,
+          hash_ref_array (path->boundary_handles, path->num_boundary_handles));
       if (path->flag & 2)
         {
           for (j = 0; j < path->num_segs_or_paths; j++)
@@ -1213,7 +1234,8 @@ hash_append_hatch (unsigned long long hash, const Dwg_Entity_HATCH *hatch)
 }
 
 static unsigned long long
-hash_append_wipeout (unsigned long long hash, const Dwg_Entity_WIPEOUT *wipeout)
+hash_append_wipeout (unsigned long long hash,
+                     const Dwg_Entity_WIPEOUT *wipeout)
 {
   BITCODE_BL i;
 
@@ -1263,9 +1285,8 @@ entity_semantic_hash (const Dwg_Object *obj)
           hash = hash_append_double (hash, text->rotation);
           hash = hash_append_double (hash, text->height);
           hash = hash_append_double (hash, text->width_factor);
-          hash = hash_append_u64 (hash,
-                                  utf8_field_hash (text, "TEXT",
-                                                   "text_value"));
+          hash = hash_append_u64 (
+              hash, utf8_field_hash (text, "TEXT", "text_value"));
           hash = hash_append_u64 (hash, text->generation);
           hash = hash_append_u64 (hash, text->horiz_alignment);
           hash = hash_append_u64 (hash, text->vert_alignment);
@@ -1285,9 +1306,8 @@ entity_semantic_hash (const Dwg_Object *obj)
           hash = hash_append_double (hash, attrib->rotation);
           hash = hash_append_double (hash, attrib->height);
           hash = hash_append_double (hash, attrib->width_factor);
-          hash = hash_append_u64 (hash,
-                                  utf8_field_hash (attrib, "ATTRIB",
-                                                   "text_value"));
+          hash = hash_append_u64 (
+              hash, utf8_field_hash (attrib, "ATTRIB", "text_value"));
           hash = hash_append_u64 (hash,
                                   utf8_field_hash (attrib, "ATTRIB", "tag"));
           hash = hash_append_u64 (hash, attrib->flags);
@@ -1307,14 +1327,12 @@ entity_semantic_hash (const Dwg_Object *obj)
           hash = hash_append_double (hash, attdef->rotation);
           hash = hash_append_double (hash, attdef->height);
           hash = hash_append_double (hash, attdef->width_factor);
-          hash = hash_append_u64 (hash,
-                                  utf8_field_hash (attdef, "ATTDEF",
-                                                   "default_value"));
+          hash = hash_append_u64 (
+              hash, utf8_field_hash (attdef, "ATTDEF", "default_value"));
           hash = hash_append_u64 (hash,
                                   utf8_field_hash (attdef, "ATTDEF", "tag"));
-          hash = hash_append_u64 (hash,
-                                  utf8_field_hash (attdef, "ATTDEF",
-                                                   "prompt"));
+          hash = hash_append_u64 (
+              hash, utf8_field_hash (attdef, "ATTDEF", "prompt"));
           hash = hash_append_u64 (hash, attdef->flags);
           hash = hash_append_u64 (hash, ref_absolute (attdef->style));
         }
@@ -1415,9 +1433,8 @@ entity_semantic_hash (const Dwg_Object *obj)
 
           hash = hash_append_u64 (hash, face->flag);
           for (i = 0; i < 4; i++)
-            hash = hash_append_u64 (hash,
-                                    (unsigned long long)(long long)
-                                        face->vertind[i]);
+            hash = hash_append_u64 (
+                hash, (unsigned long long)(long long)face->vertind[i]);
         }
       break;
     case DWG_TYPE_LWPOLYLINE:
@@ -1549,7 +1566,8 @@ snapshot_object_refs (const Dwg_Object *obj, Stream_Ref_Snapshot *snapshot)
     }
   else if (obj->fixedtype == DWG_TYPE_MINSERT && entity->tio.MINSERT)
     {
-      snapshot->block_header = ref_absolute (entity->tio.MINSERT->block_header);
+      snapshot->block_header
+          = ref_absolute (entity->tio.MINSERT->block_header);
       snapshot->num_owned = entity->tio.MINSERT->num_owned;
     }
   else if (obj->fixedtype == DWG_TYPE_DIMENSION_ALIGNED
@@ -1606,8 +1624,7 @@ ref_snapshots_equal (const Stream_Ref_Snapshot *a,
          && a->ownerhandle == b->ownerhandle && a->layer == b->layer
          && a->block_header == b->block_header
          && a->dimension_block == b->dimension_block
-         && a->num_owned == b->num_owned
-         && a->first_vertex == b->first_vertex
+         && a->num_owned == b->num_owned && a->first_vertex == b->first_vertex
          && a->last_vertex == b->last_vertex
          && a->block_entity == b->block_entity
          && a->first_entity == b->first_entity
@@ -1671,28 +1688,26 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
   stats_add_r11_dimension_fixedtype (stats, info, object);
   if (info && info->decode_mode == DWG_STREAM_DECODE_PRER13_ENTITY
       && object->supertype == DWG_SUPERTYPE_ENTITY)
-    stats->prer2_legacy_fixedtype_mask |= pre_r2_legacy_entity_bit (
-        object->fixedtype);
+    stats->prer2_legacy_fixedtype_mask
+        |= pre_r2_legacy_entity_bit (object->fixedtype);
   stats_add_semantic_coverage (stats, object);
   if (object->supertype == DWG_SUPERTYPE_ENTITY)
     stats->decoded_entities++;
   else
     stats->decoded_non_entities++;
-  stats->decoded_handle_mix
-      ^= (unsigned long long)object->handle.value
-         + ((unsigned long long)object->type << 33)
-         + ((unsigned long long)object->supertype << 49);
+  stats->decoded_handle_mix ^= (unsigned long long)object->handle.value
+                               + ((unsigned long long)object->type << 33)
+                               + ((unsigned long long)object->supertype << 49);
   if ((info->decode_mode != DWG_STREAM_DECODE_R2004_OBJECT_MAP
        && object->handle.value != info->handle.value)
-      || object->type != info->type
-      || object->supertype != info->supertype)
+      || object->type != info->type || object->supertype != info->supertype)
     {
       printf ("decoded object mismatch: info handle=%llu type=%u super=%u; "
               "object handle=%llu type=%u super=%u\n",
               (unsigned long long)info->handle.value, (unsigned)info->type,
               (unsigned)info->supertype,
-              (unsigned long long)object->handle.value,
-              (unsigned)object->type, (unsigned)object->supertype);
+              (unsigned long long)object->handle.value, (unsigned)object->type,
+              (unsigned)object->supertype);
       return DWG_ERR_INTERNALERROR;
     }
   if (stats->baseline_refs && object->handle.value)
@@ -1763,8 +1778,7 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
 
 static int
 r11_minsert_opts_decoded_object_callback (const Dwg_Stream_Object_Info *info,
-                                          const Dwg_Object *object,
-                                          void *user)
+                                          const Dwg_Object *object, void *user)
 {
   R11_Minsert_Opts_Stats *capture = (R11_Minsert_Opts_Stats *)user;
   int error;
@@ -1843,8 +1857,7 @@ stream_record_decode_error_bucket (Stream_Stats *stats,
   for (i = 0; i < STREAM_DECODE_ERROR_BUCKETS; i++)
     {
       Stream_Decode_Error_Bucket *bucket = &stats->decode_error_buckets[i];
-      if (bucket->used && bucket->error == error
-          && bucket->type == info->type
+      if (bucket->used && bucket->error == error && bucket->type == info->type
           && bucket->supertype == info->supertype)
         {
           bucket->count++;
@@ -1867,8 +1880,7 @@ stream_record_decode_error_bucket (Stream_Stats *stats,
           bucket->first_size = info->size;
           bucket->first_index = info->index;
           if (info->name)
-            snprintf (bucket->name, sizeof (bucket->name), "%s",
-                      info->name);
+            snprintf (bucket->name, sizeof (bucket->name), "%s", info->name);
           if (info->dxfname)
             snprintf (bucket->dxfname, sizeof (bucket->dxfname), "%s",
                       info->dxfname);
@@ -1907,8 +1919,8 @@ test_emit_decoded_object_isolated_host_state (void)
   callbacks.decoded_object = emit_capacity_decoded_object_callback;
   callbacks.decode_error = emit_capacity_decode_error_callback;
 
-  error = dwg_stream_emit_decoded_object (&dwg, &object_dat, &info,
-                                          &callbacks, &stats);
+  error = dwg_stream_emit_decoded_object (&dwg, &object_dat, &info, &callbacks,
+                                          &stats);
   if (error || stats.decoded_calls || stats.decode_error_calls != 1
       || stats.error != DWG_ERR_VALUEOUTOFBOUNDS || stats.info != &info
       || dwg.object != object_pool || dwg.num_objects != 1
@@ -1941,10 +1953,11 @@ test_no_full_fallback (void)
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   int error;
 
-  snprintf (path, sizeof (path), "stream_unsupported_prer13_fixture_%ld_%ld.dwg",
+  snprintf (path, sizeof (path),
+            "stream_unsupported_prer13_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
 
-  if (!write_unsupported_fixture (path, "AC1006"))
+  if (!write_unsupported_fixture (path, "AC1.50"))
     {
       printf ("failed to create unsupported streaming fixture\n");
       return 1;
@@ -1976,8 +1989,7 @@ test_no_full_fallback (void)
     {
       printf ("no-full-fallback failed: error=0x%x expected=0x%x "
               "objects=%lu decoded=%lu decode_errors=%lu\n",
-              error, DWG_ERR_NOTYETSUPPORTED,
-              (unsigned long)stats.num_objects,
+              error, DWG_ERR_NOTYETSUPPORTED, (unsigned long)stats.num_objects,
               (unsigned long)stats.decoded_objects,
               (unsigned long)stats.decode_error_objects);
       return 1;
@@ -2009,16 +2021,14 @@ test_stream_api_invalid_args (void)
   error = dwg_stream_file_ex (NULL, &callbacks_ex, NULL);
   if (error != DWG_ERR_INTERNALERROR)
     {
-      printf ("dwg_stream_file_ex NULL filename failed: error=0x%x\n",
-              error);
+      printf ("dwg_stream_file_ex NULL filename failed: error=0x%x\n", error);
       return 1;
     }
 
   error = dwg_stream_file_ex ("missing.dwg", NULL, NULL);
   if (error != DWG_ERR_INTERNALERROR)
     {
-      printf ("dwg_stream_file_ex NULL callbacks failed: error=0x%x\n",
-              error);
+      printf ("dwg_stream_file_ex NULL callbacks failed: error=0x%x\n", error);
       return 1;
     }
 
@@ -2029,13 +2039,13 @@ static int
 test_legacy_callback_initializer (void)
 {
 #if defined __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #endif
   Dwg_Stream_Callbacks callbacks
       = { stream_object_callback, DWG_STREAM_F_NO_FULL_FALLBACK };
 #if defined __GNUC__
-#pragma GCC diagnostic pop
+#  pragma GCC diagnostic pop
 #endif
 
   if (callbacks.object != stream_object_callback
@@ -2131,7 +2141,7 @@ test_legacy_stream_file_api (void)
   snprintf (unsupported_path, sizeof (unsupported_path),
             "stream_legacy_unsupported_prer13_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
-  if (!write_unsupported_fixture (unsupported_path, "AC1006"))
+  if (!write_unsupported_fixture (unsupported_path, "AC1.50"))
     {
       printf ("failed to create legacy unsupported streaming fixture\n");
       return 1;
@@ -2201,7 +2211,7 @@ test_unsupported_stream_file_ex_rejects (void)
   snprintf (path, sizeof (path),
             "stream_ex_unsupported_prer13_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
-  if (!write_unsupported_fixture (path, "AC1006"))
+  if (!write_unsupported_fixture (path, "AC1.50"))
     {
       printf ("failed to create stream_ex unsupported fixture\n");
       return 1;
@@ -2228,8 +2238,9 @@ test_unsupported_stream_file_ex_rejects (void)
       || decoded_only.full_decode_objects || decoded_only.lightweight_objects
       || decoded_only.decoded_objects || decoded_only.decode_error_objects)
     {
-      printf ("unsupported decoded-only API failed: error=0x%x expected=0x%x\n",
-              error, DWG_ERR_NOTYETSUPPORTED);
+      printf (
+          "unsupported decoded-only API failed: error=0x%x expected=0x%x\n",
+          error, DWG_ERR_NOTYETSUPPORTED);
       print_stats ("unsupported decoded-only API", &decoded_only);
       remove (path);
       return 1;
@@ -2256,13 +2267,11 @@ test_unsupported_pre_r13_versions_reject (void)
       int error;
 
       snprintf (path, sizeof (path),
-                "stream_unsupported_prer13_%lu_%ld_%ld.dwg",
-                (unsigned long)i, stream_test_process_id (),
-                (long)time (NULL));
+                "stream_unsupported_prer13_%lu_%ld_%ld.dwg", (unsigned long)i,
+                stream_test_process_id (), (long)time (NULL));
       if (!write_unsupported_fixture (path, fixture->magic))
         {
-          printf ("failed to create unsupported %s fixture\n",
-                  fixture->label);
+          printf ("failed to create unsupported %s fixture\n", fixture->label);
           return 1;
         }
 
@@ -2342,8 +2351,7 @@ test_large_stream_fixture (void)
       && stats.decoded_objects + stats.decode_error_objects
              != stats.num_objects)
     {
-      print_stats ("large stream fixture decoded accounting mismatch",
-                   &stats);
+      print_stats ("large stream fixture decoded accounting mismatch", &stats);
       return 1;
     }
 
@@ -2356,53 +2364,49 @@ test_large_stream_fixture (void)
 static int
 stats_equal (const Stream_Stats *a, const Stream_Stats *b)
 {
-  return a->num_objects == b->num_objects
-         && a->num_entities == b->num_entities
+  return a->num_objects == b->num_objects && a->num_entities == b->num_entities
          && a->num_non_entities == b->num_non_entities
          && a->total_size == b->total_size
          && (a->handle_mix == b->handle_mix
              || b->r2004_object_map_objects == b->num_objects)
          && a->min_address == b->min_address
-         && a->max_address == b->max_address
-         && a->max_size == b->max_size;
+         && a->max_address == b->max_address && a->max_size == b->max_size;
 }
 
 static void
 print_stats (const char *label, const Stream_Stats *stats)
 {
-  printf ("%s: objects=%lu entities=%lu non_entities=%lu total_size=%llu "
-          "max_size=%lu min_address=%zu max_address=%zu handle_mix=%llu "
-          "lightweight=%lu decoded=%lu decoded_entities=%lu "
-          "decoded_non_entities=%lu decoded_handle_mix=%llu decode_errors=%lu "
-          "decode_error_entities=%lu decode_error_non_entities=%lu "
-          "first_decode_error=0x%x decode_error_handle_mix=%llu r2007=%lu "
-          "r2004=%lu r13=%lu prer13=%lu full=%lu file_map=%lu heap=%lu "
-          "last_address=%zu last_size=%lu last_type=%u last_handle=%llu "
-          "last_super=%u\n",
-          label, (unsigned long)stats->num_objects,
-          (unsigned long)stats->num_entities,
-          (unsigned long)stats->num_non_entities, stats->total_size,
-          (unsigned long)stats->max_size, stats->min_address,
-          stats->max_address, stats->handle_mix,
-          (unsigned long)stats->lightweight_objects,
-          (unsigned long)stats->decoded_objects,
-          (unsigned long)stats->decoded_entities,
-          (unsigned long)stats->decoded_non_entities,
-          stats->decoded_handle_mix,
-          (unsigned long)stats->decode_error_objects,
-          (unsigned long)stats->decode_error_entities,
-          (unsigned long)stats->decode_error_non_entities,
-          stats->first_decode_error, stats->decode_error_handle_mix,
-          (unsigned long)stats->r2007_object_map_objects,
-          (unsigned long)stats->r2004_object_map_objects,
-          (unsigned long)stats->r13_object_map_objects,
-          (unsigned long)stats->prer13_entity_objects,
-          (unsigned long)stats->full_decode_objects,
-          (unsigned long)stats->file_map_objects,
-          (unsigned long)stats->heap_objects, stats->last_address,
-          (unsigned long)stats->last_size, (unsigned)stats->last_type,
-          (unsigned long long)stats->last_handle,
-          (unsigned)stats->last_supertype);
+  printf (
+      "%s: objects=%lu entities=%lu non_entities=%lu total_size=%llu "
+      "max_size=%lu min_address=%zu max_address=%zu handle_mix=%llu "
+      "lightweight=%lu decoded=%lu decoded_entities=%lu "
+      "decoded_non_entities=%lu decoded_handle_mix=%llu decode_errors=%lu "
+      "decode_error_entities=%lu decode_error_non_entities=%lu "
+      "first_decode_error=0x%x decode_error_handle_mix=%llu r2007=%lu "
+      "r2004=%lu r13=%lu prer13=%lu full=%lu file_map=%lu heap=%lu "
+      "last_address=%zu last_size=%lu last_type=%u last_handle=%llu "
+      "last_super=%u\n",
+      label, (unsigned long)stats->num_objects,
+      (unsigned long)stats->num_entities,
+      (unsigned long)stats->num_non_entities, stats->total_size,
+      (unsigned long)stats->max_size, stats->min_address, stats->max_address,
+      stats->handle_mix, (unsigned long)stats->lightweight_objects,
+      (unsigned long)stats->decoded_objects,
+      (unsigned long)stats->decoded_entities,
+      (unsigned long)stats->decoded_non_entities, stats->decoded_handle_mix,
+      (unsigned long)stats->decode_error_objects,
+      (unsigned long)stats->decode_error_entities,
+      (unsigned long)stats->decode_error_non_entities,
+      stats->first_decode_error, stats->decode_error_handle_mix,
+      (unsigned long)stats->r2007_object_map_objects,
+      (unsigned long)stats->r2004_object_map_objects,
+      (unsigned long)stats->r13_object_map_objects,
+      (unsigned long)stats->prer13_entity_objects,
+      (unsigned long)stats->full_decode_objects,
+      (unsigned long)stats->file_map_objects,
+      (unsigned long)stats->heap_objects, stats->last_address,
+      (unsigned long)stats->last_size, (unsigned)stats->last_type,
+      (unsigned long long)stats->last_handle, (unsigned)stats->last_supertype);
 }
 
 static void
@@ -2591,9 +2595,8 @@ test_stream_file_parity (const char *path, int compare_refs,
       callbacks.decoded_object = stream_decoded_object_callback;
       callbacks.decode_error = stream_decode_error_callback;
       error = dwg_stream_file_ex (path, &callbacks, &decoded_only);
-      if (error >= DWG_ERR_CRITICAL
-          || decoded_only.num_objects || decoded_only.decoded_objects
-                                         != baseline.num_objects
+      if (error >= DWG_ERR_CRITICAL || decoded_only.num_objects
+          || decoded_only.decoded_objects != baseline.num_objects
           || decoded_only.decoded_entities != baseline.num_entities
           || decoded_only.decoded_non_entities != baseline.num_non_entities
           || decoded_only.decode_error_objects
@@ -2693,16 +2696,11 @@ static int
 test_repository_stream_fixtures (void)
 {
   const char *fixtures[]
-      = { "test/test-data/example_r13.dwg",
-          "test/test-data/example_r14.dwg",
-          "test/test-data/example_2000.dwg",
-          "test/test-data/example_2004.dwg",
-          "test/test-data/example_2007.dwg",
-          "test/test-data/example_2010.dwg",
-          "test/test-data/example_2013.dwg",
-          "test/test-data/example_2018.dwg",
-          "test/test-data/sample_2018.dwg",
-          "test/test-data/2000/TS1.dwg" };
+      = { "test/test-data/example_r13.dwg",  "test/test-data/example_r14.dwg",
+          "test/test-data/example_2000.dwg", "test/test-data/example_2004.dwg",
+          "test/test-data/example_2007.dwg", "test/test-data/example_2010.dwg",
+          "test/test-data/example_2013.dwg", "test/test-data/example_2018.dwg",
+          "test/test-data/sample_2018.dwg",  "test/test-data/2000/TS1.dwg" };
   char path[1024];
   size_t i;
   int error;
@@ -2715,8 +2713,8 @@ test_repository_stream_fixtures (void)
           printf ("repository fixture path too long: %s\n", fixtures[i]);
           return 1;
         }
-      error = test_stream_file_parity (
-          path, 0, i == 0, "repository stream parity ok", 0, NULL);
+      error = test_stream_file_parity (path, 0, i == 0,
+                                       "repository stream parity ok", 0, NULL);
       if (error)
         return error;
     }
@@ -2726,74 +2724,73 @@ test_repository_stream_fixtures (void)
 static int
 test_repository_stream_sweep (int compare_refs)
 {
-  const char *fixtures[]
-      = { "test/test-data/2000/Arc.dwg",
-          "test/test-data/2000/circle.dwg",
-          "test/test-data/2000/Cone.dwg",
-          "test/test-data/2000/Constraints.dwg",
-          "test/test-data/2000/ConstructionLine.dwg",
-          "test/test-data/2000/Donut.dwg",
-          "test/test-data/2000/Ellipse.dwg",
-          "test/test-data/2000/entities-2d.dwg",
-          "test/test-data/2000/entities-3d.dwg",
-          "test/test-data/2000/Helix.dwg",
-          "test/test-data/2000/Leader.dwg",
-          "test/test-data/2000/Line.dwg",
-          "test/test-data/2000/Multiline.dwg",
-          "test/test-data/2000/Point.dwg",
-          "test/test-data/2000/Polygon.dwg",
-          "test/test-data/2000/Polyline.dwg",
-          "test/test-data/2000/PolyLine2D.dwg",
-          "test/test-data/2000/PolyLine3D.dwg",
-          "test/test-data/2000/RAY.dwg",
-          "test/test-data/2000/Spline.dwg",
-          "test/test-data/2000/Text.dwg",
-          "test/test-data/2000/TS1.dwg",
-          "test/test-data/2004/Arc.dwg",
-          "test/test-data/2004/circle.dwg",
-          "test/test-data/2004/Constraints.dwg",
-          "test/test-data/2004/ConstructionLine.dwg",
-          "test/test-data/2004/Donut.dwg",
-          "test/test-data/2004/Ellipse.dwg",
-          "test/test-data/2004/HatchG.dwg",
-          "test/test-data/2004/Helix.dwg",
-          "test/test-data/2004/Leader.dwg",
-          "test/test-data/2004/Line.dwg",
-          "test/test-data/2004/material.dwg",
-          "test/test-data/2004/Multiline.dwg",
-          "test/test-data/2004/Point.dwg",
-          "test/test-data/2004/Polygon.dwg",
-          "test/test-data/2004/Polyline.dwg",
-          "test/test-data/2004/PolyLine3D.dwg",
-          "test/test-data/2004/RAY.dwg",
-          "test/test-data/2004/Spline.dwg",
-          "test/test-data/2004/Surface.dwg",
-          "test/test-data/2004/Text.dwg",
-          "test/test-data/2004/Underlay.dwg",
-          "test/test-data/2007/Arc.dwg",
-          "test/test-data/2007/ATMOS-DC22S.dwg",
-          "test/test-data/2007/circle.dwg",
-          "test/test-data/2007/Constraints.dwg",
-          "test/test-data/2007/ConstructionLine.dwg",
-          "test/test-data/2007/Donut.dwg",
-          "test/test-data/2007/Ellipse.dwg",
-          "test/test-data/2007/Helix.dwg",
-          "test/test-data/2007/Leader.dwg",
-          "test/test-data/2007/Line.dwg",
-          "test/test-data/2007/Multiline.dwg",
-          "test/test-data/2007/Point.dwg",
-          "test/test-data/2007/Polygon.dwg",
-          "test/test-data/2007/Polyline.dwg",
-          "test/test-data/2007/PolyLine3D.dwg",
-          "test/test-data/2007/RAY.dwg",
-          "test/test-data/2007/Spline.dwg",
-          "test/test-data/2007/Text.dwg",
-          "test/test-data/example_2000.dwg",
-          "test/test-data/example_2004.dwg",
-          "test/test-data/example_2007.dwg",
-          "test/test-data/example_r13.dwg",
-          "test/test-data/example_r14.dwg",
-          "test/test-data/sample_2000.dwg" };
+  const char *fixtures[] = { "test/test-data/2000/Arc.dwg",
+                             "test/test-data/2000/circle.dwg",
+                             "test/test-data/2000/Cone.dwg",
+                             "test/test-data/2000/Constraints.dwg",
+                             "test/test-data/2000/ConstructionLine.dwg",
+                             "test/test-data/2000/Donut.dwg",
+                             "test/test-data/2000/Ellipse.dwg",
+                             "test/test-data/2000/entities-2d.dwg",
+                             "test/test-data/2000/entities-3d.dwg",
+                             "test/test-data/2000/Helix.dwg",
+                             "test/test-data/2000/Leader.dwg",
+                             "test/test-data/2000/Line.dwg",
+                             "test/test-data/2000/Multiline.dwg",
+                             "test/test-data/2000/Point.dwg",
+                             "test/test-data/2000/Polygon.dwg",
+                             "test/test-data/2000/Polyline.dwg",
+                             "test/test-data/2000/PolyLine2D.dwg",
+                             "test/test-data/2000/PolyLine3D.dwg",
+                             "test/test-data/2000/RAY.dwg",
+                             "test/test-data/2000/Spline.dwg",
+                             "test/test-data/2000/Text.dwg",
+                             "test/test-data/2000/TS1.dwg",
+                             "test/test-data/2004/Arc.dwg",
+                             "test/test-data/2004/circle.dwg",
+                             "test/test-data/2004/Constraints.dwg",
+                             "test/test-data/2004/ConstructionLine.dwg",
+                             "test/test-data/2004/Donut.dwg",
+                             "test/test-data/2004/Ellipse.dwg",
+                             "test/test-data/2004/HatchG.dwg",
+                             "test/test-data/2004/Helix.dwg",
+                             "test/test-data/2004/Leader.dwg",
+                             "test/test-data/2004/Line.dwg",
+                             "test/test-data/2004/material.dwg",
+                             "test/test-data/2004/Multiline.dwg",
+                             "test/test-data/2004/Point.dwg",
+                             "test/test-data/2004/Polygon.dwg",
+                             "test/test-data/2004/Polyline.dwg",
+                             "test/test-data/2004/PolyLine3D.dwg",
+                             "test/test-data/2004/RAY.dwg",
+                             "test/test-data/2004/Spline.dwg",
+                             "test/test-data/2004/Surface.dwg",
+                             "test/test-data/2004/Text.dwg",
+                             "test/test-data/2004/Underlay.dwg",
+                             "test/test-data/2007/Arc.dwg",
+                             "test/test-data/2007/ATMOS-DC22S.dwg",
+                             "test/test-data/2007/circle.dwg",
+                             "test/test-data/2007/Constraints.dwg",
+                             "test/test-data/2007/ConstructionLine.dwg",
+                             "test/test-data/2007/Donut.dwg",
+                             "test/test-data/2007/Ellipse.dwg",
+                             "test/test-data/2007/Helix.dwg",
+                             "test/test-data/2007/Leader.dwg",
+                             "test/test-data/2007/Line.dwg",
+                             "test/test-data/2007/Multiline.dwg",
+                             "test/test-data/2007/Point.dwg",
+                             "test/test-data/2007/Polygon.dwg",
+                             "test/test-data/2007/Polyline.dwg",
+                             "test/test-data/2007/PolyLine3D.dwg",
+                             "test/test-data/2007/RAY.dwg",
+                             "test/test-data/2007/Spline.dwg",
+                             "test/test-data/2007/Text.dwg",
+                             "test/test-data/example_2000.dwg",
+                             "test/test-data/example_2004.dwg",
+                             "test/test-data/example_2007.dwg",
+                             "test/test-data/example_r13.dwg",
+                             "test/test-data/example_r14.dwg",
+                             "test/test-data/sample_2000.dwg" };
   char path[1024];
   Stream_Semantic_Coverage coverage = { 0 };
   size_t i;
@@ -2804,13 +2801,12 @@ test_repository_stream_sweep (int compare_refs)
       stream_trace_stage (fixtures[i]);
       if (!stream_test_source_path (path, sizeof (path), fixtures[i]))
         {
-          printf ("repository sweep fixture path too long: %s\n",
-                  fixtures[i]);
+          printf ("repository sweep fixture path too long: %s\n", fixtures[i]);
           return 1;
         }
-      error = test_stream_file_parity (
-          path, compare_refs, i == 0, "repository stream sweep ok", 0,
-          &coverage);
+      error = test_stream_file_parity (path, compare_refs, i == 0,
+                                       "repository stream sweep ok", 0,
+                                       &coverage);
       if (error)
         return error;
     }
@@ -2839,8 +2835,8 @@ write_generated_minsert_fixture (Dwg_Version_Type version, const char *label,
   int error;
 
   tag = dwg_version_type (version);
-  snprintf (path, path_size, "stream_minsert_%s_fixture_%ld_%ld.dwg",
-            tag, stream_test_process_id (), (long)time (NULL));
+  snprintf (path, path_size, "stream_minsert_%s_fixture_%ld_%ld.dwg", tag,
+            stream_test_process_id (), (long)time (NULL));
   dwg = dwg_new_Document (version, 0, 0);
   if (!dwg)
     {
@@ -2872,8 +2868,7 @@ write_generated_minsert_fixture (Dwg_Version_Type version, const char *label,
     }
   block_line->parent->entmode = 3;
   dwg_add_ENDBLK (blk);
-  dwg_add_MINSERT (hdr, &pt1, "bloko", 1.0, 1.0, 1.0, 0.0, 2, 1, 1.0,
-                   0.0);
+  dwg_add_MINSERT (hdr, &pt1, "bloko", 1.0, 1.0, 1.0, 0.0, 2, 1, 1.0, 0.0);
 
   error = dwg_write_file (path, dwg);
   dwg_free (dwg);
@@ -2895,8 +2890,8 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
   char path[128];
   int error;
 
-  error = write_generated_minsert_fixture (version, label, path,
-                                           sizeof (path));
+  error
+      = write_generated_minsert_fixture (version, label, path, sizeof (path));
   if (error)
     return error;
 
@@ -2912,11 +2907,11 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
     }
   if (!coverage.block_owned_entities || !coverage.entmode3_entities)
     {
-      printf ("generated %s MINSERT fixture did not cover block-owned entmode=3: "
-              "block_owned=%lu entmode3=%lu\n",
-              label,
-              (unsigned long)coverage.block_owned_entities,
-              (unsigned long)coverage.entmode3_entities);
+      printf (
+          "generated %s MINSERT fixture did not cover block-owned entmode=3: "
+          "block_owned=%lu entmode3=%lu\n",
+          label, (unsigned long)coverage.block_owned_entities,
+          (unsigned long)coverage.entmode3_entities);
       return 1;
     }
   return 0;
@@ -2963,8 +2958,7 @@ write_generated_r11_minsert_opts_fixture (char *path, size_t path_size)
     }
   block_line = dwg_add_LINE (blk, &pt1, &pt2);
   if (!block_line || !block_line->parent || !dwg_add_ENDBLK (blk)
-      || !(insert = dwg_add_INSERT (hdr, &pt1, "r11blk", 1.0, 1.0, 1.0,
-                                    0.0)))
+      || !(insert = dwg_add_INSERT (hdr, &pt1, "r11blk", 1.0, 1.0, 1.0, 0.0)))
     {
       printf ("failed to create generated R11 INSERT fixture\n");
       dwg_free (gen);
@@ -2975,10 +2969,9 @@ write_generated_r11_minsert_opts_fixture (char *path, size_t path_size)
   insert->num_rows = 2;
   insert->col_spacing = 2.5;
   insert->row_spacing = 1.25;
-  insert->parent->opts_r11 |= OPTS_R11_INSERT_HAS_NUM_COLS
-                              | OPTS_R11_INSERT_HAS_NUM_ROWS
-                              | OPTS_R11_INSERT_HAS_COL_SPACING
-                              | OPTS_R11_INSERT_HAS_ROW_SPACING;
+  insert->parent->opts_r11
+      |= OPTS_R11_INSERT_HAS_NUM_COLS | OPTS_R11_INSERT_HAS_NUM_ROWS
+         | OPTS_R11_INSERT_HAS_COL_SPACING | OPTS_R11_INSERT_HAS_ROW_SPACING;
 
   error = dwg_write_file (path, gen);
   dwg_free (gen);
@@ -3136,8 +3129,7 @@ typedef struct _r11_mutated_entity_case
 } R11_Mutated_Entity_Case;
 
 static int
-test_pre_r13_mutated_entity_stream (
-    const R11_Mutated_Entity_Case *test_case)
+test_pre_r13_mutated_entity_stream (const R11_Mutated_Entity_Case *test_case)
 {
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   Stream_Stats stats = { 0 };
@@ -3148,8 +3140,8 @@ test_pre_r13_mutated_entity_stream (
   char path[128];
   int error;
 
-  error = write_generated_r11_line_fixture (path, sizeof (path),
-                                            &line_address);
+  error
+      = write_generated_r11_line_fixture (path, sizeof (path), &line_address);
   if (error)
     return error;
   if (mark_r11_entity_type (path, line_address, test_case->r11_type))
@@ -3271,15 +3263,14 @@ test_pre_r2_legacy_entity_stream (void)
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
   error = dwg_stream_file_ex (path, &callbacks, &stats);
   if (error >= DWG_ERR_CRITICAL || !stats.num_objects
-      || stats.num_entities != baseline_entities
-      || stats.num_non_entities || stats.full_decode_objects
+      || stats.num_entities != baseline_entities || stats.num_non_entities
+      || stats.full_decode_objects
       || stats.lightweight_objects != stats.num_objects
       || stats.prer13_entity_objects != stats.num_objects
       || stats.decoded_objects != stats.num_objects
       || stats.decoded_entities != stats.num_objects
       || stats.decode_error_objects
-      || (stats.prer2_legacy_fixedtype_mask & expected_mask)
-             != expected_mask)
+      || (stats.prer2_legacy_fixedtype_mask & expected_mask) != expected_mask)
     {
       printf ("R1.4 legacy stream failed: error=0x%x objects=%lu "
               "entities=%lu expected_entities=%lu non_entities=%lu "
@@ -3303,33 +3294,175 @@ test_pre_r2_legacy_entity_stream (void)
 }
 
 static int
-test_r2_10_legacy_entity_stream (void)
+test_generated_pre_r2_version_stream (void)
 {
-  static const unsigned long long expected_legacy_mask
-      = (1ULL << 0) | (1ULL << 1);
+  static const struct
+  {
+    Dwg_Version_Type version;
+    const char *label;
+  } versions[] = {
+    { R_1_1, "generated R1.1" },
+    { R_1_2, "generated R1.2" },
+    { R_1_3, "generated R1.3" },
+  };
+  size_t i;
+
+  for (i = 0; i < sizeof (versions) / sizeof (versions[0]); i++)
+    {
+      Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+      Stream_Stats stats = { 0 };
+      Dwg_Data blocking = { 0 };
+      Dwg_Data *gen;
+      Dwg_Object *mspace;
+      Dwg_Object_BLOCK_HEADER *hdr;
+      BITCODE_BL expected_entities = 0;
+      BITCODE_BL j;
+      int found_line = 0;
+      dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
+      dwg_point_3d pt2 = { 3.0, 4.0, 0.0 };
+      char path[128];
+      int error;
+
+      snprintf (path, sizeof (path), "stream_prer2_v%u_%ld_%ld.dwg",
+                (unsigned)versions[i].version, stream_test_process_id (),
+                (long)time (NULL));
+      gen = dwg_new_Document (versions[i].version, 0, 0);
+      if (!gen)
+        {
+          printf ("%s document creation failed\n", versions[i].label);
+          return 1;
+        }
+      mspace = dwg_model_space_object (gen);
+      if (!mspace || !mspace->tio.object
+          || !mspace->tio.object->tio.BLOCK_HEADER)
+        {
+          printf ("%s document has no model space\n", versions[i].label);
+          dwg_free (gen);
+          return 1;
+        }
+      hdr = mspace->tio.object->tio.BLOCK_HEADER;
+      if (!dwg_add_LINE (hdr, &pt1, &pt2))
+        {
+          printf ("%s failed to add LINE\n", versions[i].label);
+          dwg_free (gen);
+          return 1;
+        }
+      error = dwg_write_file (path, gen);
+      dwg_free (gen);
+      if (error >= DWG_ERR_CRITICAL)
+        {
+          printf ("%s write failed: error=0x%x\n", versions[i].label, error);
+          remove (path);
+          return 1;
+        }
+
+      error = dwg_read_file (path, &blocking);
+      if (error >= DWG_ERR_CRITICAL || !blocking.num_objects
+          || blocking.header.from_version != versions[i].version)
+        {
+          printf ("%s blocking read failed: error=0x%x objects=%lu "
+                  "version=%u expected_version=%u\n",
+                  versions[i].label, error,
+                  (unsigned long)blocking.num_objects,
+                  (unsigned)blocking.header.from_version,
+                  (unsigned)versions[i].version);
+          dwg_free (&blocking);
+          remove (path);
+          return 1;
+        }
+      for (j = 0; j < blocking.num_objects; j++)
+        {
+          Dwg_Object *obj = &blocking.object[j];
+          if (obj->supertype == DWG_SUPERTYPE_ENTITY && obj->size)
+            expected_entities++;
+          if (obj->fixedtype == DWG_TYPE_LINE)
+            found_line = 1;
+        }
+      dwg_free (&blocking);
+      if (!expected_entities || !found_line)
+        {
+          printf ("%s blocking coverage failed: entities=%lu line=%d\n",
+                  versions[i].label, (unsigned long)expected_entities,
+                  found_line);
+          remove (path);
+          return 1;
+        }
+
+      callbacks.object = stream_object_callback;
+      callbacks.decoded_object = stream_decoded_object_callback;
+      callbacks.decode_error = stream_decode_error_callback;
+      callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+      error = dwg_stream_file_ex (path, &callbacks, &stats);
+      remove (path);
+      if (error >= DWG_ERR_CRITICAL || stats.num_objects != expected_entities
+          || stats.num_entities != expected_entities || stats.num_non_entities
+          || stats.full_decode_objects
+          || stats.lightweight_objects != expected_entities
+          || stats.prer13_entity_objects != expected_entities
+          || stats.decoded_objects != expected_entities
+          || stats.decoded_entities != expected_entities
+          || stats.decoded_non_entities || stats.decode_error_objects)
+        {
+          printf ("%s stream failed: error=0x%x objects=%lu expected=%lu "
+                  "entities=%lu non_entities=%lu lightweight=%lu prer13=%lu "
+                  "full=%lu decoded=%lu decoded_entities=%lu "
+                  "decoded_non_entities=%lu decode_errors=%lu\n",
+                  versions[i].label, error, (unsigned long)stats.num_objects,
+                  (unsigned long)expected_entities,
+                  (unsigned long)stats.num_entities,
+                  (unsigned long)stats.num_non_entities,
+                  (unsigned long)stats.lightweight_objects,
+                  (unsigned long)stats.prer13_entity_objects,
+                  (unsigned long)stats.full_decode_objects,
+                  (unsigned long)stats.decoded_objects,
+                  (unsigned long)stats.decoded_entities,
+                  (unsigned long)stats.decoded_non_entities,
+                  (unsigned long)stats.decode_error_objects);
+          return 1;
+        }
+    }
+  return 0;
+}
+
+typedef struct _pre_r11_stream_fixture
+{
+  const char *relative_path;
+  const char *label;
+  Dwg_Version_Type expected_version;
+  unsigned long long required_legacy_mask;
+  BITCODE_BS required_fixedtype;
+} Pre_R11_Stream_Fixture;
+
+static int
+test_pre_r11_fixture_path (const char *restrict path,
+                           const Pre_R11_Stream_Fixture *restrict fixture)
+{
+  static const unsigned stream_flags[] = {
+    0,
+    DWG_STREAM_F_NO_FULL_FALLBACK,
+  };
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   Stream_Stats stats = { 0 };
   Dwg_Data dwg = { 0 };
-  char path[1024];
   BITCODE_BL expected_entities = 0;
   BITCODE_BL expected_non_entities = 0;
   BITCODE_BL i;
   unsigned long long expected_table_mask = 0;
+  unsigned long long expected_type_mask = 0;
   unsigned long long baseline_legacy_mask = 0;
+  size_t flags_index;
+  int found_required_fixedtype = 0;
   int error;
 
-  if (!stream_test_source_path (path, sizeof (path),
-                                "test/test-data/r2.10/entities.dwg"))
-    {
-      printf ("failed to resolve R2.10 legacy entity fixture path\n");
-      return 1;
-    }
-
   error = dwg_read_file (path, &dwg);
-  if (error >= DWG_ERR_CRITICAL || !dwg.num_objects)
+  if (error >= DWG_ERR_CRITICAL || !dwg.num_objects
+      || dwg.header.from_version != fixture->expected_version)
     {
-      printf ("R2.10 legacy blocking read failed: error=0x%x objects=%lu\n",
-              error, (unsigned long)dwg.num_objects);
+      printf ("%s blocking read failed: error=0x%x objects=%lu "
+              "version=%u expected_version=%u\n",
+              fixture->label, error, (unsigned long)dwg.num_objects,
+              (unsigned)dwg.header.from_version,
+              (unsigned)fixture->expected_version);
       dwg_free (&dwg);
       return 1;
     }
@@ -3338,7 +3471,11 @@ test_r2_10_legacy_entity_stream (void)
     {
       Dwg_Object *obj = &dwg.object[i];
       if (obj->supertype == DWG_SUPERTYPE_ENTITY && obj->size)
-        expected_entities++;
+        {
+          expected_entities++;
+          if (obj->type < 64)
+            expected_type_mask |= 1ULL << obj->type;
+        }
       if (obj->supertype != DWG_SUPERTYPE_ENTITY
           && pre_r13_table_entry_bit (obj->fixedtype))
         {
@@ -3346,62 +3483,185 @@ test_r2_10_legacy_entity_stream (void)
           expected_table_mask |= pre_r13_table_entry_bit (obj->fixedtype);
         }
       baseline_legacy_mask |= pre_r2_legacy_entity_bit (obj->fixedtype);
+      if (fixture->required_fixedtype
+          && obj->fixedtype == fixture->required_fixedtype)
+        found_required_fixedtype = 1;
     }
   dwg_free (&dwg);
   if (!expected_entities || !expected_non_entities
-      || (baseline_legacy_mask & expected_legacy_mask) != expected_legacy_mask)
+      || (baseline_legacy_mask & fixture->required_legacy_mask)
+             != fixture->required_legacy_mask
+      || (fixture->required_fixedtype && !found_required_fixedtype))
     {
-      printf ("R2.10 legacy blocking coverage failed: entities=%lu "
-              "non_entities=%lu legacy_mask=0x%llx expected=0x%llx\n",
-              (unsigned long)expected_entities,
+      printf ("%s blocking coverage failed: entities=%lu non_entities=%lu "
+              "legacy_mask=0x%llx expected_legacy=0x%llx "
+              "required_fixedtype=%u found=%d\n",
+              fixture->label, (unsigned long)expected_entities,
               (unsigned long)expected_non_entities, baseline_legacy_mask,
-              expected_legacy_mask);
+              fixture->required_legacy_mask,
+              (unsigned)fixture->required_fixedtype, found_required_fixedtype);
       return 1;
     }
 
   callbacks.object = stream_object_callback;
   callbacks.decoded_object = stream_decoded_object_callback;
   callbacks.decode_error = stream_decode_error_callback;
-  callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
-  error = dwg_stream_file_ex (path, &callbacks, &stats);
-  if (error >= DWG_ERR_CRITICAL
-      || stats.num_objects != expected_entities + expected_non_entities
-      || stats.num_entities != expected_entities
-      || stats.num_non_entities != expected_non_entities
-      || stats.full_decode_objects
-      || stats.lightweight_objects != stats.num_objects
-      || stats.prer13_entity_objects != stats.num_objects
-      || stats.decoded_objects != stats.num_objects
-      || stats.decoded_entities != expected_entities
-      || stats.decoded_non_entities != expected_non_entities
-      || stats.decode_error_objects
-      || stats.r11_table_fixedtype_mask != expected_table_mask
-      || (stats.prer2_legacy_fixedtype_mask & expected_legacy_mask)
-             != expected_legacy_mask)
+  for (flags_index = 0;
+       flags_index < sizeof (stream_flags) / sizeof (stream_flags[0]);
+       flags_index++)
     {
-      printf ("R2.10 legacy stream failed: error=0x%x objects=%lu "
-              "expected_objects=%lu entities=%lu expected_entities=%lu "
-              "non_entities=%lu expected_non_entities=%lu lightweight=%lu "
-              "prer13=%lu full=%lu decoded=%lu decoded_entities=%lu "
-              "decoded_non_entities=%lu decode_errors=%lu table_mask=0x%llx "
-              "expected_table_mask=0x%llx legacy_mask=0x%llx "
-              "expected_legacy_mask=0x%llx\n",
-              error, (unsigned long)stats.num_objects,
-              (unsigned long)(expected_entities + expected_non_entities),
-              (unsigned long)stats.num_entities,
-              (unsigned long)expected_entities,
-              (unsigned long)stats.num_non_entities,
-              (unsigned long)expected_non_entities,
-              (unsigned long)stats.lightweight_objects,
-              (unsigned long)stats.prer13_entity_objects,
-              (unsigned long)stats.full_decode_objects,
-              (unsigned long)stats.decoded_objects,
-              (unsigned long)stats.decoded_entities,
-              (unsigned long)stats.decoded_non_entities,
-              (unsigned long)stats.decode_error_objects,
-              stats.r11_table_fixedtype_mask, expected_table_mask,
-              stats.prer2_legacy_fixedtype_mask, expected_legacy_mask);
-      return 1;
+      memset (&stats, 0, sizeof (stats));
+      callbacks.flags = stream_flags[flags_index];
+      error = dwg_stream_file_ex (path, &callbacks, &stats);
+      if (error >= DWG_ERR_CRITICAL
+          || stats.num_objects != expected_entities + expected_non_entities
+          || stats.num_entities != expected_entities
+          || stats.num_non_entities != expected_non_entities
+          || stats.full_decode_objects
+          || stats.lightweight_objects != stats.num_objects
+          || stats.prer13_entity_objects != stats.num_objects
+          || stats.decoded_objects != stats.num_objects
+          || stats.decoded_entities != expected_entities
+          || stats.decoded_non_entities != expected_non_entities
+          || stats.decode_error_objects
+          || stats.r11_type_mask != expected_type_mask
+          || stats.r11_table_fixedtype_mask != expected_table_mask
+          || (stats.prer2_legacy_fixedtype_mask
+              & fixture->required_legacy_mask)
+                 != fixture->required_legacy_mask)
+        {
+          printf ("%s stream failed: flags=0x%x error=0x%x objects=%lu "
+                  "expected=%lu entities=%lu expected_entities=%lu "
+                  "non_entities=%lu expected_non_entities=%lu "
+                  "lightweight=%lu prer13=%lu full=%lu decoded=%lu "
+                  "decoded_entities=%lu decoded_non_entities=%lu "
+                  "decode_errors=%lu type_mask=0x%llx "
+                  "expected_type_mask=0x%llx table_mask=0x%llx "
+                  "expected_table_mask=0x%llx legacy_mask=0x%llx "
+                  "expected_legacy_mask=0x%llx\n",
+                  fixture->label, callbacks.flags, error,
+                  (unsigned long)stats.num_objects,
+                  (unsigned long)(expected_entities + expected_non_entities),
+                  (unsigned long)stats.num_entities,
+                  (unsigned long)expected_entities,
+                  (unsigned long)stats.num_non_entities,
+                  (unsigned long)expected_non_entities,
+                  (unsigned long)stats.lightweight_objects,
+                  (unsigned long)stats.prer13_entity_objects,
+                  (unsigned long)stats.full_decode_objects,
+                  (unsigned long)stats.decoded_objects,
+                  (unsigned long)stats.decoded_entities,
+                  (unsigned long)stats.decoded_non_entities,
+                  (unsigned long)stats.decode_error_objects,
+                  stats.r11_type_mask, expected_type_mask,
+                  stats.r11_table_fixedtype_mask, expected_table_mask,
+                  stats.prer2_legacy_fixedtype_mask,
+                  fixture->required_legacy_mask);
+          return 1;
+        }
+    }
+  return 0;
+}
+
+static int
+test_pre_r11_real_fixture_stream (void)
+{
+  static const Pre_R11_Stream_Fixture fixtures[] = {
+    { "test/test-data/r2.10/entities.dwg", "R2.10 entities", R_2_10,
+      (1ULL << 0) | (1ULL << 1), 0 },
+    { "test/test-data/r2.10/block.dwg", "R2.10 block", R_2_10, 0, 0 },
+    { "test/test-data/r2.6/entities.dwg", "R2.6 entities", R_2_6, 0,
+      DWG_TYPE__3DLINE },
+    { "test/test-data/r2.6/dim.dwg", "R2.6 dimensions", R_2_6, 0, 0 },
+    { "test/test-data/r9/entities.dwg", "R9 entities", R_9, 0,
+      DWG_TYPE__3DLINE },
+    { "test/test-data/r10/entities.dwg", "R10 entities", R_10, 0,
+      DWG_TYPE__3DLINE },
+    { "test/test-data/r10/tmp_line.dwg", "R10 line", R_10, 0, 0 },
+    { "test/test-data/r11/ACEB10.dwg", "R11 ACEB10", R_11, 0, 0 },
+    { "test/test-data/r11/entities-2d.dwg", "R11 2D entities", R_11, 0, 0 },
+    { "test/test-data/r11/entities-3d.dwg", "R11 3D entities", R_11, 0, 0 },
+  };
+  char path[1024];
+  size_t i;
+
+  for (i = 0; i < sizeof (fixtures) / sizeof (fixtures[0]); i++)
+    {
+      if (!stream_test_source_path (path, sizeof (path),
+                                    fixtures[i].relative_path))
+        {
+          printf ("failed to resolve %s fixture path\n", fixtures[i].label);
+          return 1;
+        }
+      if (test_pre_r11_fixture_path (path, &fixtures[i]))
+        return 1;
+    }
+  return 0;
+}
+
+static int
+test_generated_pre_r11_version_stream (void)
+{
+  static const struct
+  {
+    Dwg_Version_Type version;
+    const char *label;
+  } versions[] = {
+    { R_2_0, "generated R2.0" },   { R_2_21, "generated R2.21" },
+    { R_2_22, "generated R2.22" }, { R_2_4, "generated R2.4" },
+    { R_2_5, "generated R2.5" },   { R_9c1, "generated R9c1" },
+    { R_11b1, "generated R11b1" }, { R_11b2, "generated R11b2" },
+  };
+  size_t i;
+
+  for (i = 0; i < sizeof (versions) / sizeof (versions[0]); i++)
+    {
+      Pre_R11_Stream_Fixture fixture
+          = { NULL, versions[i].label, versions[i].version, 0, 0 };
+      Dwg_Data *gen;
+      Dwg_Object *mspace;
+      Dwg_Object_BLOCK_HEADER *hdr;
+      dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
+      dwg_point_3d pt2 = { 3.0, 4.0, 0.0 };
+      char path[128];
+      int error;
+
+      snprintf (path, sizeof (path), "stream_prer11_v%u_%ld_%ld.dwg",
+                (unsigned)versions[i].version, stream_test_process_id (),
+                (long)time (NULL));
+      gen = dwg_new_Document (versions[i].version, 0, 0);
+      if (!gen)
+        {
+          printf ("%s document creation failed\n", versions[i].label);
+          return 1;
+        }
+      mspace = dwg_model_space_object (gen);
+      if (!mspace || !mspace->tio.object
+          || !mspace->tio.object->tio.BLOCK_HEADER)
+        {
+          printf ("%s document has no model space\n", versions[i].label);
+          dwg_free (gen);
+          return 1;
+        }
+      hdr = mspace->tio.object->tio.BLOCK_HEADER;
+      if (!dwg_add_LINE (hdr, &pt1, &pt2))
+        {
+          printf ("%s failed to add LINE\n", versions[i].label);
+          dwg_free (gen);
+          return 1;
+        }
+      error = dwg_write_file (path, gen);
+      dwg_free (gen);
+      if (error >= DWG_ERR_CRITICAL)
+        {
+          printf ("%s write failed: error=0x%x\n", versions[i].label, error);
+          remove (path);
+          return 1;
+        }
+      error = test_pre_r11_fixture_path (path, &fixture);
+      remove (path);
+      if (error)
+        return 1;
     }
   return 0;
 }
@@ -3487,10 +3747,11 @@ test_generated_pre_r13_stream_basic (void)
   dwg_point_2d pt2d3 = { 1.0, 1.0 };
   dwg_point_2d pl2d_pts[] = { { 0.0, 0.0 }, { 2.0, 0.0 } };
   dwg_point_3d pl3d_pts[] = { { 0.0, 0.0, 0.0 }, { 1.0, 1.0, 1.0 } };
-  dwg_point_3d mesh_pts[] = { { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 },
-                              { 0.0, 1.0, 1.0 }, { 1.0, 1.0, 1.0 } };
-  dwg_point_3d pface_pts[] = { { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 },
-                               { 0.0, 1.0, 1.0 } };
+  dwg_point_3d mesh_pts[] = {
+    { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 1.0 }, { 1.0, 1.0, 1.0 }
+  };
+  dwg_point_3d pface_pts[]
+      = { { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 1.0 } };
   dwg_face pface_faces[] = { { 1, 2, 3, 0 } };
   dwg_point_3d ucs_xdir = { 1.0, 0.0, 0.0 };
   dwg_point_3d ucs_ydir = { 0.0, 1.0, 0.0 };
@@ -3576,8 +3837,7 @@ test_generated_pre_r13_stream_basic (void)
       return 1;
     }
   if (!dwg_add_BLOCK (blk, "r11blk") || !dwg_add_LINE (blk, &pt1, &pt2)
-      || !dwg_add_POINT (blk, &pt3)
-      || !dwg_add_CIRCLE (blk, &pt2, 1.25)
+      || !dwg_add_POINT (blk, &pt3) || !dwg_add_CIRCLE (blk, &pt2, 1.25)
       || !dwg_add_TEXT (blk, "BLK", &pt1, 0.25)
       || !dwg_add_ARC (blk, &pt3, 1.0, 0.0, 1.0)
       || !dwg_add_TRACE (blk, &pt1, &pt2d1, &pt2d2, &pt2d3)
@@ -3589,10 +3849,9 @@ test_generated_pre_r13_stream_basic (void)
       || !dwg_add_POLYLINE_MESH (blk, 2, 2, mesh_pts)
       || !dwg_add_POLYLINE_PFACE (blk, 3, 1, pface_pts, pface_faces)
       || !dwg_add_INSERT (blk, &pt4, "nestedblk", 1.0, 1.0, 1.0, 0.0)
-      || !dwg_add_ATTDEF (blk, 0.25, 0, "Block prompt", &pt2, "BTAG",
-                          "BValue")
-      || !(block_insert = dwg_add_INSERT (blk, &pt1, "nestedblk", 1.0,
-                                          1.0, 1.0, 0.0))
+      || !dwg_add_ATTDEF (blk, 0.25, 0, "Block prompt", &pt2, "BTAG", "BValue")
+      || !(block_insert
+           = dwg_add_INSERT (blk, &pt1, "nestedblk", 1.0, 1.0, 1.0, 0.0))
       || !dwg_add_ATTRIB (block_insert, 0.25, 0, &pt3, "BATTR", "BAttr")
       || !dwg_add_DIMENSION_LINEAR (blk, &pt1, &pt2, &pt3, 0.0)
       || !dwg_add_DIMENSION_ALIGNED (blk, &pt1, &pt2, &pt3)
@@ -3607,8 +3866,7 @@ test_generated_pre_r13_stream_basic (void)
       dwg_free (gen);
       return 1;
     }
-  if (!dwg_add_LINE (hdr, &pt1, &pt2)
-      || !dwg_add_POINT (hdr, &pt3)
+  if (!dwg_add_LINE (hdr, &pt1, &pt2) || !dwg_add_POINT (hdr, &pt3)
       || !dwg_add_CIRCLE (hdr, &pt2, 1.25)
       || !dwg_add_TEXT (hdr, "R11", &pt1, 0.25)
       || !dwg_add_ARC (hdr, &pt3, 1.0, 0.0, 1.0)
@@ -3617,8 +3875,7 @@ test_generated_pre_r13_stream_basic (void)
       || !dwg_add_3DFACE (hdr, &pt1, &pt2, &pt3, &pt4)
       || !dwg_add_SHAPE (hdr, "shape1", &pt1, 1.0, 0.0)
       || !dwg_add_ATTDEF (hdr, 0.25, 0, "Prompt", &pt2, "TAG1", "Value")
-      || !(insert = dwg_add_INSERT (hdr, &pt3, "r11blk", 1.0, 1.0, 1.0,
-                                    0.0))
+      || !(insert = dwg_add_INSERT (hdr, &pt3, "r11blk", 1.0, 1.0, 1.0, 0.0))
       || !dwg_add_ATTRIB (insert, 0.25, 0, &pt4, "TAG2", "Attr")
       || !dwg_add_DIMENSION_LINEAR (hdr, &pt1, &pt2, &pt3, 0.0)
       || !dwg_add_DIMENSION_ALIGNED (hdr, &pt1, &pt2, &pt3)
@@ -3677,8 +3934,8 @@ test_generated_pre_r13_stream_basic (void)
       if (is_pre_r13_table_entry (&dwg.object[i]))
         {
           expected_table_count++;
-          expected_table_mask |= pre_r13_table_entry_bit (
-              dwg.object[i].fixedtype);
+          expected_table_mask
+              |= pre_r13_table_entry_bit (dwg.object[i].fixedtype);
         }
     }
   if (!expected_table_count)
@@ -3820,8 +4077,14 @@ main (void)
   stream_trace_stage ("test_pre_r2_legacy_entity_stream");
   if (test_pre_r2_legacy_entity_stream ())
     return 1;
-  stream_trace_stage ("test_r2_10_legacy_entity_stream");
-  if (test_r2_10_legacy_entity_stream ())
+  stream_trace_stage ("test_generated_pre_r2_version_stream");
+  if (test_generated_pre_r2_version_stream ())
+    return 1;
+  stream_trace_stage ("test_pre_r11_real_fixture_stream");
+  if (test_pre_r11_real_fixture_stream ())
+    return 1;
+  stream_trace_stage ("test_generated_pre_r11_version_stream");
+  if (test_generated_pre_r11_version_stream ())
     return 1;
   stream_trace_stage ("test_generated_pre_r13_stream_basic");
   if (test_generated_pre_r13_stream_basic ())
