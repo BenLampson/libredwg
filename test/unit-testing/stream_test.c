@@ -68,6 +68,8 @@ typedef struct _stream_stats
   BITCODE_BL decoded_entities;
   BITCODE_BL decoded_non_entities;
   BITCODE_BL max_host_entities;
+  Dwg_Version_Type version;
+  BITCODE_BL version_mismatches;
   unsigned long long decoded_handle_mix;
   BITCODE_BL r13_object_map_objects;
   BITCODE_BL r2007_object_map_objects;
@@ -166,10 +168,11 @@ static int stream_test_source_path (char *path, size_t size,
 static int test_stream_api_invalid_args (void);
 static int test_repository_stream_fixtures (void);
 static int test_repository_stream_sweep (int compare_refs);
-static int test_unsupported_stream_file_ex_rejects (void);
-static int test_unsupported_pre_r13_versions_reject (void);
+static int test_invalid_version_stream_file_ex_rejects (void);
+static int test_invalid_versions_reject (void);
 static int test_generated_minsert_stream_fixture (Dwg_Version_Type version,
                                                   const char *label);
+static int test_modern_header_version_stream (void);
 static int test_pre_r13_minsert_opts_stream (void);
 static int test_pre_r2_legacy_entity_stream (void);
 static int test_generated_pre_r2_version_stream (void);
@@ -238,52 +241,22 @@ stream_trace_stage (const char *stage)
     }
 }
 
-typedef struct _unsupported_stream_fixture
+typedef struct _invalid_stream_fixture
 {
   const char *magic;
   const char *label;
-} Unsupported_Stream_Fixture;
+} Invalid_Stream_Fixture;
 
-static const Unsupported_Stream_Fixture unsupported_pre_r13_fixtures[] = {
-  { "AC1.50", "R_2_0b" },
+static const Invalid_Stream_Fixture invalid_fixtures[] = {
+  { "AC9999", "unknown version" },
 };
 
 static int
-write_unsupported_fixture (const char *path, const char *magic)
+write_invalid_version_fixture (const char *path, const char *magic)
 {
   unsigned char buffer[64] = { 0 };
   FILE *fp;
   size_t len;
-
-  if (strcmp (magic, "AC1.50") == 0)
-    {
-      Dwg_Data *gen;
-      Dwg_Object *mspace;
-      Dwg_Object_BLOCK_HEADER *hdr;
-      dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
-      dwg_point_3d pt2 = { 3.0, 4.0, 0.0 };
-      int error;
-
-      gen = dwg_new_Document (R_2_0b, 0, 0);
-      if (!gen)
-        return 0;
-      mspace = dwg_model_space_object (gen);
-      if (!mspace || !mspace->tio.object
-          || !mspace->tio.object->tio.BLOCK_HEADER)
-        {
-          dwg_free (gen);
-          return 0;
-        }
-      hdr = mspace->tio.object->tio.BLOCK_HEADER;
-      if (!dwg_add_LINE (hdr, &pt1, &pt2))
-        {
-          dwg_free (gen);
-          return 0;
-        }
-      error = dwg_write_file (path, gen);
-      dwg_free (gen);
-      return error < DWG_ERR_CRITICAL;
-    }
 
   fp = fopen (path, "wb");
   if (!fp)
@@ -490,6 +463,10 @@ pre_r2_legacy_entity_bit (BITCODE_BS fixedtype)
 static void
 stats_add_object (Stream_Stats *stats, const Dwg_Stream_Object_Info *info)
 {
+  if (!stats->num_objects)
+    stats->version = info->version;
+  else if (stats->version != info->version)
+    stats->version_mismatches++;
   stats->num_objects++;
   if (info->supertype == DWG_SUPERTYPE_ENTITY)
     stats->num_entities++;
@@ -561,7 +538,7 @@ stats_add_dwg_object (Stream_Stats *stats, const Dwg_Object *obj)
   info.dxfname = obj->dxfname;
   info.supertype = obj->supertype;
   info.handle = obj->handle;
-  info.version = obj->parent->header.version;
+  info.version = obj->parent->header.from_version;
   info.decode_mode = DWG_STREAM_DECODE_FULL;
 
   stats_add_object (stats, &info);
@@ -1966,13 +1943,12 @@ test_no_full_fallback (void)
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   int error;
 
-  snprintf (path, sizeof (path),
-            "stream_unsupported_prer13_fixture_%ld_%ld.dwg",
+  snprintf (path, sizeof (path), "stream_invalid_version_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
 
-  if (!write_unsupported_fixture (path, "AC1.50"))
+  if (!write_invalid_version_fixture (path, "AC9999"))
     {
-      printf ("failed to create unsupported streaming fixture\n");
+      printf ("failed to create invalid-version streaming fixture\n");
       return 1;
     }
 
@@ -1981,28 +1957,28 @@ test_no_full_fallback (void)
   callbacks.decode_error = stream_decode_error_callback;
   callbacks.flags = 0;
   error = dwg_stream_file_ex (path, &callbacks, &default_stats);
-  if (error != DWG_ERR_NOTYETSUPPORTED || default_stats.num_objects
+  if (error != DWG_ERR_INVALIDDWG || default_stats.num_objects
       || default_stats.decoded_objects || default_stats.decode_error_objects)
     {
       remove (path);
-      printf ("default unsupported stream failed: error=0x%x expected=0x%x "
-              "objects=%lu decoded=%lu decode_errors=%lu\n",
-              error, DWG_ERR_NOTYETSUPPORTED,
-              (unsigned long)default_stats.num_objects,
-              (unsigned long)default_stats.decoded_objects,
-              (unsigned long)default_stats.decode_error_objects);
+      printf (
+          "default invalid-version stream failed: error=0x%x expected=0x%x "
+          "objects=%lu decoded=%lu decode_errors=%lu\n",
+          error, DWG_ERR_INVALIDDWG, (unsigned long)default_stats.num_objects,
+          (unsigned long)default_stats.decoded_objects,
+          (unsigned long)default_stats.decode_error_objects);
       return 1;
     }
 
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
   error = dwg_stream_file_ex (path, &callbacks, &stats);
   remove (path);
-  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
-      || stats.decoded_objects || stats.decode_error_objects)
+  if (error != DWG_ERR_INVALIDDWG || stats.num_objects || stats.decoded_objects
+      || stats.decode_error_objects)
     {
       printf ("no-full-fallback failed: error=0x%x expected=0x%x "
               "objects=%lu decoded=%lu decode_errors=%lu\n",
-              error, DWG_ERR_NOTYETSUPPORTED, (unsigned long)stats.num_objects,
+              error, DWG_ERR_INVALIDDWG, (unsigned long)stats.num_objects,
               (unsigned long)stats.decoded_objects,
               (unsigned long)stats.decode_error_objects);
       return 1;
@@ -2074,13 +2050,13 @@ static int
 test_legacy_stream_file_api (void)
 {
   char path[1024];
-  char unsupported_path[128];
+  char invalid_path[128];
   char r2010_path[1024];
   char r2013_path[1024];
   Stream_Stats stats = { 0 };
   Stream_Stats r2010_stats = { 0 };
   Stream_Stats r2013_stats = { 0 };
-  Stream_Stats unsupported_stats = { 0 };
+  Stream_Stats invalid_stats = { 0 };
   Stream_Stats no_fallback_stats = { 0 };
   Abort_Stats aborted = { 0 };
   Dwg_Stream_Callbacks callbacks = { 0 };
@@ -2151,49 +2127,49 @@ test_legacy_stream_file_api (void)
       return 1;
     }
 
-  snprintf (unsupported_path, sizeof (unsupported_path),
-            "stream_legacy_unsupported_prer13_fixture_%ld_%ld.dwg",
+  snprintf (invalid_path, sizeof (invalid_path),
+            "stream_legacy_invalid_version_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
-  if (!write_unsupported_fixture (unsupported_path, "AC1.50"))
+  if (!write_invalid_version_fixture (invalid_path, "AC9999"))
     {
-      printf ("failed to create legacy unsupported streaming fixture\n");
+      printf ("failed to create legacy invalid-version streaming fixture\n");
       return 1;
     }
 
   callbacks.object = stream_object_callback;
   callbacks.flags = 0;
-  error = dwg_stream_file (unsupported_path, &callbacks, &unsupported_stats);
-  if (error != DWG_ERR_NOTYETSUPPORTED || unsupported_stats.num_objects
-      || unsupported_stats.full_decode_objects
-      || unsupported_stats.lightweight_objects)
+  error = dwg_stream_file (invalid_path, &callbacks, &invalid_stats);
+  if (error != DWG_ERR_INVALIDDWG || invalid_stats.num_objects
+      || invalid_stats.full_decode_objects
+      || invalid_stats.lightweight_objects)
     {
-      printf ("legacy unsupported stream failed: error=0x%x expected=0x%x "
+      printf ("legacy invalid-version stream failed: error=0x%x expected=0x%x "
               "objects=%lu full=%lu lightweight=%lu\n",
-              error, DWG_ERR_NOTYETSUPPORTED,
-              (unsigned long)unsupported_stats.num_objects,
-              (unsigned long)unsupported_stats.full_decode_objects,
-              (unsigned long)unsupported_stats.lightweight_objects);
-      remove (unsupported_path);
+              error, DWG_ERR_INVALIDDWG,
+              (unsigned long)invalid_stats.num_objects,
+              (unsigned long)invalid_stats.full_decode_objects,
+              (unsigned long)invalid_stats.lightweight_objects);
+      remove (invalid_path);
       return 1;
     }
 
   callbacks.object = stream_object_callback;
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
-  error = dwg_stream_file (unsupported_path, &callbacks, &no_fallback_stats);
-  if (error != DWG_ERR_NOTYETSUPPORTED || no_fallback_stats.num_objects
+  error = dwg_stream_file (invalid_path, &callbacks, &no_fallback_stats);
+  if (error != DWG_ERR_INVALIDDWG || no_fallback_stats.num_objects
       || no_fallback_stats.full_decode_objects
       || no_fallback_stats.lightweight_objects)
     {
       printf ("legacy no-full-fallback failed: error=0x%x expected=0x%x "
               "objects=%lu full=%lu lightweight=%lu\n",
-              error, DWG_ERR_NOTYETSUPPORTED,
+              error, DWG_ERR_INVALIDDWG,
               (unsigned long)no_fallback_stats.num_objects,
               (unsigned long)no_fallback_stats.full_decode_objects,
               (unsigned long)no_fallback_stats.lightweight_objects);
-      remove (unsupported_path);
+      remove (invalid_path);
       return 1;
     }
-  remove (unsupported_path);
+  remove (invalid_path);
 
   aborted.limit = 3;
   aborted.error = DWG_ERR_NOTYETSUPPORTED;
@@ -2213,7 +2189,7 @@ test_legacy_stream_file_api (void)
 }
 
 static int
-test_unsupported_stream_file_ex_rejects (void)
+test_invalid_version_stream_file_ex_rejects (void)
 {
   char path[128];
   Stream_Stats combined = { 0 };
@@ -2222,11 +2198,11 @@ test_unsupported_stream_file_ex_rejects (void)
   int error;
 
   snprintf (path, sizeof (path),
-            "stream_ex_unsupported_prer13_fixture_%ld_%ld.dwg",
+            "stream_ex_invalid_version_fixture_%ld_%ld.dwg",
             stream_test_process_id (), (long)time (NULL));
-  if (!write_unsupported_fixture (path, "AC1.50"))
+  if (!write_invalid_version_fixture (path, "AC9999"))
     {
-      printf ("failed to create stream_ex unsupported fixture\n");
+      printf ("failed to create stream_ex invalid-version fixture\n");
       return 1;
     }
 
@@ -2234,27 +2210,27 @@ test_unsupported_stream_file_ex_rejects (void)
   callbacks.decoded_object = stream_decoded_object_callback;
   callbacks.decode_error = stream_decode_error_callback;
   error = dwg_stream_file_ex (path, &callbacks, &combined);
-  if (error != DWG_ERR_NOTYETSUPPORTED || combined.num_objects
+  if (error != DWG_ERR_INVALIDDWG || combined.num_objects
       || combined.full_decode_objects || combined.lightweight_objects
       || combined.decoded_objects || combined.decode_error_objects)
     {
-      printf ("unsupported decoded API failed: error=0x%x expected=0x%x\n",
-              error, DWG_ERR_NOTYETSUPPORTED);
-      print_stats ("unsupported decoded API", &combined);
+      printf ("invalid-version decoded API failed: error=0x%x expected=0x%x\n",
+              error, DWG_ERR_INVALIDDWG);
+      print_stats ("invalid-version decoded API", &combined);
       remove (path);
       return 1;
     }
 
   callbacks.object = NULL;
   error = dwg_stream_file_ex (path, &callbacks, &decoded_only);
-  if (error != DWG_ERR_NOTYETSUPPORTED || decoded_only.num_objects
+  if (error != DWG_ERR_INVALIDDWG || decoded_only.num_objects
       || decoded_only.full_decode_objects || decoded_only.lightweight_objects
       || decoded_only.decoded_objects || decoded_only.decode_error_objects)
     {
-      printf (
-          "unsupported decoded-only API failed: error=0x%x expected=0x%x\n",
-          error, DWG_ERR_NOTYETSUPPORTED);
-      print_stats ("unsupported decoded-only API", &decoded_only);
+      printf ("invalid-version decoded-only API failed: error=0x%x "
+              "expected=0x%x\n",
+              error, DWG_ERR_INVALIDDWG);
+      print_stats ("invalid-version decoded-only API", &decoded_only);
       remove (path);
       return 1;
     }
@@ -2264,27 +2240,25 @@ test_unsupported_stream_file_ex_rejects (void)
 }
 
 static int
-test_unsupported_pre_r13_versions_reject (void)
+test_invalid_versions_reject (void)
 {
   size_t i;
 
-  for (i = 0; i < (sizeof (unsupported_pre_r13_fixtures)
-                   / sizeof (unsupported_pre_r13_fixtures[0]));
+  for (i = 0; i < (sizeof (invalid_fixtures) / sizeof (invalid_fixtures[0]));
        i++)
     {
-      const Unsupported_Stream_Fixture *fixture
-          = &unsupported_pre_r13_fixtures[i];
+      const Invalid_Stream_Fixture *fixture = &invalid_fixtures[i];
       Dwg_Stream_Callbacks_Ex callbacks = { 0 };
       Stream_Stats stats = { 0 };
       char path[128];
       int error;
 
-      snprintf (path, sizeof (path),
-                "stream_unsupported_prer13_%lu_%ld_%ld.dwg", (unsigned long)i,
-                stream_test_process_id (), (long)time (NULL));
-      if (!write_unsupported_fixture (path, fixture->magic))
+      snprintf (path, sizeof (path), "stream_invalid_version_%lu_%ld_%ld.dwg",
+                (unsigned long)i, stream_test_process_id (),
+                (long)time (NULL));
+      if (!write_invalid_version_fixture (path, fixture->magic))
         {
-          printf ("failed to create unsupported %s fixture\n", fixture->label);
+          printf ("failed to create invalid %s fixture\n", fixture->label);
           return 1;
         }
 
@@ -2293,15 +2267,15 @@ test_unsupported_pre_r13_versions_reject (void)
       callbacks.decode_error = stream_decode_error_callback;
       error = dwg_stream_file_ex (path, &callbacks, &stats);
       remove (path);
-      if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+      if (error != DWG_ERR_INVALIDDWG || stats.num_objects
           || stats.full_decode_objects || stats.lightweight_objects
           || stats.decoded_objects || stats.decode_error_objects)
         {
-          printf ("unsupported %s stream failed: magic=%s error=0x%x "
+          printf ("invalid %s stream failed: magic=%s error=0x%x "
                   "expected=0x%x objects=%lu full=%lu lightweight=%lu "
                   "decoded=%lu decode_errors=%lu\n",
-                  fixture->label, fixture->magic, error,
-                  DWG_ERR_NOTYETSUPPORTED, (unsigned long)stats.num_objects,
+                  fixture->label, fixture->magic, error, DWG_ERR_INVALIDDWG,
+                  (unsigned long)stats.num_objects,
                   (unsigned long)stats.full_decode_objects,
                   (unsigned long)stats.lightweight_objects,
                   (unsigned long)stats.decoded_objects,
@@ -2379,7 +2353,8 @@ stats_equal (const Stream_Stats *a, const Stream_Stats *b)
 {
   return a->num_objects == b->num_objects && a->num_entities == b->num_entities
          && a->num_non_entities == b->num_non_entities
-         && a->total_size == b->total_size
+         && a->version == b->version && !a->version_mismatches
+         && !b->version_mismatches && a->total_size == b->total_size
          && (a->handle_mix == b->handle_mix
              || b->r2004_object_map_objects == b->num_objects)
          && a->min_address == b->min_address
@@ -2902,6 +2877,7 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
                                        const char *label)
 {
   Stream_Semantic_Coverage coverage = { 0 };
+  Dwg_Data blocking = { 0 };
   char path[128];
   int error;
 
@@ -2909,6 +2885,19 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
       = write_generated_minsert_fixture (version, label, path, sizeof (path));
   if (error)
     return error;
+
+  error = dwg_read_file (path, &blocking);
+  if (error >= DWG_ERR_CRITICAL || blocking.header.from_version != version)
+    {
+      printf ("generated %s blocking version failed: error=0x%x "
+              "version=%u expected=%u\n",
+              label, error, (unsigned)blocking.header.from_version,
+              (unsigned)version);
+      dwg_free (&blocking);
+      remove (path);
+      return 1;
+    }
+  dwg_free (&blocking);
 
   error = test_stream_file_parity (path, 1, 0, label, 0, &coverage);
   remove (path);
@@ -2928,6 +2917,145 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
           label, (unsigned long)coverage.block_owned_entities,
           (unsigned long)coverage.entmode3_entities);
       return 1;
+    }
+  return 0;
+}
+
+static int
+write_magic_override_fixture (const char *source_path, const char *path,
+                              const char *magic, BITCODE_RC dwg_version)
+{
+  unsigned char buffer[8192];
+  FILE *source;
+  FILE *output;
+  size_t size;
+  int ok = 1;
+
+  source = fopen (source_path, "rb");
+  if (!source)
+    return 0;
+  output = fopen (path, "wb");
+  if (!output)
+    {
+      fclose (source);
+      return 0;
+    }
+
+  if (fread (buffer, 1, 6, source) != 6 || fwrite (magic, 1, 6, output) != 6)
+    ok = 0;
+  while (ok && (size = fread (buffer, 1, sizeof (buffer), source)) > 0)
+    {
+      if (fwrite (buffer, 1, size, output) != size)
+        ok = 0;
+    }
+  if (ok
+      && (fseek (output, 17, SEEK_SET) != 0
+          || fputc ((int)dwg_version, output) == EOF))
+    ok = 0;
+  if (ferror (source) || fclose (output) != 0)
+    ok = 0;
+  fclose (source);
+  if (!ok)
+    remove (path);
+  return ok;
+}
+
+static int
+test_modern_header_version_stream (void)
+{
+  static const struct
+  {
+    const char *relative_path;
+    Dwg_Version_Type version;
+    const char *magic;
+    BITCODE_RC dwg_version;
+    const char *label;
+  } versions[] = {
+    { "test/test-data/example_2000.dwg", R_2000i, "AC1016", 0x17,
+      "synthetic R2000i header stream parity ok" },
+    { "test/test-data/example_2000.dwg", R_2002, "AC1017", 0x17,
+      "synthetic R2002 header stream parity ok" },
+    { "test/test-data/example_2004.dwg", R_2004c, "AC1018", 0x18,
+      "synthetic R2004 beta header stream parity ok" },
+  };
+  char source_path[1024];
+  size_t i;
+
+  for (i = 0; i < sizeof (versions) / sizeof (versions[0]); i++)
+    {
+      Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+      Stream_Stats default_stats = { 0 };
+      Dwg_Data blocking = { 0 };
+      BITCODE_BL blocking_objects;
+      char path[128];
+      int error;
+
+      if (!stream_test_source_path (source_path, sizeof (source_path),
+                                    versions[i].relative_path))
+        {
+          printf ("failed to resolve %s source fixture path\n",
+                  versions[i].label);
+          return 1;
+        }
+      snprintf (path, sizeof (path), "stream_modern_header_v%u_%ld_%ld.dwg",
+                (unsigned)versions[i].version, stream_test_process_id (),
+                (long)time (NULL));
+      if (!write_magic_override_fixture (source_path, path, versions[i].magic,
+                                         versions[i].dwg_version))
+        {
+          printf ("failed to create %s fixture\n", versions[i].label);
+          return 1;
+        }
+
+      error = dwg_read_file (path, &blocking);
+      blocking_objects = blocking.num_objects;
+      if (error >= DWG_ERR_CRITICAL
+          || blocking.header.from_version != versions[i].version
+          || !blocking_objects)
+        {
+          printf (
+              "%s blocking read failed: error=0x%x version=%u "
+              "expected=%u objects=%lu\n",
+              versions[i].label, error, (unsigned)blocking.header.from_version,
+              (unsigned)versions[i].version, (unsigned long)blocking_objects);
+          dwg_free (&blocking);
+          remove (path);
+          return 1;
+        }
+      dwg_free (&blocking);
+
+      callbacks.object = stream_object_callback;
+      callbacks.decoded_object = stream_decoded_object_callback;
+      callbacks.decode_error = stream_decode_error_callback;
+      error = dwg_stream_file_ex (path, &callbacks, &default_stats);
+      if (error >= DWG_ERR_CRITICAL
+          || default_stats.num_objects != blocking_objects
+          || default_stats.decoded_objects != blocking_objects
+          || default_stats.version != versions[i].version
+          || default_stats.version_mismatches
+          || default_stats.full_decode_objects
+          || default_stats.decode_error_objects)
+        {
+          printf ("%s default stream failed: error=0x%x objects=%lu/%lu "
+                  "decoded=%lu version=%u/%u version_mismatches=%lu full=%lu "
+                  "decode_errors=%lu\n",
+                  versions[i].label, error,
+                  (unsigned long)default_stats.num_objects,
+                  (unsigned long)blocking_objects,
+                  (unsigned long)default_stats.decoded_objects,
+                  (unsigned)default_stats.version,
+                  (unsigned)versions[i].version,
+                  (unsigned long)default_stats.version_mismatches,
+                  (unsigned long)default_stats.full_decode_objects,
+                  (unsigned long)default_stats.decode_error_objects);
+          remove (path);
+          return 1;
+        }
+
+      error = test_stream_file_parity (path, 1, 0, versions[i].label, 0, NULL);
+      remove (path);
+      if (error)
+        return error;
     }
   return 0;
 }
@@ -3650,10 +3778,11 @@ test_generated_pre_r11_version_stream (void)
     Dwg_Version_Type version;
     const char *label;
   } versions[] = {
-    { R_2_0, "generated R2.0" },   { R_2_21, "generated R2.21" },
-    { R_2_22, "generated R2.22" }, { R_2_4, "generated R2.4" },
-    { R_2_5, "generated R2.5" },   { R_9c1, "generated R9c1" },
-    { R_11b1, "generated R11b1" }, { R_11b2, "generated R11b2" },
+    { R_2_0b, "generated R2.0 beta" }, { R_2_0, "generated R2.0" },
+    { R_2_21, "generated R2.21" },     { R_2_22, "generated R2.22" },
+    { R_2_4, "generated R2.4" },       { R_2_5, "generated R2.5" },
+    { R_9c1, "generated R9c1" },       { R_11b1, "generated R11b1" },
+    { R_11b2, "generated R11b2" },
   };
   size_t i;
 
@@ -4094,18 +4223,36 @@ main (void)
   stream_trace_stage ("test_legacy_stream_file_api");
   if (test_legacy_stream_file_api ())
     return 1;
-  stream_trace_stage ("test_unsupported_stream_file_ex_rejects");
-  if (test_unsupported_stream_file_ex_rejects ())
+  stream_trace_stage ("test_invalid_version_stream_file_ex_rejects");
+  if (test_invalid_version_stream_file_ex_rejects ())
     return 1;
-  stream_trace_stage ("test_unsupported_pre_r13_versions_reject");
-  if (test_unsupported_pre_r13_versions_reject ())
+  stream_trace_stage ("test_invalid_versions_reject");
+  if (test_invalid_versions_reject ())
     return 1;
   stream_trace_stage ("test_emit_decoded_object_isolated_host_state");
   if (test_emit_decoded_object_isolated_host_state ())
     return 1;
   stream_trace_stage ("test_generated_minsert_stream_fixture");
   if (test_generated_minsert_stream_fixture (
+          R_13b2, "generated R13 beta 2 MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_13c3, "generated R13c3 MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_2000b, "generated R2000 beta MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
           R_2000, "generated R2000 MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_2010b, "generated R2010 beta MINSERT stream parity ok"))
+    return 1;
+  if (test_generated_minsert_stream_fixture (
+          R_2018b, "generated R2018 beta MINSERT stream parity ok"))
+    return 1;
+  stream_trace_stage ("test_modern_header_version_stream");
+  if (test_modern_header_version_stream ())
     return 1;
   stream_trace_stage ("test_generated_r2022_minsert_stream_fixture");
   if (test_generated_minsert_stream_fixture (

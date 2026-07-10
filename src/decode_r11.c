@@ -628,6 +628,7 @@ decode_preR13 (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
   BITCODE_RL extras_start = 0, extras_end = 0, extras_size = 0;
   // BITCODE_RS rs2;
   Dwg_Object *obj = NULL;
+  size_t min_size;
   int error = 0;
   // Bit_Chain dat_save = *dat;
 
@@ -704,7 +705,8 @@ decode_preR13 (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
       return error;
   }
   LOG_TRACE ("@0x%zx\n", dat->byte); // 0x5e
-  if (dat->size < 0x1f0)             // AC1.50 0x1f9 74 vars
+  min_size = dat->version == R_2_0b ? 0x1bc : 0x1f0;
+  if (dat->size < min_size)
     {
       LOG_ERROR ("DWG too small %" PRIuSIZE, (size_t)dat->size);
       return DWG_ERR_INVALIDDWG;

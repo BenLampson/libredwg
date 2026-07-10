@@ -103,11 +103,14 @@ cmake --build .\build-codex-stream-tdd --target stream_test
 
 # With no fixture environment variables, `stream_test.exe` runs the default
 # repository R13/R14/R2000/R2004/R2007/R2010/R2013/R2018 stream parity
-# fixtures, plus TS1.dwg for OLE/OLE2 entity classification coverage. It also
-# verifies that the distinguishable unsupported R2.0 beta header rejects in
-# stream mode with DWG_ERR_NOTYETSUPPORTED. It cross-checks the real R1.4,
-# R2.10, R2.6, R9, R10, and R11 fixtures against the blocking reader and also
+# fixtures, plus TS1.dwg for OLE/OLE2 entity classification coverage. It
+# distinguishes R2.0 beta from R2.0 through the shared AC1.50 header and checks
+# generated blocking-versus-stream parity for both. It cross-checks the real
+# R1.4, R2.10, R2.6, R9, R10, and R11 fixtures against the blocking reader and
 # checks generated fixtures for old versions without repository DWG files.
+# Modern exact-version checks include generated R13b2/R13c3/R2000b/R2010b/
+# R2018b/R2022b fixtures and synthetic AC1016/AC1017/R2004c header variants.
+# An unknown AC9999 header must return DWG_ERR_INVALIDDWG with no callbacks.
 # Old-version entity sections are decoded one object at a time; the tests compare
 # reference snapshots and require at most three resident host entities.
 # Stream APIs do not fall back to full load.
@@ -167,8 +170,11 @@ Smoke requirements:
 - Handle mix and decoded handle mix match the blocking baseline.
 - No native crash.
 - Callback abort errors are propagated.
-- Unsupported versions return `DWG_ERR_NOTYETSUPPORTED` without invoking any
-  stream callbacks.
+- Any known legal version without a stream route returns
+  `DWG_ERR_NOTYETSUPPORTED` without invoking any stream callbacks. There are no
+  such versions in the current `Dwg_Version_Type` enum.
+- Unknown or invalid version headers return `DWG_ERR_INVALIDDWG` without
+  invoking any stream callbacks.
 
 Strict C parity requirements against `dwg_read_file`:
 
@@ -198,12 +204,12 @@ C-side target.
 The harness also verifies callback combinations that downstream C consumers
 depend on: legacy two-field `dwg_stream_file` callbacks, object-only streaming,
 decoded-only `dwg_stream_file_ex` streaming, callback abort propagation in the
-lightweight stream path, invalid public API arguments, and unsupported-version
+lightweight stream path, invalid public API arguments, and invalid-version
 rejection without object, decoded-object, or decode-error callbacks. It also
 verifies that both old `dwg_stream_file` callbacks and `dwg_stream_file_ex`
 callbacks can return `DWG_ERR_NOTYETSUPPORTED` as a callback abort once a
-stream path has been selected, without being mistaken for an unsupported
-version. The old `DWG_STREAM_F_NO_FULL_FALLBACK` flag is retained for source
+stream path has been selected, without being mistaken for a missing version
+route. The old `DWG_STREAM_F_NO_FULL_FALLBACK` flag is retained for source
 compatibility, but stream APIs no longer perform full fallback with or without
 that flag.
 
@@ -282,20 +288,38 @@ objects=38 decoded=38 r13=38 full=0 file_map=38
 minserts=1 block_owned=3 entmode3=1
 ```
 
-Default unsupported-version guard:
+Modern exact-version fixture parity:
 
 ```text
-The remaining distinguishable unsupported pre-R13 version is tested with a
-C-writer-produced `R_2_0b` header. It must return
-`DWG_ERR_NOTYETSUPPORTED` with no object, decoded-object, or decode-error
-callbacks.
+Generated C-writer MINSERT fixtures pass exact-version blocking-versus-stream
+parity for R_13b2, R_13c3, R_2000b, R_2000, R_2010b, R_2018b, and R_2022b.
 
+Synthetic header fixtures derived from real family payloads pass for R_2000i,
+R_2002, and R_2004c. The R_2000i and R_2002 fixtures replace the six-byte
+R2000 magic with AC1016 or AC1017; the R_2004c fixture also sets the internal
+dwg_version byte to 0x18. Each blocking read reports the exact expected enum,
+both stream flag settings match the blocking object and decoded-object counts,
+all callbacks report the same source version, and full=0.
+
+These synthetic files prove routing, header classification, and family-payload
+parity. They are not substitutes for independently sourced historical files.
+```
+
+Default version guards:
+
+```text
 `AC1.50` is shared by `R_2_0b` and `R_2_0`. The magic-only mapper initially
 selects `R_2_0`; after the pre-R13 header is parsed, `numheader_vars <= 74`
-refines it to `R_2_0b`, while 83 remains `R_2_0`. Stream mode then rejects the
-beta version explicitly. A generated `R_2_0b` file is identified correctly but
-still fails the C blocking reader, so it does not provide an acceptance
-baseline.
+refines it to `R_2_0b`, while 83 remains `R_2_0`. A generated R2.0 beta LINE
+fixture is accepted by `dwg_read_file` with exact version `R_2_0b`, then passes
+pure stream parity with both stream flag settings and `full=0`. The blocking
+pre-R13 decoder uses the exact R2.0 beta minimum size `0x1bc`, because its
+74-variable header ends at `0x1b9`; other pre-R13 versions retain the existing
+`0x1f0` minimum.
+
+An unknown `AC9999` header must return `DWG_ERR_INVALIDDWG` through both stream
+APIs and both stream flag settings without invoking object, decoded-object, or
+decode-error callbacks.
 
 A generated R11 basic-entity fixture is readable by `dwg_read_file`, then reads
 through the pure stream pre-R13 entity walker as lightweight entities with
@@ -334,12 +358,12 @@ the retained metadata needed to resolve those old-format relationships.
 The default test also cross-checks `test/test-data/r2.10/block.dwg`, both real
 R2.6 fixtures, the real R9 fixture, both real R10 fixtures, and all three real
 R11 DWG files. For versions without repository DWG files it writes and then
-blocking-reads minimal C-generated fixtures for `R_2_0`, `R_2_21`, `R_2_22`,
-`R_2_4`, `R_2_5`, `R_9c1`, `R_11b1`, and `R_11b2` before running stream
-parity with both zero flags and `DWG_STREAM_F_NO_FULL_FALLBACK`. The R11 beta
-writer uses the pre-R11 control-table record sizes; both generated files are
-accepted by the blocking reader with their exact beta version. The real R10
-coverage includes UCS, VPORT, and APPID table sections.
+blocking-reads minimal C-generated fixtures for `R_2_0b`, `R_2_0`, `R_2_21`,
+`R_2_22`, `R_2_4`, `R_2_5`, `R_9c1`, `R_11b1`, and `R_11b2` before running
+stream parity with both zero flags and `DWG_STREAM_F_NO_FULL_FALLBACK`. The R11
+beta writer uses the pre-R11 control-table record sizes; both generated files
+are accepted by the blocking reader with their exact beta version. The real
+R10 coverage includes UCS, VPORT, and APPID table sections.
 A generated R11 `DWG_TYPE_INSERT_r11` fixture also validates
 MINSERT-specific option fields: `OPTS_R11_INSERT_HAS_NUM_COLS`,
 `OPTS_R11_INSERT_HAS_NUM_ROWS`, `OPTS_R11_INSERT_HAS_COL_SPACING`, and
@@ -370,9 +394,8 @@ The direct R11 walker decodes each entity in a reusable `dwg->object[]` slot
 with an isolated handle map, then releases it after the callback; this is
 required by legacy EED decoding without retaining the complete entity graph.
 This is still not proof for every possible R11/R12 file, and there is no
-separate repository R12 DWG fixture. Any not-yet-streamed pre-R13 version or
-entity form must still fail clearly with `DWG_ERR_NOTYETSUPPORTED` instead of
-falling back.
+separate repository R12 DWG fixture. Any future known version without a stream
+route must fail clearly with `DWG_ERR_NOTYETSUPPORTED` instead of falling back.
 ```
 
 Current stream hardening:
@@ -388,10 +411,21 @@ Handle value accumulation is also protected against unsigned overflow. The
 reader deliberately preserves the existing tolerant behavior for suspicious but
 historically accepted `handleoff` values; treating those as hard skips broke
 valid C parity on `example_2004.dwg`.
-`dwg_stream_file_ex` distinguishes unsupported DWG versions from callback
-errors raised inside an already-selected stream decoder. Unsupported versions
-return `DWG_ERR_NOTYETSUPPORTED` directly, so callback return values are not
-swallowed or reinterpreted as fallback requests.
+`dwg_stream_file_ex` distinguishes version routing errors from callback errors
+raised inside an already-selected stream decoder. Every current legal enum
+version has a stream route. Unknown headers return `DWG_ERR_INVALIDDWG`; a
+future known version without a route would return `DWG_ERR_NOTYETSUPPORTED`.
+Callback return values are propagated and are not swallowed or reinterpreted as
+fallback requests.
+The blocking and stream R13/R2000 dispatch ranges both extend through `R_2002`,
+so unique `AC1016` and `AC1017` headers no longer fall out after `R_2000`.
+After the common modern header is parsed, both paths refine shared magic through
+`dwg_version_hdr_type2()`. This distinguishes beta/release source versions such
+as `R_2004c`/`R_2004`, `R_2007b`/`R_2007`, `R_2010b`/`R_2010`,
+`R_2013b`/`R_2013`, and `R_2018b`/`R_2018` when the internal `dwg_version`
+supports that distinction. `Dwg_Stream_Object_Info.version` reports this
+refined source version, and the test harness rejects mixed versions across
+callbacks.
 Decoded-object streaming uses an isolated temporary Dwg_Data wrapper with its
 own single-object pool, object_ref vector, and object_map for each decoded
 callback. The host Dwg_Data object pool, object_ref, HANDSEED, dirty_refs, and
@@ -513,8 +547,11 @@ Complete stream coverage means this:
   `DWG_STREAM_F_NO_FULL_FALLBACK`; the flag is compatibility-only.
 - Object metadata, decoded-object callbacks, references, ownership, and the
   semantic counters listed above match the blocking C baseline.
-- Unsupported or not-yet-streamed versions are explicitly reported as gaps and
-  must not be hidden behind full fallback.
+- Any future known version without a stream route is explicitly reported as a
+  gap and must not be hidden behind full fallback. There is no current legal
+  enum version in that state.
+- Unknown or invalid version headers fail as `DWG_ERR_INVALIDDWG` without
+  callbacks or fallback.
 
 Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 
@@ -522,29 +559,33 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | --- | --- | --- |
 | Partial pure stream support | `R_1_1`, `R_1_2`, `R_1_3` | The pre-R2 stream reader passes exact-version blocking-vs-stream parity on minimal LINE fixtures produced by the LibreDWG C writer. No repository historical DWG fixtures exist for these versions, so this remains generated coverage. |
 | Partial pure stream support | `R_1_4` | The pre-R2 stream reader covers the real `test/test-data/r1.4/entities.dwg` entity section with blocking-vs-stream validation of header `numentities`, `DWG_TYPE_REPEAT`, `DWG_TYPE_ENDREP`, and `DWG_TYPE_LOAD`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. This is not full R1.4 parity across all possible files. |
-| Partial pure stream support | `R_2_0`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_9c1` | The shared pre-R11 reader passes blocking-vs-stream parity on minimal fixtures produced by the LibreDWG C writer and accepted by `dwg_read_file`. These versions have no repository DWG fixture, so this is generated single-entity/table coverage rather than broad real-file proof. |
+| Partial pure stream support | `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_9c1` | The shared pre-R11 reader passes blocking-vs-stream parity on minimal fixtures produced by the LibreDWG C writer and accepted by `dwg_read_file`. For shared magic `AC1.50`, 74 header variables refine the exact version to `R_2_0b`, while 83 remain `R_2_0`; both pass with `full=0`. These versions have no repository DWG fixture, so this is generated single-entity/table coverage rather than broad real-file proof. |
 | Partial pure stream support | `R_2_10` | The pre-R11 stream reader covers the real `test/test-data/r2.10/entities.dwg` and `block.dwg` files with blocking-vs-stream validation of entity, block, and table sections, including `DWG_TYPE_REPEAT` and `DWG_TYPE_ENDREP`, using `DWG_STREAM_DECODE_PRER13_ENTITY` and `full=0`. Owner/layer references and complete `BLOCK_HEADER` chains match per-handle blocking snapshots while direct entity walking keeps at most three host entities resident. This is not full R2.10 parity across all possible files. |
 | Partial pure stream support | `R_2_6`, `R_9`, `R_10` | Real-file C parity covers `r2.6/entities.dwg`, `r2.6/dim.dwg`, `r9/entities.dwg`, `r10/entities.dwg`, and `r10/tmp_line.dwg`. Object/type counts, decoded callbacks, per-handle references, table fixedtype masks, and `_3DLINE` coverage match the blocking reader with `full=0`; R10 also streams UCS, VPORT, and APPID tables. Their entity sections use the same bounded direct walker. |
 | Partial pure stream support | `R_11b1`, `R_11b2` | The shared pre-R11 reader passes exact-version blocking-vs-stream parity on minimal C-writer LINE fixtures with table-entry coverage, decoded callbacks, `full=0`, and both stream flag settings. No real historical beta DWG fixture is present, so this remains generated coverage. |
-| Pure stream supported | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map stream reader. Must pass parity with `full=0`. |
-| Pure stream supported | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map stream reader. Must pass parity with `full=0`. AutoCAD 2005/2006 are not separate enum values here; they are covered by the `R_2004` file family when the file identifies that way. |
-| Pure stream supported | `R_2007a`, `R_2007b`, `R_2007` | Uses the R2007 object-map stream reader. Must pass parity with `full=0`. AutoCAD 2008/2009 are not separate enum values here; they are covered by the `R_2007` file family when the file identifies that way. |
-| Pure stream supported | `R_2010b`, `R_2010` | Uses the R2004/2010+ data-section object-map stream reader with R2010 object headers. Must pass parity with `full=0`. AutoCAD 2011/2012 are not separate enum values here; they are covered by the `R_2010` file family when the file identifies that way. |
-| Pure stream supported | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2014/2015/2016/2017 are not separate enum values here; they are covered by the `R_2013` file family when the file identifies that way. |
-| Pure stream supported | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. AutoCAD 2019/2020/2021 are not separate enum values here; they are covered by the `R_2018` file family when the file identifies that way. |
-| Pure stream supported | `R_2022b` | Uses the R2004/2010+ data-section object-map stream reader with R2010+ object headers. Must pass parity with `full=0`. Current validation uses a generated R2022b MINSERT fixture because no repository R2022 fixture exists. |
+| Pure stream route; mixed evidence | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map reader through `R_2002`. Real fixtures cover R13, R14, and R2000. Generated MINSERT fixtures cover R13b2, R13c3, and R2000b. Synthetic exact-header variants over the real R2000 payload cover R2000i and R2002 with 750 objects and both flag settings. R13b1 has no valid exact-version fixture. |
+| Pure stream route; mixed evidence | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map reader. Real fixtures cover R2004; a synthetic exact `R_2004c` header over the real R2004 payload passes 735-object parity. R2004a and R2004b have no valid exact-version fixture. AutoCAD 2005/2006 are not separate enum values here. |
+| Pure stream route; partial evidence | `R_2007a`, `R_2007b`, `R_2007` | Uses the R2007 object-map reader. Real fixtures cover R2007. R2007a and R2007b have no valid exact-version fixture; the current C writer upgrades attempted fixtures to another file family. AutoCAD 2008/2009 are not separate enum values here. |
+| Pure stream route; mixed evidence | `R_2010b`, `R_2010` | Uses the R2004/2010+ data-section object-map reader with R2010 object headers. Real fixtures cover R2010 and a generated MINSERT fixture covers exact R2010b. AutoCAD 2011/2012 are not separate enum values here. |
+| Pure stream route; partial evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013. R2013b has no valid exact-version fixture; current generated attempts contain invalid non-finite default block data. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
+| Pure stream route; mixed evidence | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2018 and a generated MINSERT fixture covers exact R2018b. AutoCAD 2019/2020/2021 are not separate enum values here. |
+| Pure stream route; generated evidence | `R_2022b` | Uses the R2004/2010+ data-section object-map reader. Current validation uses a generated exact-version R2022b MINSERT fixture because no repository R2022 fixture exists. |
 | Partial pure stream support | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. It also passes C blocking-vs-stream parity on the real `ACEB10.dwg`, `entities-2d.dwg`, and `entities-3d.dwg` R11 files; `ACEB10.dwg` covers 1815 entities and 67 table entries. Each direct-walker entity uses one reusable object slot and an isolated handle map, so legacy EED lookup works without retaining the full entity graph. Per-handle owner/layer references and completed `BLOCK_HEADER` chains match the blocking reader, with at most three host entities resident. `R_12` aliases `R_11` in the enum and has no separate repository DWG fixture. This is substantial real-file coverage, not proof for every possible R11/R12 file. |
-| Not pure stream supported | `R_2_0b` | It rejects with `DWG_ERR_NOTYETSUPPORTED`. `R_2_0b` is refined from shared magic `AC1.50` by `numheader_vars <= 74`; its generated fixture is identified correctly but is not accepted by the blocking reader. |
 
 Version routing is determined from the DWG file header before selecting a stream
 reader. The C decoder reads the header magic at the start of the file and maps
 it through `dwg_version_hdr_type()` to `Dwg_Version_Type`. The stream target must
-use that version gate first, then dispatch to a pure stream reader or return
-`DWG_ERR_NOTYETSUPPORTED`. Do not infer stream support from filename, AutoCAD
-marketing year, downstream behavior, or successful blocking read elsewhere.
+use that version gate first, then dispatch to a pure stream reader or return the
+appropriate explicit error. All current legal enum versions dispatch to a pure
+stream reader. Do not infer stream support from filename, AutoCAD marketing
+year, downstream behavior, or successful blocking read elsewhere.
 
 For shared `AC1.50`, the initial magic result is refined after reading the
 pre-R13 header: 74 or fewer header variables means `R_2_0b`; 83 means `R_2_0`.
+For modern shared magic, the common header's internal `dwg_version` is combined
+with the magic through `dwg_version_hdr_type2()` to refine the source enum.
+The stream callback version is this refined source version, not merely the
+initial family selected from the six-byte magic.
 
 Header magic codes relevant to the current stream target:
 
@@ -554,7 +595,7 @@ Header magic codes relevant to the current stream target:
 | `AC1.2` | `R_1_2` | Partial support: generated fixture coverage |
 | `AC1.3` | `R_1_3` | Partial support: generated fixture coverage |
 | `AC1.40` | `R_1_4` | Partial support: real entity-section fixture coverage |
-| `AC1.50` | `R_2_0b` / `R_2_0` | Header variable count distinguishes them; `R_2_0` has generated coverage, beta is rejected |
+| `AC1.50` | `R_2_0b` / `R_2_0` | Header variable count distinguishes them; both have generated fixture coverage |
 | `AC2.10` | `R_2_10` | Partial support: real entity/table-section fixture coverage |
 | `AC2.21` | `R_2_21` | Partial support: generated fixture coverage |
 | `AC2.22` | `R_2_22` | Partial support: generated fixture coverage |
@@ -567,44 +608,57 @@ Header magic codes relevant to the current stream target:
 | `AC1007` | `R_11b1` | Partial support: generated fixture coverage |
 | `AC1008` | `R_11b2` | Partial support: generated fixture coverage |
 | `AC1009` | `R_11` / `R_12` | Partial support: generated and three real R11 fixtures |
-| `AC1010` | `R_13b1` | Supported |
-| `AC1011` | `R_13b2` | Supported |
-| `AC1012` | `R_13` | Supported |
-| `AC1013` | `R_13c3` | Supported |
-| `AC1014` | `R_14` | Supported |
-| `AC1500` | `R_2000b` | Supported |
-| `AC1015` | `R_2000` | Supported |
-| `AC1016` | `R_2000i` | Supported |
-| `AC1017` | `R_2002` | Supported |
-| `AC402a` | `R_2004a` | Supported |
-| `AC402b` | `R_2004b` | Supported |
-| `AC1018` | `R_2004c` / `R_2004` | Supported |
-| `AC701a` | `R_2007a` | Supported |
-| `AC1021` | `R_2007b` / `R_2007` | Supported |
-| `AC1024` | `R_2010b` / `R_2010` | Supported |
-| `AC1027` | `R_2013b` / `R_2013` | Supported |
-| `AC1032` | `R_2018b` / `R_2018` | Supported |
-| `AC103-4` | `R_2022b` | Supported |
+| `AC1010` | `R_13b1` | Route present; no valid exact-version fixture |
+| `AC1011` | `R_13b2` | Generated exact-version parity |
+| `AC1012` | `R_13` | Real fixture parity |
+| `AC1013` | `R_13c3` | Generated exact-version parity |
+| `AC1014` | `R_14` | Real fixture parity |
+| `AC1500` | `R_2000b` | Generated exact-version parity |
+| `AC1015` | `R_2000` | Real fixture parity |
+| `AC1016` | `R_2000i` | Synthetic exact-header family parity; no real fixture |
+| `AC1017` | `R_2002` | Synthetic exact-header family parity; no real fixture |
+| `AC402a` | `R_2004a` | Route present; no valid exact-version fixture |
+| `AC402b` | `R_2004b` | Route present; no valid exact-version fixture |
+| `AC1018` | `R_2004c` / `R_2004` | Internal version refines the enum; synthetic beta and real release parity |
+| `AC701a` | `R_2007a` | Route present; no valid exact-version fixture |
+| `AC1021` | `R_2007b` / `R_2007` | Internal version refines the enum; no beta fixture, real release parity |
+| `AC1024` | `R_2010b` / `R_2010` | Generated beta and real release parity |
+| `AC1027` | `R_2013b` / `R_2013` | No valid beta fixture; real release parity |
+| `AC1032` | `R_2018b` / `R_2018` | Generated beta and real release parity |
+| `AC103-4` | `R_2022b` | Generated exact-version parity |
 
 The evidence labels above are intentional. Generated coverage proves that the
 C writer, blocking reader, and stream reader agree on the generated fixture;
-it does not replace real historical DWG files. Real fixture coverage is broader
-but still cannot prove every file variant.
+it does not replace real historical DWG files. Synthetic exact-header coverage
+proves header classification and reader parity on a real payload from the same
+family, but it is not an independently sourced historical file of that exact
+version. A route-only entry proves dispatch exists, not that the unrepresented
+format variant has passed parity. Real fixture coverage is broader but still
+cannot prove every file variant.
 
 The important distinction is that a successful blocking read elsewhere does not
-count as stream support. A stream API call on an unsupported version must fail
-clearly with `DWG_ERR_NOTYETSUPPORTED` instead of loading the whole file through
+count as stream support. Every current legal enum version now has an explicit
+stream route. A future known version without a route must fail clearly with
+`DWG_ERR_NOTYETSUPPORTED`, while an unknown header fails with
+`DWG_ERR_INVALIDDWG`; neither case may load the whole file through
 `dwg_read_file`.
 
-The explicit missing pure-stream list is therefore:
+The explicit missing pure-stream route list is therefore:
 
 ```text
-Pre-R13:
-R_2_0b
+Current legal Dwg_Version_Type versions without a pure stream route:
+none
 
-Generated-only support still needing real historical DWG fixtures:
-R_1_1, R_1_2, R_1_3, R_2_0, R_2_21, R_2_22, R_2_4, R_2_5, R_9c1,
-R_11b1, R_11b2
+Generated-only exact-version support still needing real historical DWG files:
+R_1_1, R_1_2, R_1_3, R_2_0b, R_2_0, R_2_21, R_2_22, R_2_4, R_2_5,
+R_9c1, R_11b1, R_11b2, R_13b2, R_13c3, R_2000b, R_2010b, R_2018b,
+R_2022b
+
+Synthetic exact-header support still needing real historical DWG files:
+R_2000i, R_2002, R_2004c
+
+Pure stream routes with no valid exact-version fixture at all:
+R_13b1, R_2004a, R_2004b, R_2007a, R_2007b, R_2013b
 
 R_1_4 partial support remaining gap:
 real R1.4 parity beyond `test/test-data/r1.4/entities.dwg` entity-section
@@ -626,7 +680,7 @@ sourced R12 file even though `R_12` aliases `R_11` in the enum.
 R11/R12 entity gaps.
 ```
 
-The explicit completed pure-stream list is:
+The explicit completed pure-stream route list is:
 
 ```text
 R_1_4 entity-section fixture coverage with `DWG_TYPE_REPEAT`,
@@ -634,53 +688,64 @@ R_1_4 entity-section fixture coverage with `DWG_TYPE_REPEAT`,
 R_1_1, R_1_2, and R_1_3 generated fixture coverage,
 R_2_10 entity/table-section fixture coverage with `DWG_TYPE_REPEAT`
 and `DWG_TYPE_ENDREP`,
-R_2_0, R_2_21, R_2_22, R_2_4, R_2_5, and R_9c1 generated fixture coverage,
+R_2_0b, R_2_0, R_2_21, R_2_22, R_2_4, R_2_5, and R_9c1 generated fixture
+coverage,
 R_2_6, R_9, and R_10 real fixture coverage,
 R_11b1 and R_11b2 generated fixture coverage,
 R_11/R_12 generated coverage plus three real R11 fixtures,
-R_13b1, R_13b2, R_13, R_13c3,
+R_13b1 route-only, R_13b2 generated, R_13 real, R_13c3 generated,
 R_14,
-R_2000b, R_2000, R_2000i, R_2002,
-R_2004a, R_2004b, R_2004c, R_2004,
-R_2007a, R_2007b, R_2007,
-R_2010b, R_2010,
-R_2013b, R_2013,
-R_2018b, R_2018,
-R_2022b
+R_2000b generated, R_2000 real, R_2000i and R_2002 synthetic,
+R_2004a and R_2004b route-only, R_2004c synthetic, R_2004 real,
+R_2007a and R_2007b route-only, R_2007 real,
+R_2010b generated, R_2010 real,
+R_2013b route-only, R_2013 real,
+R_2018b generated, R_2018 real,
+R_2022b generated
 ```
 
 Development targets from the current state to complete stream parity:
 
-1. Complete the remaining pre-R13 stream and fixture gaps.
-   - Obtain a valid blocking-readable `R_2_0b` fixture before implementing and
-     claiming beta stream support.
-   - Replace generated-only evidence for `R_1_1`, `R_1_2`, `R_1_3`, `R_2_0`,
-     `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_9c1`, `R_11b1`, and `R_11b2`
-     with real historical DWG fixtures.
+1. Complete the remaining exact-version and historical fixture gaps.
+   - Replace generated-only evidence for `R_1_1`, `R_1_2`, `R_1_3`,
+     `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_9c1`,
+     `R_11b1`, and `R_11b2` with real historical DWG fixtures.
+   - Obtain valid exact-version fixtures for `R_13b1`, `R_2004a`, `R_2004b`,
+     `R_2007a`, `R_2007b`, and `R_2013b`; current writer attempts are invalid
+     or are upgraded to another file family.
+   - Replace generated-only modern evidence for `R_13b2`, `R_13c3`,
+     `R_2000b`, `R_2010b`, `R_2018b`, and `R_2022b` with real historical DWG
+     files.
+   - Replace synthetic exact-header evidence for `R_2000i`, `R_2002`, and
+     `R_2004c` with independently sourced historical files.
    - Expand R1.4 beyond the current real `entities.dwg` entity-section fixture
      before calling R1.4 complete.
    - Expand R2.10 beyond the current real `entities.dwg` entity/table-section
      fixture before calling R2.10 complete.
    - Expand the three real R11 fixtures and add a separately sourced R12 DWG
      before calling R11/R12 complete.
-   - Keep `R_2_0b` returning `DWG_ERR_NOTYETSUPPORTED` until a valid blocking
-     baseline exists.
 2. Keep unsupported-version behavior explicit.
    - Supported pure stream versions must pass with or without
      `DWG_STREAM_F_NO_FULL_FALLBACK`.
-   - Not-yet-supported versions must return `DWG_ERR_NOTYETSUPPORTED` with no
-     object, decoded-object, or decode-error callbacks.
-   - Unsupported pre-R13 detection is based on the DWG file header magic, not
-     filenames or blocking-reader behavior.
+   - Unknown or invalid headers must return `DWG_ERR_INVALIDDWG` with no object,
+     decoded-object, or decode-error callbacks.
+   - Any future known version without a stream route must return
+     `DWG_ERR_NOTYETSUPPORTED` with no callbacks.
+   - Version detection is based on the DWG file header and any required header
+     refinement, not filenames or blocking-reader behavior.
 3. Measure memory on the large-file set after each new version family.
    - The pure stream path should keep the native side incremental.
    - Downstream aggregation is not part of this C-side acceptance check.
 
-The project status is: C stream parity is real for the modern families and now
-has real pre-R13 coverage for R1.4, R2.10, R2.6, R9, R10, and R11. Generated
-coverage additionally reaches R1.1-R1.3, R2.0, R2.21, R2.22, R2.4, R2.5, and
-R9c1, R11b1, and R11b2. Complete coverage is not done while the exact R2.0b
-gap and the generated-only/partial evidence gaps above remain open.
+The project status is: every current legal `Dwg_Version_Type` has a C pure
+stream route. C stream parity is real for the modern families and has real
+pre-R13 coverage for R1.4, R2.10, R2.6, R9, R10, and R11. Generated coverage
+additionally reaches R1.1-R1.3, R2.0 beta, R2.0, R2.21, R2.22, R2.4, R2.5,
+R9c1, R11b1, R11b2, R13b2, R13c3, R2000b, R2010b, R2018b, and R2022b.
+Synthetic exact-header parity reaches R2000i, R2002, and R2004c. Complete
+historical evidence coverage is not done: R13b1, R2004a/b, R2007a/b, and
+R2013b have no valid exact-version fixture, and the generated, synthetic, and
+partial real-fixture gaps above remain open.
 
 ## 9. C-side work items
 

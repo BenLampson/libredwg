@@ -2118,7 +2118,7 @@ read_2007_stream_object_body (Dwg_Data *restrict dwg,
                                                     : DWG_SUPERTYPE_OBJECT;
     }
   info->fixedtype = fixedtype;
-  info->version = dwg->header.version;
+  info->version = dwg->header.from_version;
   info->decode_mode = DWG_STREAM_DECODE_R2007_OBJECT_MAP;
   info->input_mode = input_mode;
   return 0;

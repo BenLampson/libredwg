@@ -132,6 +132,23 @@ static int secondheader_private (Bit_Chain *restrict dat,
 static int objfreespace_private (Bit_Chain *restrict dat,
                                  Dwg_Data *restrict dwg);
 
+static void
+refine_from_version (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
+{
+  char magic[11];
+  Dwg_Version_Type version;
+
+  strncpy (magic, (const char *)dat->chain, 10);
+  magic[10] = '\0';
+  version = dwg_version_hdr_type2 (magic, dwg->header.dwg_version);
+  if (version != R_INVALID && version != dwg->header.from_version)
+    {
+      dat->from_version = dwg->header.from_version = version;
+      LOG_TRACE ("HEADER.from_version = %s (%s) via dwg_version\n", magic,
+                 dwg_version_type (version));
+    }
+}
+
 /*----------------------------------------------------------------------------
  * Public variables
  */
@@ -247,7 +264,7 @@ dwg_decode (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
       }
     return error;
   }
-  VERSIONS (R_13b1, R_2000)
+  VERSIONS (R_13b1, R_2002)
   {
     return decode_R13_R2000 (dat, dwg);
   }
@@ -310,7 +327,7 @@ dwg_decode_stream (Bit_Chain *restrict dat,
     }
 #endif /* USE_TRACING */
 
-  if (dwg.header.from_version >= R_13b1 && dwg.header.from_version <= R_2000)
+  if (dwg.header.from_version >= R_13b1 && dwg.header.from_version <= R_2002)
     {
       if (stream_supported)
         *stream_supported = 1;
@@ -324,6 +341,7 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         #include "header.spec"
         // clang-format on
       }
+      refine_from_version (dat, &dwg);
 
       error = read_r13_r2000_meta_data_stream (dat, &dwg, callbacks,
                                                input_mode, user);
@@ -345,6 +363,7 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         #include "header.spec"
         // clang-format on
       }
+      refine_from_version (dat, &dwg);
 
       error = read_r2004_meta_data_stream (dat, &dwg, callbacks, input_mode,
                                            user);
@@ -367,6 +386,7 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         #include "header.spec"
         // clang-format on
       }
+      refine_from_version (dat, &dwg);
 
       error = read_r2004_meta_data_stream (dat, &dwg, callbacks, input_mode,
                                            user);
@@ -389,6 +409,8 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         #include "header.spec"
         // clang-format on
       }
+      refine_from_version (dat, &dwg);
+      r2007_hdl_dat.from_version = dat->from_version;
 
       error = read_r2007_meta_data_stream (dat, &r2007_hdl_dat, &dwg,
                                            callbacks, input_mode, user);
@@ -440,12 +462,6 @@ dwg_decode_stream (Bit_Chain *restrict dat,
           if (dat->version == R_2_0)
             dat->version = R_2_0b;
         }
-      if (dwg.header.from_version == R_2_0b)
-        {
-          dwg_free (&dwg);
-          return DWG_ERR_NOTYETSUPPORTED;
-        }
-
       error = read_pre_r10_meta_data_stream (dat, &dwg, callbacks, input_mode,
                                              user);
       dwg_free (&dwg);
@@ -615,6 +631,7 @@ decode_R13_R2000 (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
     #include "header.spec"
     // clang-format on
   }
+  refine_from_version (dat, dwg);
   if ((error = dwg_sections_init (dwg)))
     return error;
   if (dat->byte != 0x19)
@@ -3138,7 +3155,7 @@ read_r13_r2000_stream_object_info (Dwg_Data *restrict dwg,
     }
   info->fixedtype = fixedtype;
   info->handle.value = handle_value;
-  info->version = dwg->header.version;
+  info->version = dwg->header.from_version;
   info->decode_mode = DWG_STREAM_DECODE_R13_OBJECT_MAP;
   info->input_mode = input_mode;
   return 0;
@@ -3832,7 +3849,7 @@ read_2004_stream_object_info (Dwg_Data *restrict dwg,
     }
   info->fixedtype = fixedtype;
   info->handle.value = handle_value;
-  info->version = dwg->header.version;
+  info->version = dwg->header.from_version;
   info->decode_mode = DWG_STREAM_DECODE_R2004_OBJECT_MAP;
   info->input_mode = input_mode;
   return 0;
@@ -3887,7 +3904,7 @@ read_2004_buffered_object_info (Dwg_Data *restrict dwg,
     }
   info->fixedtype = fixedtype;
   info->handle.value = handle_value;
-  info->version = dwg->header.version;
+  info->version = dwg->header.from_version;
   info->decode_mode = DWG_STREAM_DECODE_R2004_OBJECT_MAP;
   info->input_mode = input_mode;
   return 0;
@@ -5236,6 +5253,7 @@ decode_R2004 (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
     #include "header.spec"
     // clang-format on
   }
+  refine_from_version (dat, dwg);
   if ((dat->byte - 54) > 0x80)
     {
       LOG_HANDLE ("\nempty R2004 slack (@%" PRIuSIZE ".0-%u.0, %ld):\n",
@@ -5402,6 +5420,8 @@ decode_R2007 (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
     #include "header.spec"
     // clang-format on
   }
+  refine_from_version (dat, dwg);
+  hdl_dat.from_version = dat->from_version;
 
   // this includes classes, header, handles + objects
   error = read_r2007_meta_data (dat, &hdl_dat, dwg);
@@ -8749,7 +8769,7 @@ stream_pre_r13_object_info (const Dwg_Data *restrict dwg,
   info->dxfname = obj->dxfname;
   info->supertype = obj->supertype;
   info->handle = obj->handle;
-  info->version = dwg->header.version;
+  info->version = dwg->header.from_version;
   info->decode_mode = DWG_STREAM_DECODE_PRER13_ENTITY;
   info->input_mode = input_mode;
 }
