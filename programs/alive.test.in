@@ -71,6 +71,10 @@ run ()
     rm "./$log" 2>/dev/null
     case $bprog in
     dwglayers)  ;;
+    dwgprobe)   if [ "$addarg" = "decoded" ]; then
+                    arg="--decoded $arg"
+                fi
+                ;;
     dwggrep)    case $dwg in
                     r11/*) arg="-i CONTINUOUS $arg" ;;
                     r*/*)  arg="-i FOO $arg"        ;;
@@ -292,6 +296,10 @@ for prog in $PROGS ; do
         ;;
     esac
 done
+
+case $PROGS in
+    *dwgprobe*) run "dwgprobe@EXEEXT@" "example_2007" "decoded" ;;
+esac
 
 # dwgread converts to json here, but has no --as yet
 # still disabled, see branch work/2004

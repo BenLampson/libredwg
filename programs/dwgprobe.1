@@ -19,6 +19,11 @@ fail; missing files and critical read errors still do.
 When a directory is passed, dwgprobe scans the directory itself for files
 ending in .dwg. It does not recurse into child directories.
 .TP
+\fB\-d\fR, \fB\-\-decoded\fR
+decode every object incrementally and report decoded object, entity, and error
+counts without retaining the complete object graph. Missing decoded callbacks
+or any per-object decode error make the command fail.
+.TP
 \fB\-\-help\fR
 display this help and exit
 .TP

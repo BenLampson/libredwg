@@ -233,6 +233,25 @@ full=0
 file_map=89034
 ```
 
+Both the normal run and the same run with
+`LIBREDWG_STREAM_TEST_REFS=1` pass with exit code zero. The reference-enabled
+run compares the per-handle reference snapshots emitted by the decoded Stream
+callbacks against the blocking `dwg_read_file` baseline.
+
+Latest local `test1.dwg` memory comparison:
+
+```text
+blocking dwgread externally sampled peak working set: 138.06 MB
+dwgprobe metadata Stream process peak RSS:             10 MB
+dwgprobe --decoded Stream process peak RSS:            15 MB
+```
+
+The Stream measurements use the file map and do not retain the complete object
+graph. `dwgprobe --decoded` requires every object callback to have a matching
+decoded callback, requires zero decode errors, and exits nonzero if either
+condition fails. On Windows its `rss_mb` value uses `PeakWorkingSetSize`; on
+POSIX it uses `ru_maxrss`.
+
 Latest local `test1.dwg` semantic coverage:
 
 ```text
@@ -476,14 +495,17 @@ full=0
 file_map=1769224
 ```
 
-Latest local large-file `dwgprobe` stream metadata memory sample:
+Latest local large-file `dwgprobe` Stream memory samples:
 
 ```text
-rss_mb=210
-decode_mode=r2004-object-map
-input_mode=file-map
-precheck=high:max-object>=16MiB
+metadata: rss_mb=210 decode_mode=r2004-object-map input_mode=file-map
+decoded:  rss_mb=365 decoded=1769224 decode_errors=0 input_mode=file-map
+precheck: high:max-object>=16MiB
 ```
+
+The large file reports the noncritical `DWG_ERR_VALUEOUTOFBOUNDS` bit (`0x40`)
+on both probes, while still emitting and decoding all 1,769,224 object records;
+both probe commands return zero. This warning is preserved rather than hidden.
 
 These values are C-side regression anchors, not downstream/export acceptance
 criteria.

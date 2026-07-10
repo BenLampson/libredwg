@@ -51,6 +51,10 @@ typedef struct _probe_stats
   BITCODE_BL full_decode_objects;
   BITCODE_BL file_map_objects;
   BITCODE_BL heap_objects;
+  BITCODE_BL decoded_objects;
+  BITCODE_BL decoded_entities;
+  BITCODE_BL decoded_non_entities;
+  BITCODE_BL decode_error_objects;
   Dwg_Version_Type version;
   unsigned long long total_size;
   BITCODE_RL max_size;
@@ -59,12 +63,13 @@ typedef struct _probe_stats
   unsigned long long rss_mb;
 } Probe_Stats;
 
+static int decode_objects;
 static void sample_rss (Probe_Stats *stats);
 
 static int
 usage (void)
 {
-  printf ("\nUsage: dwgprobe [DWGFILE|DIR]...\n");
+  printf ("\nUsage: dwgprobe [OPTION]... DWGFILE|DIR...\n");
   return 1;
 }
 
@@ -82,9 +87,11 @@ help (void)
   printf ("Probe DWG object counts and object record sizes.\n\n");
   printf ("Unsupported DWG versions are reported without full decoding.\n\n");
 #ifdef HAVE_GETOPT_LONG
+  printf ("  -d, --decoded        decode each object incrementally\n");
   printf ("      --help           display this help and exit\n");
   printf ("      --version        output version information and exit\n\n");
 #else
+  printf ("  -d                   decode each object incrementally\n");
   printf ("  -h     display this help and exit\n");
   printf ("  -i     output version information and exit\n\n");
 #endif
@@ -143,6 +150,38 @@ probe_object (const Dwg_Stream_Object_Info *info, void *user)
   return 0;
 }
 
+static int
+probe_decoded_object (const Dwg_Stream_Object_Info *info,
+                      const Dwg_Object *object, void *user)
+{
+  Probe_Stats *stats = (Probe_Stats *)user;
+
+  if (!info || !object || object->supertype != info->supertype)
+    return DWG_ERR_INTERNALERROR;
+  stats->decoded_objects++;
+  if (object->supertype == DWG_SUPERTYPE_ENTITY)
+    stats->decoded_entities++;
+  else
+    stats->decoded_non_entities++;
+  if ((stats->decoded_objects % 4096UL) == 0)
+    sample_rss (stats);
+  return 0;
+}
+
+static int
+probe_decode_error (const Dwg_Stream_Object_Info *info, int error, void *user)
+{
+  Probe_Stats *stats = (Probe_Stats *)user;
+
+  (void)error;
+  if (!info)
+    return DWG_ERR_INTERNALERROR;
+  stats->decode_error_objects++;
+  if ((stats->decode_error_objects % 4096UL) == 0)
+    sample_rss (stats);
+  return 0;
+}
+
 static const char *
 decode_mode_name (const Probe_Stats *stats)
 {
@@ -185,8 +224,9 @@ current_rss_mb (unsigned long long *rss_mb)
     if (GetProcessMemoryInfo (GetCurrentProcess (), &counters,
                               sizeof (counters)))
       {
-        *rss_mb = ((unsigned long long)counters.WorkingSetSize + 1048575ULL)
-                  / 1048576ULL;
+        *rss_mb
+            = ((unsigned long long)counters.PeakWorkingSetSize + 1048575ULL)
+              / 1048576ULL;
         return 1;
       }
   }
@@ -288,7 +328,7 @@ static int
 probe_file (const char *path, unsigned long long file_size)
 {
   Probe_Stats stats = { 0 };
-  Dwg_Stream_Callbacks callbacks = { 0 };
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
   char peak_buffer[32];
   char ratio_buffer[32];
   char status_buffer[32];
@@ -297,19 +337,31 @@ probe_file (const char *path, unsigned long long file_size)
   const char *version;
   const char *status = "ok";
   Dwg_Version_Type header_version;
+  int decoded_failure = 0;
 
   header_version = probe_header_version (path);
   sample_rss (&stats);
   callbacks.object = probe_object;
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
-  error = dwg_stream_file (path, &callbacks, &stats);
+  if (decode_objects)
+    {
+      callbacks.decoded_object = probe_decoded_object;
+      callbacks.decode_error = probe_decode_error;
+    }
+  error = dwg_stream_file_ex (path, &callbacks, &stats);
   sample_rss (&stats);
   if (error >= DWG_ERR_CRITICAL)
     {
-      printf ("| `%s` | error 0x%x | %llu |  |  |  |  |  |  |  |  |  |  | "
-              "%s |  |  |\n",
-              path, error, file_size, rss_text (&stats, peak_buffer,
-                                                sizeof (peak_buffer)));
+      if (decode_objects)
+        printf ("| `%s` | error 0x%x | %llu |  |  |  |  |  |  |  |  |  |  | "
+                "|  |  | %s |  |  |\n",
+                path, error, file_size,
+                rss_text (&stats, peak_buffer, sizeof (peak_buffer)));
+      else
+        printf ("| `%s` | error 0x%x | %llu |  |  |  |  |  |  |  |  |  |  | "
+                "%s |  |  |\n",
+                path, error, file_size,
+                rss_text (&stats, peak_buffer, sizeof (peak_buffer)));
       return 1;
     }
 
@@ -326,20 +378,54 @@ probe_file (const char *path, unsigned long long file_size)
         snprintf (status_buffer, sizeof (status_buffer), "warn 0x%x", error);
       status = status_buffer;
     }
-  printf ("| `%s` | %s | %llu | %s | %lu | %lu | %lu | %llu | %llu | %lu | "
-          "%zu-%zu | %s | %s | %s | %s | %s |\n",
-          path, status, file_size, version,
-          (unsigned long)stats.num_objects,
-          (unsigned long)stats.num_entities,
-          (unsigned long)stats.num_non_entities, stats.total_size,
-          avg_size, (unsigned long)stats.max_size, stats.min_address,
-          stats.max_address, decode_mode_name (&stats),
-          input_mode_name (&stats),
-          rss_text (&stats, peak_buffer, sizeof (peak_buffer)),
-          object_size_ratio_text (&stats, file_size, ratio_buffer,
-                                  sizeof (ratio_buffer)),
-          precheck_name (&stats, file_size));
-  return 0;
+  if (decode_objects
+      && (stats.decoded_objects != stats.num_objects
+          || stats.decoded_entities + stats.decoded_non_entities
+                 != stats.decoded_objects
+          || stats.decode_error_objects))
+    {
+      decoded_failure = 1;
+      if (stats.decode_error_objects)
+        snprintf (status_buffer, sizeof (status_buffer), "decode-errors %lu",
+                  (unsigned long)stats.decode_error_objects);
+      else
+        snprintf (status_buffer, sizeof (status_buffer), "decoded %lu/%lu",
+                  (unsigned long)stats.decoded_objects,
+                  (unsigned long)stats.num_objects);
+      status = status_buffer;
+    }
+  if (decode_objects)
+    printf ("| `%s` | %s | %llu | %s | %lu | %lu | %lu | %lu | %lu | %lu | "
+            "%lu | %llu | %llu | %lu | %zu-%zu | %s | %s | %s | %s | %s "
+            "|\n",
+            path, status, file_size, version, (unsigned long)stats.num_objects,
+            (unsigned long)stats.num_entities,
+            (unsigned long)stats.num_non_entities,
+            (unsigned long)stats.decoded_objects,
+            (unsigned long)stats.decoded_entities,
+            (unsigned long)stats.decoded_non_entities,
+            (unsigned long)stats.decode_error_objects, stats.total_size,
+            avg_size, (unsigned long)stats.max_size, stats.min_address,
+            stats.max_address, decode_mode_name (&stats),
+            input_mode_name (&stats),
+            rss_text (&stats, peak_buffer, sizeof (peak_buffer)),
+            object_size_ratio_text (&stats, file_size, ratio_buffer,
+                                    sizeof (ratio_buffer)),
+            precheck_name (&stats, file_size));
+  else
+    printf ("| `%s` | %s | %llu | %s | %lu | %lu | %lu | %llu | %llu | "
+            "%lu | %zu-%zu | %s | %s | %s | %s | %s |\n",
+            path, status, file_size, version, (unsigned long)stats.num_objects,
+            (unsigned long)stats.num_entities,
+            (unsigned long)stats.num_non_entities, stats.total_size, avg_size,
+            (unsigned long)stats.max_size, stats.min_address,
+            stats.max_address, decode_mode_name (&stats),
+            input_mode_name (&stats),
+            rss_text (&stats, peak_buffer, sizeof (peak_buffer)),
+            object_size_ratio_text (&stats, file_size, ratio_buffer,
+                                    sizeof (ratio_buffer)),
+            precheck_name (&stats, file_size));
+  return decoded_failure;
 }
 
 #ifdef HAVE_DIRENT_H
@@ -413,8 +499,14 @@ probe_path (const char *path)
 
   if (stat (path, &attrib))
     {
-      printf ("| `%s` | missing |  |  |  |  |  |  |  |  |  |  |  |  |  |  |\n",
-              path);
+      if (decode_objects)
+        printf ("| `%s` | missing |  |  |  |  |  |  |  |  |  |  |  |  |  |  "
+                "|  |  |  |  |\n",
+                path);
+      else
+        printf ("| `%s` | missing |  |  |  |  |  |  |  |  |  |  |  |  |  | "
+                " |\n",
+                path);
       return 1;
     }
 
@@ -433,22 +525,29 @@ main (int argc, char *argv[])
   int c;
 #ifdef HAVE_GETOPT_LONG
   int option_index = 0;
-  static struct option long_options[]
-      = { { "help", 0, NULL, 0 }, { "version", 0, NULL, 0 },
-          { NULL, 0, NULL, 0 } };
+  static struct option long_options[] = { { "decoded", 0, NULL, 0 },
+                                          { "help", 0, NULL, 0 },
+                                          { "version", 0, NULL, 0 },
+                                          { NULL, 0, NULL, 0 } };
 #endif
 
   while
 #ifdef HAVE_GETOPT_LONG
-      ((c = getopt_long (argc, argv, "hi", long_options, &option_index)) != -1)
+      ((c = getopt_long (argc, argv, "dhi", long_options, &option_index))
+       != -1)
 #else
-      ((c = getopt (argc, argv, "hi")) != -1)
+      ((c = getopt (argc, argv, "dhi")) != -1)
 #endif
     {
       switch (c)
         {
 #ifdef HAVE_GETOPT_LONG
         case 0:
+          if (!strcmp (long_options[option_index].name, "decoded"))
+            {
+              decode_objects = 1;
+              break;
+            }
           if (!strcmp (long_options[option_index].name, "version"))
             return opt_version ();
           if (!strcmp (long_options[option_index].name, "help"))
@@ -458,6 +557,9 @@ main (int argc, char *argv[])
         case 'i':
           return opt_version ();
 #endif
+        case 'd':
+          decode_objects = 1;
+          break;
         case 'h':
           return help ();
         default:
@@ -468,12 +570,27 @@ main (int argc, char *argv[])
   if (optind >= argc)
     return usage ();
 
-  printf ("| path | status | file_size | version | objects | entities | "
-          "non_entities | total_object_size | avg_object_size | "
-          "max_object_size | address_range | decode_mode | input_mode | "
-          "rss_mb | object_size_ratio | precheck |\n");
-  printf ("| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | "
-          "---: | --- | --- | --- | ---: | ---: | --- |\n");
+  if (decode_objects)
+    {
+      printf ("| path | status | file_size | version | objects | entities | "
+              "non_entities | decoded | decoded_entities | "
+              "decoded_non_entities | decode_errors | total_object_size | "
+              "avg_object_size | max_object_size | address_range | "
+              "decode_mode | input_mode | rss_mb | object_size_ratio | "
+              "precheck |\n");
+      printf ("| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: "
+              "| ---: | ---: | ---: | ---: | ---: | --- | --- | --- | ---: "
+              "| ---: | --- |\n");
+    }
+  else
+    {
+      printf ("| path | status | file_size | version | objects | entities | "
+              "non_entities | total_object_size | avg_object_size | "
+              "max_object_size | address_range | decode_mode | input_mode | "
+              "rss_mb | object_size_ratio | precheck |\n");
+      printf ("| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: "
+              "| ---: | --- | --- | --- | ---: | ---: | --- |\n");
+    }
 
   for (int i = optind; i < argc; i++)
     failures |= probe_path (argv[i]);
