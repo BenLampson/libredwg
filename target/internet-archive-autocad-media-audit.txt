@@ -4,6 +4,35 @@
 b72e41f972cc12785fd8aa8c44fb2c627072c9372b12b639f0f930651cf4a4bb  abbc09e515f751fabc062fede60bf02a7af17189  368640  UsingAutoCADStudentWorkdisk1986/UsingAutoCADStudentWorkdisk1986.disk1of1.img
 d6c9d21dfe0187a2b3932d510ec38a02ce1cf0dd8cabeeae5b653d8d4981cc5c  1b5e18256aee80942595290ae3b7d381d56f2ab1  38210706  autocad.7z/autocad.7z
 bf27c9d0a86d9213eaeb9f549052825ece6491a0a5d4e87604982945d778fd65  249e080f243e19843365f0def4fda5f9eb194b03  153274368  autocad.7z/autocad-r13-c4-beta4.iso
+877d09f0fde63d87701f99b63ccf7736806b79c064fa79d2a9dc0d8947acc752  96e1f55426c09d84acf57e303cb167973989dd39  31992445  Autocad-86-use-1.25/Autocad 86 use 1.25.zip
+
+# Autocad-86 ver 1.3 archive DWGs.
+# Format: SHA256  magic  bytes  blocking-check/Stream-check  filename
+aca6a91ef8162d3c01d19fb01caeed5bd6d2ae15b9cc960b91ec9559959c627d  MC0.0  7808  0/0  FLOW.DWG
+a4be1853ccb144f0aec90e175c265299baa4d766ccc0790ad837b75d6d0d1011  AC1.2  2688  0/0  ADDER.DWG
+6094bc0db7251c47b208de3bf0dce635054ecfc80d4f47e3888195ce06ab6dba  AC1.2  768  0/0  ANDGATE.DWG
+0ed6054049547d060b220340c37640d3e3bae62e02ed9f8a9121db9b97a07b19  AC1.2  1792  0/0  BLAINE.DWG
+e821d51fb23486aabd8b7e2b53320d7dafd5bcfcbf49977b69e94780c1e6e354  AC1.2  6784  0/0  BLIVET.DWG
+a5433186f6d46663a07c9298d342967b185277e660cf3e91578845ac235e3130  AC1.2  640  0/0  BOX.DWG
+e0a3a87457143a3cf83b0c4566b322232c5c399f112a6e7a8f773d257dbe8f27  AC1.2  1792  0/0  CLIFF.DWG
+a72d085daf2466bc8ef8b25d871d820d1e32ea0bfc292a0918ebbebba3cd1539  AC1.2  1152  0/0  DLATCH.DWG
+55d9597313dcd7d0d9019451e02c366b0fef5925f538266e4be15b2df9316318  AC1.2  8320  0/0  FLOOR.DWG
+4c5c9f674f703f6954b7818c5b137fe7857459d69653e99a138a2eb06226ab4d  AC1.2  5760  0/0  HOUSE.DWG
+09be0adc82e3719b53cd23dd8f7b998ddc4db31349aa2d8f641b240db23e27da  AC1.2  768  0/0  NANDGATE.DWG
+2fc12ce844be5fc8f29913338eff354569c69a6ba3ce09ab9c95634176b9b310  AC1.2  896  0/0  NORGATE.DWG
+6687604e9eabc78548a67b2a868f85e60fd68780c737a40556683c2b1e6ad3f7  AC1.2  7424  0/0  OFFICE.DWG
+aea4f8b46fae4973ae1c034e407c2e60b3325e96fa71b16a1a4fac159c9a4fbb  AC1.2  7296  0/0  SELEXOL.DWG
+78cb2c5272fbc43abf08e0bd5f693ec20ba9325147da156bfc36f1ffd89b29b9  AC1.2  7168  0/0  SHUTTLE.DWG
+100083011a70f84f8e818d791639d31fda6603479e4ea80fab9ae5cd2b5e9d86  AC1.2  6656  0/0  SUBDIV.DWG
+99fa9eab930b7d9ff34adc9c8e55c5386f6f40deed419235491cf3470e3784ad  AC1.2  896  0/0  XNORGATE.DWG
+26c2e1b3ccd8929c1116e3b65b405339f5d4f577a34924a1931636aa9ab802ce  AC1.2  896  0/0  XORGATE.DWG
+
+# MC0.0 maps to R_1_1. Its one file passes strict reference parity with 185
+# objects, 179 entities, and 6 non-entities. AC1.2 maps to R_1_2; all 17 files
+# pass with 1,522 objects, 1,420 entities, and 102 non-entities. Both have zero
+# decode errors and full=0. No file duplicates a current repository DWG. The
+# item has no license URL, so these binaries remain external-only evidence.
+# Despite the item title, the archive contains no AC1.3/R_1_3 file.
 
 # AutoCAD 2.53J DE Sample Drawing.img DWGs.
 # Format: SHA256  magic  bytes  blocking-check/Stream-check  filename
