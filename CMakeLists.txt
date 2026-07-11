@@ -270,6 +270,7 @@ set(libredwg_SOURCES
     src/stream/stream_callbacks.c
     src/stream/stream_object_helpers.c
     src/stream/stream_reader.c
+    src/stream/stream_read_r1_to_r11.c
     src/stream/stream_read_r13_to_r2002.c
     src/stream/stream_read_r2004_to_r2006_and_r2010_to_r2022.c
     src/stream/stream_read_r2007.c
