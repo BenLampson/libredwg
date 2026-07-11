@@ -811,6 +811,18 @@ were `AC1.40` 1, `AC2.10` 2, `AC1003` 2, `AC1004` 1, `AC1006` 2, `AC1009` 3,
 `AC1027` 61, and `AC1032` 130. No generated-only or synthetic-only exact
 version magic occurred in any licensed release tag.
 
+GitLab was audited as a separate hosting source. Its anonymous global blob
+search requires authentication, so the reproducible public boundary is project
+search for `dwg` and `autocad`: 182 unique projects were enumerated. Twenty-eight
+readable default branches contained 387 DWG paths and 244 unique blobs. Sixteen
+project trees could not be read (15 returned HTTP 404 and one timed out), and
+remain explicitly outside the evidence set. The readable unique blobs contained
+two non-DWG files and these exact DWG header counts: `AC1.40` 1, `AC2.10` 2,
+`AC1003` 2, `AC1004` 1, `AC1006` 2, `AC1009` 3, `AC1012` 1, `AC1014` 4,
+`AC1015` 26, `AC1018` 24, `AC1021` 23, `AC1024` 30, `AC1027` 40, and
+`AC1032` 83. No generated-only or synthetic-only exact-version magic occurred
+in the readable GitLab set.
+
 The proprietary `AC402b` file was used only as an external interoperability
 check. Blocking and pure Stream both accept it as `R_2004b`; strict Stream
 parity covers 50 objects, including 14 entities and 36 non-entities, references,
