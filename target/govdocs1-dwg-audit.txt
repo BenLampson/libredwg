@@ -1,0 +1,34 @@
+# Digital Corpora Govdocs1 DWG audit, 2026-07-11
+# Source: https://downloads.digitalcorpora.org/corpora/files/govdocs1/
+# S3 bucket/prefix: digitalcorpora/corpora/files/govdocs1/
+
+# Complete public metadata dump used as a text index. It was not executed.
+# Format: SHA256  bytes  filename
+318eb890ccaf7d11dbfa6fc2c4847df75ce49cd1f923026989a1155102f7bda3  298928989  dump.sql
+
+# The complete by_type prefix has 17 objects. None is a DWG/CAD archive:
+# csv.zip, doc.zip, docx.zip, dump.zip, files.jpeg.tar, jpg.zip, log.zip,
+# ppt-part1.zip, ppt-part2.zip, ppt-part3.zip, ppt-part4.zip, pptx.zip,
+# rtf.zip, swf_files.zip, txt.zip, xls.zip, and xlsx.zip.
+
+# Searching every govdocs tuple for a .dwg URL, an exact dwg type field,
+# AutoCAD, vnd.dwg, or x-dwg produced six metadata records. Four are an XLS,
+# JPG, XML, and PDF whose URL or search term merely mentions AutoCAD/DWG.
+# Only these two records have a .dwg URL:
+# Format: docid  bytes  stored-member  source-SHA1  classification
+332336  86817  332/332336.html  4e434eb76872cf7340d7af9eff75b7bbc0d9105d  AC1014/R14 DWG
+496507  260  496/496507.txt  09a3d091af7ba5f90445a2c01d6b01215049a87b  FrontPage _vti_cnf text, not DWG
+
+# The containing ZIPs were inspected through HTTP byte ranges rather than
+# downloaded in full. S3 metadata and ZIP central-directory results:
+# Format: bytes  ETag  entries  matching-member  member-bytes  member-CRC32
+279590615  28bc45c2ac2883d2270b01818c868143-34  988  332/332336.html  86817  cfb163d0
+300377990  4242ddfcfdcda47fc44b932fd7cc95cb-36  985  496/496507.txt  260  113d38cf
+
+# Strict C blocking-versus-Stream reference parity for docid 332336:
+# version objects entities non-entities decoded decode-errors full
+R_14  808  739  69  808  0  0
+
+# Result: one independent real R14 sample passed. No generated-only or
+# synthetic-only exact-version header was found, so this audit closes none of
+# the historical fixture gaps. No corpus binary is committed.

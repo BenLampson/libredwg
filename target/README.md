@@ -933,6 +933,20 @@ The signed 0.5 tar also matches tag 0.5 for all 118 DWG path/blob pairs. This
 proves the alpha-tag DWG tree adds no different sample while keeping the
 unavailable alpha release archives outside the verified-archive boundary.
 
+The Digital Corpora Govdocs1 corpus was audited through its public S3 object
+listing and complete 298,928,989-byte `dump.sql` metadata export. The SQL was
+read only as text and was not executed. The complete `by_type` prefix has 17
+office, image, text, and Flash archives but no DWG/CAD archive. Searching every
+metadata tuple for `.dwg` URLs and DWG/AutoCAD type markers produced two
+`.dwg` URLs. Docid 496507 is only a 260-byte FrontPage `_vti_cnf` text record.
+Docid 332336 is an 86,817-byte `AC1014` R14 DWG whose extracted SHA1 matches
+the metadata record despite its stored `.html` name. Strict C reference parity
+passes with 808 objects, 739 entities, 69 non-entities, 808 decoded callbacks,
+zero decode errors, and `full=0`. Exact S3, ZIP, member, and hash evidence is in
+`target/govdocs1-dwg-audit.txt`. The corpus adds one independent real R14 check
+but no generated-only or synthetic-only exact-version header, so it closes no
+remaining historical fixture gap and no corpus binary is committed.
+
 Internet Archive metadata was searched directly on 2026-07-11 rather than by
 assuming that an item title implied file content. `title:DWG` returned 161
 identifiers and `subject:DWG` returned 224; 48 overlap, leaving 337 unique
@@ -1034,8 +1048,8 @@ none
 
 Known blocking-success/Stream-failure fixtures in the committed regression set,
 the audited licensed GitHub and readable GitLab sets, the Debian-source set, or
-the externally checked proprietary AC402b sample and Internet Archive
-R12-labelled set:
+the Govdocs1 set, externally checked proprietary AC402b sample, and Internet
+Archive R12-labelled set:
 none
 
 Committed strict real-file counts for the expanded historical families:
