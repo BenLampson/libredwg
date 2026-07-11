@@ -30,3 +30,10 @@ directory.
 Every migration is structural only. Object counts, callback order, errors, and
 the no-blocking-fallback rule must remain unchanged and pass `stream_test` before
 the next format range is moved.
+
+The executable regression entry point is `test/unit-testing/stream_test.c`.
+Its included private modules are named by responsibility and version range, so
+changes to R1-R11 fixtures, R13-R2022 fixtures, API/file parity, or statistics
+and callbacks normally stay in one corresponding test file. They intentionally
+remain one compilation unit to preserve private helpers and the exact test
+execution contract.

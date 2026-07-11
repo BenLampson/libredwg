@@ -84,7 +84,12 @@ object combination never represented by a test file.
 
 - `target/MODERN_DEVELOPMENT_VERSION_POLICY.md`: authoritative unsupported
   modern development-version policy and exact behavior.
-- `test/unit-testing/stream_test.c`: executable parity and rejection contract.
+- `test/unit-testing/stream_test.c`: executable parity and rejection-contract
+  entry point. Its private implementation remains one compilation unit and is
+  separated by maintenance responsibility into:
+  `stream_test_statistics_and_callbacks.c`,
+  `stream_test_api_and_file_parity.c`,
+  `stream_test_r13_to_r2022.c`, and `stream_test_r1_to_r11.c`.
 - `result.md`: Chinese 20-file business result and benchmark.
 - `target/project-owned-dwg-corpus-audit.txt`: aggregate private corpus audit.
 - `target/modern-beta-source-audit.txt`: retained historical search and decision

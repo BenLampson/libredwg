@@ -46,8 +46,15 @@ if(WIN32)
   set_tests_properties(common_test PROPERTIES FIXTURES_SETUP ${redwg}.dll)
 endif()
 
+set(stream_test_modules
+  stream_test_statistics_and_callbacks.c
+  stream_test_api_and_file_parity.c
+  stream_test_r13_to_r2022.c
+  stream_test_r1_to_r11.c)
+set_source_files_properties(${stream_test_modules} PROPERTIES HEADER_FILE_ONLY TRUE)
 add_executable(stream_test
   stream_test.c
+  ${stream_test_modules}
   tests_common.h)
 target_link_libraries(stream_test ${redwg})
 add_test(stream_test ${TARGET_SYSTEM_EMULATOR} stream_test${CMAKE_EXECUTABLE_SUFFIX})

@@ -455,6 +455,10 @@ update-ignorance:
 EXTRA_DIST = \
 	tests_common.h \
 	tests_common.c \
+	stream_test_statistics_and_callbacks.c \
+	stream_test_api_and_file_parity.c \
+	stream_test_r13_to_r2022.c \
+	stream_test_r1_to_r11.c \
 	dynapi_test.c.in \
 	dynapi_test.c \
 	check-objects.pl
