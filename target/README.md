@@ -766,6 +766,26 @@ byte-identical `AC402b` copies of Autodesk ObjectARX `StandardTest.dwg`, SHA256
 Their repository license explicitly excludes Autodesk SDK files from its MIT
 grant, so they cannot be imported as regression fixtures.
 
+A separate GitHub code-index audit searched `.dwg` paths directly, so its
+coverage does not depend on repository names or descriptions containing DWG or
+AutoCAD. The API exposed 900 of 4,480 indexed results, spanning 75 repositories;
+74 repositories were new relative to the 1,970-repository audit above. Seventeen
+of those new repositories reported an explicit reusable SPDX license. Their
+indexed results contained 512 paths and 447 unique blobs across 13 repositories.
+Of those blobs, 430 were Git LFS pointer text rather than DWG content. The
+remaining old-version hits were 4-6 byte file-signature skeletons from
+DROID/Siegfried/PRONOM/Wikidata test suites, including `MC0.0`, `AC1.2`,
+`AC1.3`, `AC1.40`, `AC1.50`, `AC2.10`, `AC2.21`, `AC2.22`, `AC1001` through
+`AC1006`, and `AC1009` through `AC1015`. In particular, the only indexed
+`AC1013` hit was the six-byte
+`theseus-rs/file-type/test_data/wikidata/wikidata-27863128-signature-1.dwg`
+blob, not an R13c3 drawing. Signature-only skeletons are invalid DWGs and do not
+close generated-only or historical fixture gaps.
+Additional code-index partitions for `r12`, `r13`, `r2004`, `r2007`, and
+`acad12` returned no DWG results. The `alpha` partition returned three
+byte-identical GPL-2.0 paths whose content starts with `<!DOCTYPE` and is HTML,
+not DWG. The only `beta` result was in a repository without a reusable license.
+
 The proprietary `AC402b` file was used only as an external interoperability
 check. Blocking and pure Stream both accept it as `R_2004b`; strict Stream
 parity covers 50 objects, including 14 entities and 36 non-entities, references,
