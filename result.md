@@ -1,59 +1,56 @@
-# Project-owned DWG blocking versus Stream results
+# 项目实际 DWG：阻塞式与 Stream 读取结果
 
-Measurement date: 2026-07-11
+测量日期：2026-07-11
 
-## Conclusion
+## 结论
 
-The accepted project-owned corpus contains 20 DWG files. All 20 files can be
-read independently by the pure C Stream path and pass the strict comparison
-against the C blocking reader:
+项目认可的有效业务文件共 20 个，全部可以由纯 C Stream 路径独立读取，
+并且通过了与 C 阻塞式读取的严格交叉验证：
 
-- files: 20/20 passed;
-- bytes: 1,012,448,531;
-- objects: 6,347,881;
-- entities: 5,410,837;
-- non-entities: 937,044;
-- Stream decoded objects: 6,347,881;
-- Stream per-object decode errors: 0; and
-- Stream full-reader fallback: 0 for every file.
+- 文件：20/20 通过；
+- 文件总大小：1,012,448,531 字节；
+- 对象总数：6,347,881；
+- 实体对象：5,410,837；
+- 非实体对象：937,044；
+- Stream 完整解码对象：6,347,881；
+- Stream 单对象解码错误：0；
+- Stream 回退到阻塞式读取：全部为 `full=0`，即没有回退。
 
-The structurally abnormal private R2004 input that reports warning `0x40` is
-not part of this result. The project owner excludes it from the supported
-business corpus.
+报告不包含已知结构异常、会报告 `0x40` 警告的 `3F.00.dwg`。项目所有者
+已明确将该文件排除在正常业务文件集合之外。
 
-## Per-file result
+## 每个文件的结果
 
-Private filenames and paths are represented by stable IDs in sorted-path
-order. They are intentionally not committed. Times are seconds and peak memory
-is process peak working set in MiB.
+时间单位为秒；峰值内存为进程峰值工作集，单位为 MiB。阻塞对象数与
+Stream 解码对象数逐文件完全一致。
 
-| ID | Version | Size MiB | Blocking time | Blocking peak | Blocking objects | Stream time | Stream peak | Stream decoded | Entities | Non-entities | Errors |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| F01 | R2000 | 92.96 | 3.876 | 8,192 | 152,346 | 2.639 | 109 | 152,346 | 102,779 | 49,567 | 0 |
-| F02 | R2004 | 3.02 | 0.138 | 104 | 80,530 | 0.527 | 18 | 80,530 | 72,868 | 7,662 | 0 |
-| F03 | R2013 | 9.98 | 0.478 | 286 | 247,813 | 1.035 | 45 | 247,813 | 223,912 | 23,901 | 0 |
-| F04 | R2004 | 23.97 | 4.047 | 5,085 | 478,534 | 4.479 | 299 | 478,534 | 312,149 | 166,385 | 0 |
-| F05 | R2004 | 3.33 | 0.156 | 91 | 69,488 | 0.447 | 19 | 69,488 | 60,904 | 8,584 | 0 |
-| F06 | R2004 | 5.84 | 0.218 | 140 | 91,559 | 0.840 | 31 | 91,559 | 54,661 | 36,898 | 0 |
-| F07 | R2007 | 3.63 | 0.154 | 112 | 65,989 | 1.260 | 12 | 65,989 | 58,698 | 7,291 | 0 |
-| F08 | R2007 | 8.50 | 0.405 | 269 | 174,505 | 3.006 | 19 | 174,505 | 134,457 | 40,048 | 0 |
-| F09 | R2010 | 27.03 | 1.176 | 595 | 515,173 | 2.047 | 96 | 515,173 | 499,092 | 16,081 | 0 |
-| F10 | R2010 | 27.79 | 1.198 | 626 | 492,855 | 2.043 | 97 | 492,855 | 473,695 | 19,160 | 0 |
-| F11 | R2000 | 12.74 | 0.287 | 216 | 229,538 | 0.769 | 20 | 229,538 | 226,512 | 3,026 | 0 |
-| F12 | R2007 | 17.75 | 0.358 | 183 | 73,926 | 1.437 | 25 | 73,926 | 72,174 | 1,752 | 0 |
-| F13 | R2000 | 91.27 | 2.311 | 3,477 | 200,732 | 2.337 | 100 | 200,732 | 150,245 | 50,487 | 0 |
-| F14 | R2000 | 178.10 | 6.582 | 11,272 | 462,872 | 5.392 | 189 | 462,872 | 252,155 | 210,717 | 0 |
-| F15 | R2004 | 118.64 | 9.489 | 3,292 | 2,274,473 | 9.807 | 327 | 2,274,473 | 2,251,390 | 23,083 | 0 |
-| F16 | R2000 | 112.63 | 5.213 | 11,329 | 100,149 | 2.579 | 841 | 100,149 | 35,025 | 65,124 | 0 |
-| F17 | R2000 | 209.67 | 9.274 | 17,674 | 259,763 | 5.849 | 2,680 | 259,763 | 103,717 | 156,046 | 0 |
-| F18 | R2007 | 4.63 | 0.190 | 146 | 89,034 | 1.796 | 15 | 89,034 | 77,824 | 11,210 | 0 |
-| F19 | R2018 | 5.84 | 0.248 | 155 | 114,441 | 0.779 | 29 | 114,441 | 94,358 | 20,083 | 0 |
-| F20 | R2018 | 8.22 | 0.354 | 238 | 174,161 | 0.761 | 40 | 174,161 | 154,222 | 19,939 | 0 |
-| **Total** | **6 versions** | **965.55** | **46.152** | **17,674 max** | **6,347,881** | **49.831** | **2,680 max** | **6,347,881** | **5,410,837** | **937,044** | **0** |
+| 编号 | 文件名 | 版本 | 大小 MiB | 阻塞耗时 | 阻塞峰值内存 | 阻塞对象数 | Stream 耗时 | Stream 峰值内存 | Stream 解码数 | 实体数 | 非实体数 | 解码错误 |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| F01 | 02 1F总平面.dwg | R2000 | 92.96 | 3.876 | 8,192 | 152,346 | 2.639 | 109 | 152,346 | 102,779 | 49,567 | 0 |
+| F02 | A31.1-汉庭加盟3.51--安徽合肥蜀山创新大道项目--客房系统图20240912.dwg | R2004 | 3.02 | 0.138 | 104 | 80,530 | 0.527 | 18 | 80,530 | 72,868 | 7,662 | 0 |
+| F03 | A35.1-海宁奥特莱斯建国璞隐酒店-平面图1120.dwg | R2013 | 9.98 | 0.478 | 286 | 247,813 | 1.035 | 45 | 247,813 | 223,912 | 23,901 | 0 |
+| F04 | A36.1-上海长宁古北路直营店项目总平系统图2026.1.19.dwg | R2004 | 23.97 | 4.047 | 5,085 | 478,534 | 4.479 | 299 | 478,534 | 312,149 | 166,385 | 0 |
+| F05 | A37.2-公区02.1~6F-PL.dwg | R2004 | 3.33 | 0.156 | 91 | 69,488 | 0.447 | 19 | 69,488 | 60,904 | 8,584 | 0 |
+| F06 | A38.1-全季-河南开封龙亭新区政府博物馆项目客房平面系统图20251116.dwg | R2004 | 5.84 | 0.218 | 140 | 91,559 | 0.840 | 31 | 91,559 | 54,661 | 36,898 | 0 |
+| F07 | A42.2-公区平面施工图.dwg | R2007 | 3.63 | 0.154 | 112 | 65,989 | 1.260 | 12 | 65,989 | 58,698 | 7,291 | 0 |
+| F08 | A44.3-餐厅平面系统图-2025-厦门市-088-福建厦门海沧旅游码头加盟全季项目.dwg | R2007 | 8.50 | 0.405 | 269 | 174,505 | 3.006 | 19 | 174,505 | 134,457 | 40,048 | 0 |
+| F09 | B01.24-未知品牌-餐饮包厢层参考.dwg | R2010 | 27.03 | 1.176 | 595 | 515,173 | 2.047 | 96 | 515,173 | 499,092 | 16,081 | 0 |
+| F10 | B01.37-未知品牌-酒店大堂参考.dwg | R2010 | 27.79 | 1.198 | 626 | 492,855 | 2.043 | 97 | 492,855 | 473,695 | 19,160 | 0 |
+| F11 | B01.42-未知品牌-酒店建筑平面图.dwg | R2000 | 12.74 | 0.287 | 216 | 229,538 | 0.769 | 20 | 229,538 | 226,512 | 3,026 | 0 |
+| F12 | B22.05-成都W酒店-平面参照.dwg | R2007 | 17.75 | 0.358 | 183 | 73,926 | 1.437 | 25 | 73,926 | 72,174 | 1,752 | 0 |
+| F13 | 260706_20151028亚朵酒店烟台餐厅节点图.dwg | R2000 | 91.27 | 2.311 | 3,477 | 200,732 | 2.337 | 100 | 200,732 | 150,245 | 50,487 | 0 |
+| F14 | 260706_B44.01-阳春双子星大厦独家酒店-平面图1.dwg | R2000 | 178.10 | 6.582 | 11,272 | 462,872 | 5.392 | 189 | 462,872 | 252,155 | 210,717 | 0 |
+| F15 | 260706_D08.02-网红风平立面对应动态图库图块_t8x.dwg | R2004 | 118.64 | 9.489 | 3,292 | 2,274,473 | 9.807 | 327 | 2,274,473 | 2,251,390 | 23,083 | 0 |
+| F16 | 260706_N11126-EL-204 地下一层动力平面图.dwg | R2000 | 112.63 | 5.213 | 11,329 | 100,149 | 2.579 | 841 | 100,149 | 35,025 | 65,124 | 0 |
+| F17 | 260706_N11126-EL-305~306 地下一层照明平面图(一)~(二).dwg | R2000 | 209.67 | 9.274 | 17,674 | 259,763 | 5.849 | 2,680 | 259,763 | 103,717 | 156,046 | 0 |
+| F18 | 14.1北京湾里建国铂萃.墅项目（直营）平面方案.dwg | R2007 | 4.63 | 0.190 | 146 | 89,034 | 1.796 | 15 | 89,034 | 77,824 | 11,210 | 0 |
+| F19 | 北京湾里建国扉缦项目（直营）平面图.dwg | R2018 | 5.84 | 0.248 | 155 | 114,441 | 0.779 | 29 | 114,441 | 94,358 | 20,083 | 0 |
+| F20 | 北京湾里建国璞隐项目（直营）平面方案.dwg | R2018 | 8.22 | 0.354 | 238 | 174,161 | 0.761 | 40 | 174,161 | 154,222 | 19,939 | 0 |
+| **合计/最大值** | **20 个文件** | **6 个版本** | **965.55** | **46.152** | **17,674 最大值** | **6,347,881** | **49.831** | **2,680 最大值** | **6,347,881** | **5,410,837** | **937,044** | **0** |
 
-## Version totals
+## 按版本汇总
 
-| Version | Files | Objects | Entities | Non-entities |
+| DWG 版本 | 文件数 | 对象数 | 实体数 | 非实体数 |
 | --- | ---: | ---: | ---: | ---: |
 | R2000 | 6 | 1,405,400 | 870,433 | 534,967 |
 | R2004 | 5 | 2,994,584 | 2,751,972 | 242,612 |
@@ -61,25 +58,31 @@ is process peak working set in MiB.
 | R2010 | 2 | 1,008,028 | 972,787 | 35,241 |
 | R2013 | 1 | 247,813 | 223,912 | 23,901 |
 | R2018 | 2 | 288,602 | 248,580 | 40,022 |
-| **Total** | **20** | **6,347,881** | **5,410,837** | **937,044** |
+| **合计** | **20** | **6,347,881** | **5,410,837** | **937,044** |
 
-## Measurement method
+## 如何理解结果
 
-Each file was first read once with decoded Stream mode to warm the operating
-system file cache. The measured blocking and Stream runs then used separate
-fresh processes. Odd and even file IDs alternated which measured path ran
-first. The blocking command was `dwgread -v0`; the Stream command was
-`dwgprobe -d`, which calls `dwg_stream_file_ex`, decodes every object, requires
-zero per-object decode errors, and reports its own object classification.
+针对这 20 个文件，纯 Stream 已经可以实际使用。理由不只是“没有回退”，
+而是 Stream 独立解码了全部 6,347,881 个对象，且逐文件对象数、实体数、
+非实体数均与阻塞式基线一致，单对象解码错误为 0。
 
-Elapsed values are wall-clock time from process start through exit. Peak memory
-was sampled from Windows `PeakWorkingSet64` while each process was alive. These
-are single-run measurements on this machine, suitable for comparing these 20
-files under this build; they are not portable performance guarantees. Peak
-memory is a per-file maximum and must not be summed across rows.
+性能方面不能简单理解为 Stream 一定更快：部分文件的 Stream 更快，部分
+文件更慢，本次整批耗时也比较接近。Stream 的明确优势是峰值内存显著降低。
+例如 F17 的阻塞式峰值为 17,674 MiB，而 Stream 为 2,680 MiB；F14 从
+11,272 MiB 降到 189 MiB。
 
-The blocking object counts shown above are the authoritative counts previously
-captured by the strict blocking-versus-Stream harness. The measured Stream
-counts reproduce those totals exactly. Correctness remains the acceptance gate;
-the timing table shows that Stream may be faster or slower depending on the
-file, while consistently using substantially less peak memory in this corpus.
+## 测量方法
+
+每个文件先用完整解码 Stream 读取一次作为预热，减少磁盘缓存先后顺序造成
+的偏差。正式测量时，阻塞式与 Stream 分别使用全新的独立进程；奇数和偶数
+编号交替两种路径的运行顺序。
+
+- 阻塞式命令：`dwgread -v0`，内部调用 `dwg_read_file`；
+- Stream 命令：`dwgprobe -d`，内部调用 `dwg_stream_file_ex`，并逐个解码
+  所有对象；
+- 时间：从进程启动到退出的墙钟时间；
+- 峰值内存：Windows `PeakWorkingSet64`；
+- 测量次数：本机、当前构建、暖缓存条件下单次测量。
+
+这些性能数字用于比较本机上这 20 个文件，不代表所有机器和所有 DWG 的
+通用性能保证。表中的峰值内存是每个文件各自的最大值，不能跨行相加。

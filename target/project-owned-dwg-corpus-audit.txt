@@ -76,8 +76,10 @@ only under that explicitly changed scope.
 Per-file performance record
 ---------------------------
 
-`result.md` records privacy-safe per-file IDs for the 20 accepted inputs, with
-blocking and pure Stream elapsed time, process peak working set, and object
-counts. The benchmark totals reproduce this audit's 6,347,881 objects,
+`result.md` records the 20 accepted inputs with blocking and pure Stream elapsed
+time, process peak working set, and object counts. At the project owner's
+request it identifies each input by filename, but records no absolute path,
+binary, or content hash. The benchmark totals reproduce this audit's 6,347,881
+objects,
 5,410,837 entities, 937,044 non-entities, zero Stream decode errors, and
 20/20 accepted-file result.

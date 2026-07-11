@@ -68,7 +68,8 @@ The media contains no R2007a or R2007b file, so both beta gaps remain open.
 A project-owned private business corpus adds 20 clean real DWGs and 6,347,881
 strictly aligned objects across R2000, R2004, R2007, R2010, R2013, and R2018.
 Every file reports zero decode errors and `full=0`. Identifying source details
-and binaries remain private and are not committed.
+and binaries remain private and are not committed; `result.md` records only the
+filenames at the project owner's request.
 
 One additional private R2004 file reports structural warning 0x40 and does not
 produce a comparable blocking baseline in the strict harness. The project
@@ -152,8 +153,8 @@ future known version without a Stream route must return
   media classification, 372-file strict parity, and warning-file exclusions.
 - `target/project-owned-dwg-corpus-audit.txt`: privacy-safe aggregate evidence
   for the 20-file, 6,347,881-object project-owned business corpus.
-- `result.md`: privacy-safe per-file IDs, blocking/Stream elapsed time, peak
-  working set, and object counts for the accepted 20-file corpus.
+- `result.md`: Chinese per-file results with filenames, blocking/Stream elapsed
+  time, peak working set, and object counts for the accepted 20-file corpus.
 - `target/kaggle-dwg-audit.txt`: 132-file modern-version classification and two
   licensed R2018 strict parity results.
 - `target/modern-beta-source-audit.txt`: exact screening rules and the

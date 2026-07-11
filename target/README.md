@@ -25,8 +25,10 @@ A project-owned private CAD quantity-estimation corpus contributes 20 clean
 real business DWGs across R2000, R2004, R2007, R2010, R2013, and R2018. All
 6,347,881 objects pass strict C blocking-versus-Stream parity with zero decode
 errors and `full=0`. One additional structurally warned R2004 input is excluded.
-No source file or identifying path is committed; aggregate evidence and the
-privacy boundary are recorded in `target/project-owned-dwg-corpus-audit.txt`.
+No source file or identifying path is committed. At the project owner's request,
+`result.md` records the accepted inputs' filenames; aggregate evidence and the
+remaining privacy boundary are recorded in
+`target/project-owned-dwg-corpus-audit.txt`.
 The project owner classifies that warned input as an abnormal file outside the
 supported business corpus. It is retained only as an exclusion record, not as
 an open decoder or Stream-parity task. The accepted project-owned corpus is
