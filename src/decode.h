@@ -159,10 +159,6 @@ int decompress_r2007 (BITCODE_RC *restrict dst, unsigned dst_size,
 void read_r2007_init (Dwg_Data *restrict dwg);
 int read_r2007_meta_data (Bit_Chain *dat, Bit_Chain *hdl_dat,
                           Dwg_Data *restrict dwg);
-int read_r2007_meta_data_stream (
-    Bit_Chain *dat, Bit_Chain *hdl_dat, Dwg_Data *restrict dwg,
-    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
-    Dwg_Stream_Input_Mode input_mode, void *restrict user);
 void section_string_stream (Dwg_Data *restrict dwg, Bit_Chain *restrict dat,
                             BITCODE_RL bitsize, Bit_Chain *restrict str);
 /* for decode_r11.c */

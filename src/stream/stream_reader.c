@@ -178,8 +178,8 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         }
       r2007_hdl_dat.from_version = dat->from_version;
 
-      error = read_r2007_meta_data_stream (dat, &r2007_hdl_dat, &dwg,
-                                           callbacks, input_mode, user);
+      error = dwg_stream_read_r2007 (dat, &r2007_hdl_dat, &dwg, callbacks,
+                                     input_mode, user);
       dwg_free (&dwg);
       return error;
     }

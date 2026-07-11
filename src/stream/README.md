@@ -17,11 +17,12 @@ Current files:
   reading.
 - `stream_read_r2004_to_r2006_and_r2010_to_r2022.c`: compressed object pages
   and handle maps shared by the AC1018 and R2010-and-later format ranges.
+- `stream_read_r2007.c`: R2007 page maps, cross-page object windows, and handle
+  stream routing.
 
 Planned reader files, migrated one format range at a time:
 
 - `stream_read_r1_to_r11.c`: R1.1 through R11.
-- `stream_read_r2007.c`: the R2007 handle stream and object routing.
 
 Shared compression or bit-reading helpers must be named after the mechanism,
 not called `legacy`, `modern`, or `common`. Public Stream API declarations stay

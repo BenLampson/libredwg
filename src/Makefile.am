@@ -42,6 +42,7 @@ libredwg_la_SOURCES = \
 	stream/stream_reader.c \
 	stream/stream_read_r13_to_r2002.c \
 	stream/stream_read_r2004_to_r2006_and_r2010_to_r2022.c \
+	stream/stream_read_r2007.c \
 	stream/stream_version_policy.c \
 	decode2.c \
 	decode_r11.c \
@@ -123,6 +124,7 @@ EXTRA_HEADERS = \
 	stream/README.md \
 	stream/stream_object_helpers.h \
 	stream/stream_reader_internal.h \
+	stream/stream_r2007_internal.h \
 	stream/stream_version_policy.h \
 	decode_r11.h \
 	dec_macros.h \

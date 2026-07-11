@@ -52,6 +52,10 @@ int dwg_stream_read_r2004_to_r2006_and_r2010_to_r2022 (
     Bit_Chain *dat, Dwg_Data *dwg,
     const Dwg_Stream_Callbacks_Ex *callbacks,
     Dwg_Stream_Input_Mode input_mode, void *user);
+int dwg_stream_read_r2007 (Bit_Chain *dat, Bit_Chain *handle_dat,
+                           Dwg_Data *dwg,
+                           const Dwg_Stream_Callbacks_Ex *callbacks,
+                           Dwg_Stream_Input_Mode input_mode, void *user);
 int dwg_stream_read_r1_to_r2 (
     Bit_Chain *dat, Dwg_Data *dwg,
     const Dwg_Stream_Callbacks_Ex *callbacks,

@@ -272,6 +272,7 @@ set(libredwg_SOURCES
     src/stream/stream_reader.c
     src/stream/stream_read_r13_to_r2002.c
     src/stream/stream_read_r2004_to_r2006_and_r2010_to_r2022.c
+    src/stream/stream_read_r2007.c
     src/stream/stream_version_policy.c
     src/decode2.c
     src/decode_r11.c
