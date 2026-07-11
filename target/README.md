@@ -26,6 +26,9 @@ real business DWGs across R2000, R2004, R2007, R2010, R2013, and R2018. All
 errors and `full=0`. One additional structurally warned R2004 input is excluded.
 No source file or identifying path is committed; aggregate evidence and the
 privacy boundary are recorded in `target/project-owned-dwg-corpus-audit.txt`.
+The project owner has reserved that warned R2004 input as a separate decoder
+investigation. It remains explicitly open until its warning, blocking result,
+Stream behavior, and strict acceptance are resolved and documented.
 
 Scope correction: the active target is not ProtocolVNext and not any downstream
 consumer. Stream TDD is developed and judged on the C side only. Every blocking

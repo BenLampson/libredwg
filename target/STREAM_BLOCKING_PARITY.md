@@ -70,6 +70,11 @@ strictly aligned objects across R2000, R2004, R2007, R2010, R2013, and R2018.
 Every file reports zero decode errors and `full=0`. Identifying source details
 and binaries remain private and are not committed.
 
+One additional private R2004 business file is a dedicated open investigation:
+it reports structural warning 0x40 and does not currently produce a comparable
+blocking baseline in the strict harness. It is excluded from parity totals and
+must be resolved separately; the clean R2004 results do not close it.
+
 ## Development priority
 
 DWG 2000 and later is the current high-priority target. This is a development
