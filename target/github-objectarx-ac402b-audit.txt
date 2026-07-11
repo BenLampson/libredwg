@@ -1,0 +1,61 @@
+GitHub Autodesk ObjectARX AC402b audit
+======================================
+
+Audit date: 2026-07-11
+
+Purpose
+-------
+
+Close the real-file C blocking-versus-Stream evidence gap for R_2004b without
+committing a proprietary Autodesk SDK sample.
+
+Source
+------
+
+Repository: https://github.com/kevinzhwl/AutoCAD.DK
+Branch: arx-2004
+Commit: 591d37f1aa6d0d362445317ddd713b6d0d6b37f8
+Path: ObjectARX/samples/editor/CircleStandard/StandardTest.dwg
+Raw URL: https://raw.githubusercontent.com/kevinzhwl/AutoCAD.DK/591d37f1aa6d0d362445317ddd713b6d0d6b37f8/ObjectARX/samples/editor/CircleStandard/StandardTest.dwg
+
+File identity
+-------------
+
+Size: 25,577 bytes
+SHA256: 623E79D3A5422DEE1EA9206E698466EC96C994CC0FA925F7F9A348DEB8E09D1D
+Magic: AC402b
+LibreDWG detected version: R_2004b
+
+Five other audited GitHub paths contained byte-identical copies. They do not
+increase the independent-file count.
+
+Strict parity result
+--------------------
+
+Command environment:
+
+  LIBREDWG_STREAM_TEST_DWG=<downloaded StandardTest.dwg>
+  LIBREDWG_STREAM_TEST_REFS=1
+
+Current `test/unit-testing/stream_test.c` result:
+
+  exit code: 0
+  objects: 50
+  entities: 14
+  non-entities: 36
+  decoded callbacks: 50
+  decode errors: 0
+  full: 0
+
+The test compared object types, classifications, reference snapshots, semantic
+counters, callback behavior, and blocking/Stream counts. The pure C Stream path
+did not call the blocking reader.
+
+License boundary
+----------------
+
+The repository license excludes Autodesk SDK material from its MIT grant, and
+the adjacent ObjectARX source carries Autodesk-specific distribution terms.
+This audit therefore records external functional evidence only. The DWG binary
+is not committed. R_2004b real-file parity is established, while a freely
+redistributable R_2004b regression fixture remains unavailable.

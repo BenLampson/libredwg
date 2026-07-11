@@ -49,7 +49,7 @@ R_1_1, R_1_2, R_1_4,
 R_2_4, R_2_5, R_2_6, R_2_10,
 R_9, R_10, R_11,
 R_13, R_14,
-R_2000, R_2004, R_2007, R_2010, R_2013, R_2018
+R_2000, R_2004b, R_2004, R_2007, R_2010, R_2013, R_2018
 ```
 
 Some evidence is external-only because the source archive does not provide a
@@ -62,7 +62,7 @@ files.
 DWG 2000 and later is the current high-priority target. Work on real historical
 evidence must proceed in this order:
 
-1. `R_2000b`, `R_2000i`, `R_2002`, `R_2004a`, `R_2004b`, `R_2004c`,
+1. `R_2000b`, `R_2000i`, `R_2002`, `R_2004a`, `R_2004c`,
    `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`, `R_2018b`, and `R_2022b`;
 2. remaining pre-2000 exact versions and the historical R12 evidence gap.
 
@@ -82,7 +82,7 @@ R_2_0b, R_2_0, R_2_21, R_2_22, R_9c1,
 R_11b1, R_11b2,
 R_13b1, R_13b2, R_13c3,
 R_2000b,
-R_2004a, R_2004b, R_2004c,
+R_2004a, R_2004c,
 R_2007a, R_2007b,
 R_2010b, R_2013b, R_2018b, R_2022b
 ```
@@ -105,6 +105,8 @@ future known version without a Stream route must return
 - `target/internet-archive-autocad-media-audit.txt`: real R1.1, R1.2, R2.4,
   R2.5, R2.10, R11, and R13 historical-media evidence.
 - `target/govdocs1-dwg-audit.txt`: independent real R14 evidence.
+- `target/github-objectarx-ac402b-audit.txt`: external real R2004b strict
+  parity evidence and its non-redistribution boundary.
 - `target/internet-archive-dwg-search-audit.txt`: direct Archive.org DWG search
   boundary and classifications.
 - `target/gnu-release-dwg-audit.txt`: signed GNU release archive evidence.

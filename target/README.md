@@ -678,7 +678,7 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream route; real fixture evidence | `R_2_6`, `R_9`, `R_10` | Strict C parity covers ten R2.6 files, one R9 file, and 19 R10 files. The independent sets add 3DFACE, ATTDEF, ARC, CIRCLE, DIMENSION, INSERT, JUMP, POLYLINE/VERTEX/SEQEND, SHAPE, SOLID, and TEXT evidence. Object/type counts, decoded callbacks, per-handle references, and table fixedtype masks match the blocking reader with `full=0`; R10 also streams UCS, VPORT, and APPID tables. |
 | Partial pure stream support | `R_11b1`, `R_11b2` | The shared pre-R11 reader passes exact-version blocking-vs-stream parity on minimal C-writer LINE fixtures with table-entry coverage, decoded callbacks, `full=0`, and both stream flag settings. No real historical beta DWG fixture is present, so this remains generated coverage. |
 | Pure stream route; mixed evidence | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map reader through `R_2002`. Real fixtures cover R13, R14, and R2000. Generated MINSERT fixtures cover R13b1, R13b2, R13c3, and R2000b; exact R13b1 now passes 33-object parity after correcting its file-header boundary. Synthetic exact-header variants over the real R2000 payload cover R2000i and R2002 with 750 objects and both flag settings. |
-| Pure stream route; mixed evidence | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map reader. Generated exact-version MINSERT fixtures cover R2004a, R2004b, and R2004c with 37 objects, strict references, both stream flag settings, and `full=0`. Real fixtures cover R2004; a synthetic exact R2004c header over the real R2004 payload additionally passes 735-object parity. AutoCAD 2005/2006 are not separate enum values here. |
+| Pure stream route; mixed evidence | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map reader. Generated exact-version MINSERT fixtures cover R2004a, R2004b, and R2004c with 37 objects, strict references, both stream flag settings, and `full=0`. An external real Autodesk ObjectARX `AC402b` sample covers R2004b with 50-object strict parity; its license prevents committing the binary. Real fixtures cover R2004, and a synthetic exact R2004c header over the real R2004 payload additionally passes 735-object parity. AutoCAD 2005/2006 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2007a`, `R_2007b`, `R_2007` | Uses the R2007 object-map reader. Generated exact-version MINSERT fixtures cover R2007a and R2007b with 37 objects, strict references, both stream flag settings, and `full=0`. The generated R2007 release fixture covers a multipage object section with 2,037 objects. Real fixtures cover R2007 release; no independently sourced historical R2007a/b files are present. AutoCAD 2008/2009 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2010b`, `R_2010` | Uses the R2004/2010+ data-section object-map reader with R2010 object headers. Real fixtures cover R2010 and a generated MINSERT fixture covers exact R2010b. AutoCAD 2011/2012 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013, and a generated exact R2013b MINSERT fixture passes 37-object strict parity with `full=0`. The beta object layout is aligned by reading `has_ds_data` from the same R2013b boundary used by the encoder. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
@@ -732,7 +732,7 @@ Header magic codes relevant to the current stream target:
 | `AC1016` | `R_2000i` | Synthetic exact-header family parity; no real fixture |
 | `AC1017` | `R_2002` | Synthetic exact-header family parity; no real fixture |
 | `AC402a` | `R_2004a` | Generated exact-version parity |
-| `AC402b` | `R_2004b` | Generated exact-version parity |
+| `AC402b` | `R_2004b` | External real-file strict parity plus generated exact-version parity; binary not redistributable |
 | `AC1018` | `R_2004c` / `R_2004` | Internal version refines the enum; generated and synthetic candidate parity plus real release parity |
 | `AC701a` | `R_2007a` | Generated exact-version parity; no real historical fixture |
 | `AC1021` | `R_2007b` / `R_2007` | Internal version refines the enum; generated beta parity plus generated multipage and real release parity |
@@ -1060,8 +1060,8 @@ no embedded data license. The binary files therefore remain external-only audit
 material. They were generated in 2010 and do not close the independently
 sourced historical R12 gap.
 
-The proprietary `AC402b` file was used only as an external interoperability
-check. Blocking and pure Stream both accept it as `R_2004b`; strict Stream
+The proprietary `AC402b` file supplies external real-file parity evidence.
+Blocking and pure Stream both accept it as `R_2004b`; strict Stream
 parity covers 50 objects, including 14 entities and 36 non-entities, references,
 semantic counters, zero decode errors, and `full=0`. It exposed a callback
 contract bug: an existing `DWG_ERR_VALUEOUTOFBOUNDS` warning was being ORed into
@@ -1069,6 +1069,10 @@ the caller's abort value. R2004 and R2007 metadata streaming now carry callback
 abort state separately and return the callback value exactly. The generated
 checksum-warning regression reproduces the condition without distributing the
 proprietary file, and the external `AC402b` strict run now passes completely.
+This closes the R_2004b real-file evidence gap under the same external-only
+rule used for unlicensed historical media, but it does not provide a freely
+redistributable regression fixture. Reproducible source, hash, result, and
+license-boundary details are in `target/github-objectarx-ac402b-audit.txt`.
 
 The important distinction is that a successful blocking read elsewhere does not
 count as stream support. Every current legal enum version now has an explicit
@@ -1086,7 +1090,7 @@ none
 Generated-only exact-version support still needing real historical DWG files:
 R_1_3, R_2_0b, R_2_0, R_2_21, R_2_22, R_9c1,
 R_11b1, R_11b2, R_13b1, R_13b2, R_13c3, R_2000b, R_2004a,
-R_2004b, R_2004c, R_2007a, R_2007b, R_2010b, R_2013b, R_2018b,
+R_2004c, R_2007a, R_2007b, R_2010b, R_2013b, R_2018b,
 R_2022b
 
 Synthetic exact-header support still needing real historical DWG files:
@@ -1147,7 +1151,8 @@ R_12 ODA 27.1 `ACAD12` fixture coverage with 26 decoded objects,
 R_13b1 and R_13b2 generated, R_13 real, R_13c3 generated,
 R_14,
 R_2000b generated, R_2000 real, R_2000i and R_2002 synthetic,
-R_2004a, R_2004b, and R_2004c generated, R_2004c also synthetic, R_2004 real,
+R_2004a and R_2004c generated, R_2004b external real plus generated,
+R_2004c also synthetic, R_2004 real,
 R_2007a and R_2007b generated, R_2007 generated multipage and real,
 R_2010b generated, R_2010 real,
 R_2013b generated, R_2013 real,
@@ -1159,7 +1164,7 @@ Development targets from the current state to complete stream parity:
 
 1. Complete the remaining exact-version and historical fixture gaps.
    - First, replace generated-only modern evidence for `R_2000b`, `R_2004a`,
-     `R_2004b`, `R_2004c`, `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`,
+     `R_2004c`, `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`,
      `R_2018b`, and `R_2022b` with independently sourced real historical DWG
      files.
    - First, also replace synthetic exact-header evidence for `R_2000i` and

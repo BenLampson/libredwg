@@ -33,11 +33,11 @@ require the stream result to report `full=0`.
 This is not only generated-fixture coverage.  Real historical DWG files have
 passed strict blocking-versus-stream parity for multiple versions, including
 R1.1, R1.2, R1.4, R2.4, R2.5, R2.6, R2.10, R9, R10, R11, R13, R14, R2000,
-R2004, R2007, R2010, R2013 and R2018.  R2.5 alone is covered by 16 independent
-1986 files containing 5,014 objects, with no decode errors and no full-reader
-fallback.  This proves alignment for the tested files; it is not a claim that
-every possible DWG or object type in those versions has been exhaustively
-tested.
+R2004b, R2004, R2007, R2010, R2013 and R2018.  R2.5 alone is covered by 16
+independent 1986 files containing 5,014 objects, with no decode errors and no
+full-reader fallback.  This proves alignment for the tested files; it is not a
+claim that every possible DWG or object type in those versions has been
+exhaustively tested.
 
 The maintained status, acceptance definition, exact remaining version gaps and
 evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
