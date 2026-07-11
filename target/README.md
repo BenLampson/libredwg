@@ -581,16 +581,46 @@ programs: 3/3 passed
 examples: 2/2 passed
 test/unit-testing: 255/255 passed
 doc: makeinfo passed after installing texinfo
+```
 
 This run includes the incremental pre-R2/pre-R11 entity walker and its strict
 blocking-reference snapshot checks.
 
-Shared out-of-tree Autotools builds are not the local acceptance route on this
-Windows/MSYS setup because libtool executable wrappers can return success
-without launching the real .libs executable when the build-local DLL is not in
-the DLL search path. Static Autotools builds avoid that wrapper/DLL problem and
-are the canonical local `make check` route for this stream target.
+The shared Windows/MSYS2 route also passes when Bash is started as a UCRT64
+shell rather than as the default MSYS shell:
+
+```powershell
+$env:MSYSTEM = "UCRT64"
+$env:CHERE_INVOKING = "1"
 ```
+
+With `/ucrt64/bin` before `/usr/bin`, a fresh
+`.build-shared-ucrt64-codex` configuration reports both build and host as
+`x86_64-w64-mingw32`. The default shared/static configuration then builds
+`src/.libs/libredwg-0.dll`, and this command executes the shared test suite
+against that build-local DLL:
+
+```text
+PATH=$PWD/src/.libs:/ucrt64/bin:/usr/bin:$PATH make -j4 check
+
+programs: 3/3 passed
+examples: 2/2 passed
+test/unit-testing: 253/253 passed
+doc: makeinfo passed
+```
+
+The MinGW shared test set intentionally omits `decode_test.exe` and
+`encode_test.exe`; `stream_test.exe` is included in the 253 tests and passed.
+It also passed as an explicit `TESTS=stream_test` run. A direct execution of
+the shared `examples/load_dwg.exe` against a repository DWG returned zero.
+
+The earlier duplicate `bit_utf8_to_TU` link failure was an environment
+misclassification, not a C source failure. Starting `/usr/bin/bash` without
+`MSYSTEM=UCRT64` made `configure` identify the host as Cygwin even while using
+the UCRT64 MinGW compiler. That left `HAVE_MINGW` false and linked `bits.lo`
+beside the DLL import library. The correct UCRT64 environment makes
+`HAVE_MINGW` true and removes that duplicate input. Both audit build
+directories match the existing `/.build-*/` ignore rule.
 
 Latest R2010/R2013/R2018 stream validation:
 
