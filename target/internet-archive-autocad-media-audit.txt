@@ -1,0 +1,57 @@
+# Internet Archive historical AutoCAD media audit, 2026-07-11
+# Format for media rows: SHA256  SHA1  bytes  identifier/member
+74eb4cb204d46d6c92bea0b1c0a9223bc77d93495e2be7b0f62b8b4f3b1c5073  c8c2c61c711f33f032eb0f4188813d1d5cb6a64b  956430  autocad-2.53j-train-de/AutoCAD 2.53J DE.zip
+b72e41f972cc12785fd8aa8c44fb2c627072c9372b12b639f0f930651cf4a4bb  abbc09e515f751fabc062fede60bf02a7af17189  368640  UsingAutoCADStudentWorkdisk1986/UsingAutoCADStudentWorkdisk1986.disk1of1.img
+d6c9d21dfe0187a2b3932d510ec38a02ce1cf0dd8cabeeae5b653d8d4981cc5c  1b5e18256aee80942595290ae3b7d381d56f2ab1  38210706  autocad.7z/autocad.7z
+bf27c9d0a86d9213eaeb9f549052825ece6491a0a5d4e87604982945d778fd65  249e080f243e19843365f0def4fda5f9eb194b03  153274368  autocad.7z/autocad-r13-c4-beta4.iso
+
+# AutoCAD 2.53J DE Sample Drawing.img DWGs.
+# Format: SHA256  magic  bytes  blocking-check/Stream-check  filename
+# A zero check status means that the complete strict acceptance check passed;
+# it is not a claim that the underlying decoder emitted no noncritical warning.
+13bb83a11cfa89bd7a941e656e394bd1c78fc9cc61ee91ffbe27e8b07279b402  AC1001  1869  0/0  CHAIR.DWG
+6098bb55cc85d875b354b2091723d7a3d8e580a5adade42003b2cac01dee6c62  AC1001  1805  0/0  FCHAIR.DWG
+d5002309e2e78ab0bc5f5a1b33c8f4e0aaccdfa4292aa4f5a784db83e18da5b7  AC1001  1705  0/0  FILECAB.DWG
+746d6c7e8b18d9e222199736c43816fe82a82771a9cb9f70fd3ff93c4d7789db  AC1001  3040  0/0  PHONE.DWG
+d5075b068efd10f34500d45923d88595f56ebb412bb2c15bc02f3e26a410d73a  AC1001  2437  0/0  SCHAIR.DWG
+6077035858c6f19cab6f164bb9074bdf8ff14dd607d2dbff9e740a5b66381756  AC1001  1869  0/0  SDESK.DWG
+be59157731c3b66070d4bef551cc4558ee12d8d94c009a3cb9aa4ba01d7b3b38  AC1001  2069  0/0  SOFA.DWG
+e5d3e98f2e07106aa627d8abb22cf0621578e0eb447e124f9f29fc0281e0932a  AC1001  1621  0/0  TABLE.DWG
+b7f7dc53dea0be6f5d405e3f7e9474d952cdffd7d144aea51a62401178008712  AC1001  1615  0/0  TRASHCAN.DWG
+44fa027c6933aa47a5bdd7ecd9878878dd5615fdb6de0940b7c27ba7536cb62a  AC1001  2385  0/0  TYPEWRIT.DWG
+094ccade5278c5fc91bb70661a9d88ae3e1963d2097804f6dd38ddc989151d63  AC1001  3001  0/0  XCHAIR.DWG
+edf747934f10677f1070e3af4e2f38669015a4d5989f59680f3c0d01bb68a78e  AC1001  1621  0/0  XDESK.DWG
+c9c639e4add19fbced7b38484cb0e751d20dec911d741bb7e83dd2816493afb7  AC1002  12356  0/0  CHROMA.DWG
+7ed90242f596d678083e5f6fb1e489d19a29672c3a875a05f9e96858e1b95340  AC1002  2427  0/0  COLORS.DWG
+98572528d792c1fe63037b3d245a057e7d1b2cfadfc68d49230036161c9235d8  AC1002  31901  0/0  COLUMBIA.DWG
+96b804129871e98c178d9c73b68de99859614c07dd4f78762deccf68ceae8840  AC1002  24164  0/0  COUNTER.DWG
+f98793ac6de7663c131df10b3c8ec6d191fb930873b3fb429c983aafbca70261  AC1002  1379  0/0  CUBE.DWG
+dc02a71e56de584b5b973749f3a01d326eedd40c27fe9c3807d9d4345ddddf66  AC1002  9338  0/0  CURVES.DWG
+0bc99e34f233fdf5cf9f48bec0ef72e506c6f508f4211197592870075ae0f8e5  AC1002  10081  0/0  FILE.DWG
+9049a608195f454c2ed2a679fc65fe5883157201519ee3c57fd471991646a748  AC1002  9037  0/0  GEO.DWG
+a2ff2c06b8bee56f849a09f74c6190bbc1e632b83e911304dc9e98668cf419fe  AC1002  7766  0/0  HIGHWAY.DWG
+66493f43cdf7c3422994f0a8e92d50e339d26208a0f3d42f5239c04bf22e3b93  AC1002  6595  0/0  MPARTS.DWG
+f8cbd66d76532b124dfd19e92c6bcac6d2bcc26d57215aa0ecda03df0d0fa6f2  AC1002  31906  0/0  NOZZLE.DWG
+72dc9a9721612d28a434ff00e041de137bf6b0d1ad240c481d4d71b655ce92ab  AC1002  16115  0/0  OFFICE.DWG
+ddec474ee2d9f207c53af72dbbc0f4179be49bb15776dad49c8fc1442637def1  AC1002  15922  0/0  PUMP.DWG
+79d5c579d2ab272a00b768ba4908a139eb87b88b6c872a56786fb05b16e849f2  AC1002  6511  0/0  SOLAR.DWG
+5335d567de2b96101364654b9c6fcec684ce960f652b8a797983c57bb3d87de7  AC1002  20493  0/0  STAIR.DWG
+a17ce0db96354297e87195f4c6e62064cd1ab2751b6b360ae20164100157c256  AC1002  20675  0/0  STPAULS.DWG
+
+# AC1001 maps to LibreDWG R_2_4; all 12 files pass strict reference parity:
+# 274 objects, 145 entities, 129 non-entities, no decode errors, full=0.
+# AC1002 maps to R_2_5; all 16 files pass strict reference parity:
+# 5,014 objects, 4,601 entities, 413 non-entities, no decode errors, full=0.
+# No file duplicates a DWG in the current repository. The item has no license
+# URL, so the binaries remain external-only historical evidence.
+
+# The 1986 student disk has 20 AC2.10 files. Blocking and Stream both pass on
+# 19: 3,867 objects, 3,549 entities, and 318 non-entities. POLYLINE.DWG returns
+# critical error 0x800 from dwg_read_file and is not a blocking-success/Stream-
+# failure case. These files expand R_2_10 evidence but close no exact gap.
+
+# The item titled "Autodesk AutoCAD R13 c4 beta #4" has a Public Domain Mark
+# metadata URL, but its ISO contains no beta-format DWG: 16 AC1009 and 48
+# AC1012 files. All 64 pass strict reference parity with full=0: 90,202 objects,
+# 87,561 entities, and 2,641 non-entities. It closes no R13 beta-version gap.
+# No proprietary software or sample binary is imported into the repository.

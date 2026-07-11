@@ -405,7 +405,9 @@ blocking-reads minimal C-generated fixtures for `R_2_0b`, `R_2_0`, `R_2_21`,
 stream parity with both zero flags and `DWG_STREAM_F_NO_FULL_FALLBACK`. The R11
 beta writer uses the pre-R11 control-table record sizes; both generated files
 are accepted by the blocking reader with their exact beta version. The real
-R10 coverage includes UCS, VPORT, and APPID table sections.
+R10 coverage includes UCS, VPORT, and APPID table sections. Independently,
+external 1986 AutoCAD 2.53J training media supplies real `R_2_4` and `R_2_5`
+strict parity; the generated fixtures remain committed regression coverage.
 A generated R11 `DWG_TYPE_INSERT_r11` fixture also validates
 MINSERT-specific option fields: `OPTS_R11_INSERT_HAS_NUM_COLS`,
 `OPTS_R11_INSERT_HAS_NUM_ROWS`, `OPTS_R11_INSERT_HAS_COL_SPACING`, and
@@ -659,7 +661,8 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | --- | --- | --- |
 | Partial pure stream support | `R_1_1`, `R_1_2`, `R_1_3` | The pre-R2 stream reader passes exact-version blocking-vs-stream parity on minimal LINE fixtures produced by the LibreDWG C writer. No repository historical DWG fixtures exist for these versions, so this remains generated coverage. |
 | Pure stream route; real fixture evidence | `R_1_4` | Strict C parity covers 25 real files: the original fixture plus 24 independent BSD-2-Clause AC1.40 entity files. They cover ARC, BLOCK, CIRCLE, LINE, LOAD, POINT, REPEAT/ENDREP, SHAPE, SOLID, TEXT, TRACE, and INSERT data with both Stream flag settings, bounded host entities, and `full=0`. No known committed or audited R1.4 fixture currently fails Stream. |
-| Partial pure stream support | `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_9c1` | The shared pre-R11 reader passes blocking-vs-stream parity on minimal fixtures produced by the LibreDWG C writer and accepted by `dwg_read_file`. For shared magic `AC1.50`, 74 header variables refine the exact version to `R_2_0b`, while 83 remain `R_2_0`; both pass with `full=0`. These versions have no repository DWG fixture, so this is generated single-entity/table coverage rather than broad real-file proof. |
+| Partial pure stream support | `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_9c1` | The shared pre-R11 reader passes blocking-vs-stream parity on minimal fixtures produced by the LibreDWG C writer and accepted by `dwg_read_file`. For shared magic `AC1.50`, 74 header variables refine the exact version to `R_2_0b`, while 83 remain `R_2_0`; both pass with `full=0`. These versions have no real historical DWG evidence, so this remains generated single-entity/table coverage. |
+| Pure stream route; external real fixture evidence | `R_2_4`, `R_2_5` | An AutoCAD 2.53J training disk from 1986 supplies 12 `AC1001`/R2.4 and 16 `AC1002`/R2.5 files. Every file passes strict blocking-versus-Stream reference parity with `full=0` and no decode errors. R2.4 covers 274 objects and R2.5 covers 5,014. The source item has no license URL, so these are external historical evidence and the binaries are not committed. |
 | Pure stream route; real fixture evidence | `R_2_10` | Strict C parity covers 17 real files: the original entity/block fixtures plus 15 independent BSD-2-Clause AC2.10 entity files. Coverage includes POLYLINE with four VERTEX records and SEQEND, REPEAT/ENDREP, block sections, table entries, and per-handle references. The Stream reader now treats a zero optional-section start as absent even when its size word contains legacy high-bit flags, matching the blocking reader. No known committed or audited R2.10 fixture currently fails Stream. |
 | Pure stream route; real fixture evidence | `R_2_6`, `R_9`, `R_10` | Strict C parity covers ten R2.6 files, one R9 file, and 19 R10 files. The independent sets add 3DFACE, ATTDEF, ARC, CIRCLE, DIMENSION, INSERT, JUMP, POLYLINE/VERTEX/SEQEND, SHAPE, SOLID, and TEXT evidence. Object/type counts, decoded callbacks, per-handle references, and table fixedtype masks match the blocking reader with `full=0`; R10 also streams UCS, VPORT, and APPID tables. |
 | Partial pure stream support | `R_11b1`, `R_11b2` | The shared pre-R11 reader passes exact-version blocking-vs-stream parity on minimal C-writer LINE fixtures with table-entry coverage, decoded callbacks, `full=0`, and both stream flag settings. No real historical beta DWG fixture is present, so this remains generated coverage. |
@@ -699,8 +702,8 @@ Header magic codes relevant to the current stream target:
 | `AC2.10` | `R_2_10` | Partial support: real entity/table-section fixture coverage |
 | `AC2.21` | `R_2_21` | Partial support: generated fixture coverage |
 | `AC2.22` | `R_2_22` | Partial support: generated fixture coverage |
-| `AC1001` | `R_2_4` | Partial support: generated fixture coverage |
-| `AC1002` | `R_2_5` | Partial support: generated fixture coverage |
+| `AC1001` | `R_2_4` | Real external historical parity plus generated regression coverage |
+| `AC1002` | `R_2_5` | Real external historical parity plus generated regression coverage |
 | `AC1003` | `R_2_6` | Partial support: real fixture coverage |
 | `AC1004` | `R_9` | Partial support: real fixture coverage |
 | `AC1005` | `R_9c1` | Partial support: generated fixture coverage |
@@ -947,6 +950,28 @@ zero decode errors, and `full=0`. Exact S3, ZIP, member, and hash evidence is in
 but no generated-only or synthetic-only exact-version header, so it closes no
 remaining historical fixture gap and no corpus binary is committed.
 
+Historical AutoCAD installation and training media on Internet Archive were
+then inspected internally rather than relying on item titles. The 956,430-byte
+AutoCAD 2.53J German training ZIP has a dedicated sample-drawing floppy with 12
+`AC1001` and 16 `AC1002` DWGs. LibreDWG maps these exact headers to `R_2_4` and
+`R_2_5`; none duplicates a repository fixture. All 28 pass strict C reference
+parity with `full=0` and no decode errors. R2.4 covers 274 objects, 145 entities,
+and 129 non-entities; R2.5 covers 5,014 objects, 4,601 entities, and 413
+non-entities. This replaces generated-only status for both exact versions with
+real 1986 historical evidence. The item has no license URL, so no binary is
+imported and committed generated fixtures remain the reproducible regression
+coverage.
+
+A separate 1986 student work disk contains 20 `AC2.10` files. Nineteen pass
+strict parity, covering 3,867 objects; `POLYLINE.DWG` fails the blocking reader
+with critical error `0x800` and is therefore not a blocking-success/Stream-
+failure case. The Public Domain Mark item titled "Autodesk AutoCAD R13 c4 beta
+#4" contains 64 DWGs, but their actual headers are 16 `AC1009` and 48 `AC1012`,
+not an R13 beta magic. All 64 pass strict reference parity with `full=0`,
+covering 90,202 objects. It broadens R11/R13 evidence but does not close an R13
+beta gap. Complete media hashes, member hashes, classifications, and parity
+totals are in `target/internet-archive-autocad-media-audit.txt`.
+
 Internet Archive metadata was searched directly on 2026-07-11 rather than by
 assuming that an item title implied file content. `title:DWG` returned 161
 identifiers and `subject:DWG` returned 224; 48 overlap, leaving 337 unique
@@ -1035,8 +1060,8 @@ Current legal Dwg_Version_Type versions without a pure stream route:
 none
 
 Generated-only exact-version support still needing real historical DWG files:
-R_1_1, R_1_2, R_1_3, R_2_0b, R_2_0, R_2_21, R_2_22, R_2_4, R_2_5,
-R_9c1, R_11b1, R_11b2, R_13b1, R_13b2, R_13c3, R_2000b, R_2004a,
+R_1_1, R_1_2, R_1_3, R_2_0b, R_2_0, R_2_21, R_2_22, R_9c1,
+R_11b1, R_11b2, R_13b1, R_13b2, R_13c3, R_2000b, R_2004a,
 R_2004b, R_2004c, R_2007a, R_2007b, R_2010b, R_2013b, R_2018b,
 R_2022b
 
@@ -1048,12 +1073,14 @@ none
 
 Known blocking-success/Stream-failure fixtures in the committed regression set,
 the audited licensed GitHub and readable GitLab sets, the Debian-source set, or
-the Govdocs1 set, externally checked proprietary AC402b sample, and Internet
-Archive R12-labelled set:
+the Govdocs1 set, historical AutoCAD media sets, externally checked proprietary
+AC402b sample, and Internet Archive R12-labelled set:
 none
 
 Committed strict real-file counts for the expanded historical families:
 R_1_4: 25
+R_2_4: 12 external historical
+R_2_5: 16 external historical
 R_2_10: 17
 R_2_6: 10
 R_9: 1
@@ -1084,8 +1111,8 @@ The explicit completed pure-stream route list is:
 R_1_4 strict parity on 25 real fixtures,
 R_1_1, R_1_2, and R_1_3 generated fixture coverage,
 R_2_10 strict parity on 17 real fixtures including POLYLINE/VERTEX/SEQEND,
-R_2_0b, R_2_0, R_2_21, R_2_22, R_2_4, R_2_5, and R_9c1 generated fixture
-coverage,
+R_2_0b, R_2_0, R_2_21, R_2_22, and R_9c1 generated fixture coverage,
+R_2_4 strict parity on 12 and R_2_5 on 16 external historical fixtures,
 R_2_6 strict parity on 10 real fixtures, R_9 on one, and R_10 on 19,
 R_11b1 and R_11b2 generated fixture coverage,
 R_11 generated coverage plus 23 real R11 fixtures from two independent sources,
@@ -1105,8 +1132,8 @@ Development targets from the current state to complete stream parity:
 
 1. Complete the remaining exact-version and historical fixture gaps.
    - Replace generated-only evidence for `R_1_1`, `R_1_2`, `R_1_3`,
-     `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_2_4`, `R_2_5`, `R_9c1`,
-     `R_11b1`, and `R_11b2` with real historical DWG fixtures.
+     `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_9c1`, `R_11b1`, and
+     `R_11b2` with real historical DWG fixtures.
    - Replace generated-only `R_2007a` and `R_2007b` evidence with independently
      sourced historical files. The C writer now supplies exact-version internal
      parity fixtures, but those do not replace historical evidence or external
