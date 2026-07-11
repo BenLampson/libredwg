@@ -268,6 +268,7 @@ set(libredwg_SOURCES
     src/objects.c
     src/decode.c
     src/stream/stream_callbacks.c
+    src/stream/stream_reader.c
     src/stream/stream_version_policy.c
     src/decode2.c
     src/decode_r11.c
