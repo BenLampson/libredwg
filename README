@@ -43,6 +43,10 @@ The maintained status, acceptance definition, exact remaining version gaps and
 evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
 audit record is in `target/README.md`.
 
+Current development priority is DWG 2000 and later.  Real-file parity evidence
+for the remaining R2000/R2004/R2007/R2010/R2013/R2018/R2022 exact variants must
+be completed before actively pursuing additional pre-2000 historical evidence.
+
 The strings API is UTF-8 (WTF8 really, Windows UCS-2 has no surrogate
 pairs), and encodes to the internal 8-bit or UCS-2 strings, depending
 on the DWG version. Older DWG's are encoded in ~30 codepages, which we

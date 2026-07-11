@@ -57,6 +57,19 @@ license that permits importing its DWG binaries. The hashes, source media, and
 results remain recorded so the evidence is reproducible without committing the
 files.
 
+## Development priority
+
+DWG 2000 and later is the current high-priority target. Work on real historical
+evidence must proceed in this order:
+
+1. `R_2000b`, `R_2000i`, `R_2002`, `R_2004a`, `R_2004b`, `R_2004c`,
+   `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`, `R_2018b`, and `R_2022b`;
+2. remaining pre-2000 exact versions and the historical R12 evidence gap.
+
+Do not let searches for early AutoCAD media displace the first group. A version
+leaves either group only after an independently sourced real file passes strict
+C blocking-versus-Stream parity with no fallback.
+
 ## Remaining exact-version evidence gaps
 
 Every current legal `Dwg_Version_Type` has a pure Stream route. No exact

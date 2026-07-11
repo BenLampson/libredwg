@@ -24,6 +24,12 @@ ProtocolVNext is not part of this target. Do not inspect, edit, build, or use
 ProtocolVNext for stream TDD or validation unless the user explicitly changes
 the scope.
 
+Current version priority is DWG 2000 and later. Complete real-file strict parity
+for the remaining R2000, R2004, R2007, R2010, R2013, R2018, and R2022 exact
+variants before actively searching for additional pre-2000 historical evidence.
+Older gaps remain recorded and must not be forgotten, but they are the second
+queue rather than the current development focus.
+
 Current iteration rule: all TDD and verification work stays in this repository.
 Compare the C blocking reader against the C stream reader only:
 `dwg_read_file` as the baseline and the C stream callbacks as the stream
@@ -1152,19 +1158,18 @@ R_2022b generated
 Development targets from the current state to complete stream parity:
 
 1. Complete the remaining exact-version and historical fixture gaps.
-   - Replace generated-only evidence for `R_1_3`, `R_2_0b`, `R_2_0`,
-     `R_2_21`, `R_2_22`, `R_9c1`, `R_11b1`, and `R_11b2` with real
-     historical DWG fixtures.
-   - Replace generated-only `R_2007a` and `R_2007b` evidence with independently
-     sourced historical files. The C writer now supplies exact-version internal
-     parity fixtures, but those do not replace historical evidence or external
-     interoperability validation.
-   - Replace generated-only modern evidence for `R_13b1`, `R_13b2`, `R_13c3`,
-     `R_2000b`, `R_2004a`, `R_2004b`, `R_2004c`, `R_2010b`, `R_2013b`,
-     `R_2018b`, and `R_2022b` with real historical DWG files.
-   - Replace synthetic exact-header evidence for `R_2000i` and `R_2002` with
-     independently sourced historical files. R2004c also retains a synthetic
-     real-family payload check in addition to its generated exact fixture.
+   - First, replace generated-only modern evidence for `R_2000b`, `R_2004a`,
+     `R_2004b`, `R_2004c`, `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`,
+     `R_2018b`, and `R_2022b` with independently sourced real historical DWG
+     files.
+   - First, also replace synthetic exact-header evidence for `R_2000i` and
+     `R_2002` with independently sourced historical files. R2004c retains a
+     synthetic real-family payload check in addition to its generated exact
+     fixture, but neither synthetic check closes the real-file gap.
+   - After the DWG 2000-and-later queue is complete, replace generated-only
+     evidence for `R_1_3`, `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_9c1`,
+     `R_11b1`, `R_11b2`, `R_13b1`, `R_13b2`, and `R_13c3` with real historical
+     DWG fixtures.
    - Add an independently sourced historical R12 DWG before calling the shared
      R11/R12 family historically complete. The ODA `ACAD12` fixture closes the
      independent-writer format gap but not the historical-evidence gap. R11
