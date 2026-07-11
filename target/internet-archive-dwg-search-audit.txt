@@ -1,0 +1,27 @@
+# Internet Archive direct-DWG metadata search audit, 2026-07-11
+# title identifier list SHA256: 0738e4de9de69405d0ce8334ec382be0e2a94a73852036a54abafdc3258a370f
+# subject identifier list SHA256: 50591ee07350927fe2657b2cfbb01d15477a5dd2fb1b3151d605bc2458eece80
+# open-description identifier list SHA256: 45bf0e8ece91b7561520b9fd288dd80de66dd425209887d70779058d9b55c81e
+# Format: magic  license  SHA1  bytes  identifier  URI-encoded filename
+AC1024  none  16c66b703cbd2ac0ca8ceea86dd1fcf54b0fa3ca  4711397  3.DwgFiles  Ejmiatsin3d.Layers.dwg
+AC1018  none  f5b2d884bd1ce8d2c09e1d4ba04a0ff31fe167d0  226873  GoogleDrive-1EY6gSydXAf-KfQF5tDmgxIDipvh53h_C  %E0%B8%AB%E0%B8%A1%E0%B8%B8%E0%B8%94%E0%B8%84%E0%B8%93%E0%B8%B0%E0%B8%A3%E0%B8%B2%E0%B8%A9%E0%B8%8E%E0%B8%A32563%20_%E0%B8%84%E0%B8%B4%E0%B8%94%E0%B8%AD%E0%B8%A2%E0%B9%88%E0%B8%B2%E0%B8%87.dwg
+AC1027  CC-BY-NC-ND-4.0  307f3b4625b1e3b2705c3a9559b90b58f338d436  23905802  linha-8-dwg  LINHA%208.dwg
+AC1027  CC-BY-NC-ND-4.0  87c2fb9a8a3480051d38853000a3a95bf583fa3c  43658185  linha-9-dwg  LINHA%209.dwg
+AC1027  none  b962635aef8d6904824ee851d6cf2779a97e8b21  363906  PROJETOFINALDwg  PROJETO-FINAL-dwg.dwg
+AC1027  none  f041f8589941e9374fcb3f9d1e05b03436106407  2429595  abella-sheet.dwg-2010  abella-sheet.dwg-2010.dwg
+AC1027  none  0040e6fed9010e96e9a78bfc679f2d057e005b69  23410526  ALLPIR  ALL%20PIR.dwg
+AC1021  none  321b6b77a52559df72a5aa79f45f73505298a660  581696  sina_2  %D8%A8%DB%8C%D9%85%D8%A7%D8%B1%D8%B3%D8%AA%D8%A7%D9%86%20%282%29.dwg
+AC1032  none  a6251b9ec3a3199404da77f63086099a8161c0ad  190480  zeichnung-11  Bauteile.dwg
+AC1032  none  51447b7b515700f9f19a820825b7c106acaea4d3  147262  zeichnung-11  Zeichnung1.dwg
+AC1032  none  9b222611ae71f398d28649f066e296a6678f21f0  249027  zeichnung-11  Zeichnung10.dwg
+AC1032  none  7a3788b30a2a37694ee91bd724ad95c6c21ea0dd  300661  zeichnung-11  Zeichnung11.dwg
+AC1032  none  64e40455f46f52bc26d9170134b98e2f68442226  122327  zeichnung-11  Zeichnung2.dwg
+AC1032  none  07faafdce7c55a71d822525c648e7ad9b252f2a5  94336  zeichnung-11  Zeichnung3.dwg
+AC1032  none  f224e89bb3239a9a0080794b99f7cb817e8fea86  53222  zeichnung-11  Zeichnung4.dwg
+AC1032  none  8f529045662bbed6150debbd1dd702af761eee4d  58720  zeichnung-11  Zeichnung5.dwg
+AC1032  none  4aa2e6bb3df2695a9622b04f259be71c6fd69a74  72282  zeichnung-11  Zeichnung6.dwg
+AC1032  none  839d5aebeaae1fc39049c2ed1b13556d7e18e99d  78846  zeichnung-11  Zeichnung6Hilfe.dwg
+AC1032  none  2ee33f976aa87ec7b0c49c06b3e057f11b7cfe0e  107116  zeichnung-11  Zeichnung7.dwg
+AC1032  none  3b18b6660f58c23f4f75e3534c10b0732a3083d8  135295  zeichnung-11  Zeichnung8.dwg
+AC1032  none  4cacd75a9b58358dd56483a7a7900fb5464bf75d  276390  zeichnung-11  Zeichnung9.dwg
+AC1032  none  98c3ae4f48f7a6c18652406ad90870d9886d9b51  240026  zeichnung-11  Zeichnung9_recover.dwg

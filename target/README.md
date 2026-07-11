@@ -907,6 +907,34 @@ HTTP 404) and is not counted as an audited archive. Therefore the published
 libdxfrw releases supply no DWG candidate and close none of the exact-version
 or historical fixture gaps.
 
+Internet Archive metadata was searched directly on 2026-07-11 rather than by
+assuming that an item title implied file content. `title:DWG` returned 161
+identifiers and `subject:DWG` returned 224; 48 overlap, leaving 337 unique
+items. Their static `_files.xml` manifests contain 22 direct DWG files. Exact
+six-byte HTTP Range reads classify them as one `AC1018`, one `AC1021`, one
+`AC1024`, five `AC1027`, and fourteen `AC1032`. Twenty have no item-level
+license and two are CC BY-NC-ND 4.0, so none is a redistributable fixture and
+none has a missing exact-version magic. Names, sizes, source SHA1 values,
+licenses, and headers are recorded in
+`target/internet-archive-dwg-search-audit.txt`.
+
+The broader `description:DWG` query returned 1,331 items. Restricting it to the
+explicitly reusable CC BY 3.0/4.0, CC BY-SA 3.0, CC0, and Public Domain Mark
+license URLs produced 431 identifiers. Eleven overlap the title/subject set,
+so these searches cover 757 unique item identifiers in total. Every one of the
+431 reusable-description item manifests was inspected, and none contains a
+direct `.dwg` file. This is an explicit metadata-search boundary, not a claim
+that Archive.org provides a global filename index or that unindexed archives
+were searched internally.
+
+The separately identified 2002 `voloview2` item has no license URL and contains
+Autodesk Volo View installers, not direct DWGs. Its 24,609,256-byte
+`vve201setup.exe` matches the item SHA1
+`e0b1aed2bd5212c2114b63d9adeb4d290c653c28`. Expanding the installer yields
+28 files and 12 CAB archives; none of the CAB member paths ends in `.dwg`.
+It therefore supplies neither a redistributable fixture nor external
+`R_2000i`/`R_2002` interoperability evidence.
+
 The 2010 Internet Archive item
 [`LibredwgTestSuite0.1`](https://archive.org/details/LibredwgTestSuite0.1)
 was also audited outside the repository. Its 0.1 archive contains 1,335 DWGs:
