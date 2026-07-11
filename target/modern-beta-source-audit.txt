@@ -96,6 +96,35 @@ does not establish that the input is independently sourced, historical, or
 publicly retrievable, and it cannot be run through the strict C comparison.
 R_2000b therefore remains open.
 
+Upstream history for the other modern identifiers
+-------------------------------------------------
+
+Exact LibreDWG upstream commit-index searches were also run for `AC402a`,
+`AC701a`, `AC2100a`, `AC2400a`, `AC2700a`, `AC3200a`, and the corresponding
+`R_2004a`, `R_2004c`, `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`, and
+`R_2018b` enum names.
+
+No file-bearing historical lead was found. The only relevant-looking results
+were code-boundary changes:
+
+  70ed9972d3f72cde4064e9285d409ad14e08d453
+  change versions: add R_2007a, remove unused
+
+This 2023 commit says the version table was checked against ODA. It adds the
+`AC701a` enum/header mapping but contains no DWG, test, filename, hash, or claim
+that an R2007a file was decoded.
+
+  3604335339d9865ec98131d4649a4107219f9be7
+  encode: fix r2010+ object encoding for JSON/DXF import
+
+This 2026 commit changes an encoder guard from `R_2013b` to `R_2010b`; it does
+not identify an R2010b input. Other hits for `R_2004a` similarly use the enum as
+a format-family boundary rather than report a development-version file.
+
+Commit absence is not proof that the formats were never distributed. It only
+establishes that upstream history currently provides no retrievable candidate
+for strict blocking-versus-Stream validation. All seven gaps remain open.
+
 Result and acceptance rule
 --------------------------
 

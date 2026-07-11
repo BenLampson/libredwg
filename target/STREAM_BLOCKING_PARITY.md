@@ -159,8 +159,8 @@ future known version without a Stream route must return
   licensed R2018 strict parity results.
 - `target/modern-beta-source-audit.txt`: exact screening rules and the
   2026-07-11 public catalog, web, and GitHub repository-index searches for the
-  eight active modern gaps, plus the unresolved upstream AC1500 commit lead;
-  no gap was closed by those searches.
+  eight active modern gaps, plus exact upstream commit-history screening and
+  the unresolved AC1500 lead; no gap was closed by those searches.
 - `target/internet-archive-autocad-2022-media-audit.txt`: original AutoCAD 2022
   media classification and 27-file strict parity.
 - `target/internet-archive-dwg-search-audit.txt`: direct Archive.org DWG search

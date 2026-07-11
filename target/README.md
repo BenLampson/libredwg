@@ -16,6 +16,8 @@ nonexistence, so all eight modern gaps remain open.
 An upstream maintainer's 2026 AC1500-related encoder fix confirms that an input
 was used privately, but no fixture, attachment, issue, PR, or provenance is
 publicly linked; it therefore does not close R2000b.
+An exact upstream-history audit for the other seven identifiers found only ODA
+enum-table and version-boundary code changes, not a public historical input.
 
 Original AutoCAD 2007 media contributes 372 clean unique AC1021/R2007 files
 with 713,309 strictly aligned objects and `full=0`. It exposed a missing
