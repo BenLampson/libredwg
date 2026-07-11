@@ -48,12 +48,16 @@ Two Apache-2.0 Kaggle R2018 drawings add 9,670 strictly aligned objects from
 independent sources.  The broader 132-file Kaggle audit found no remaining
 modern development-version identifier.
 
+Original AutoCAD 2022 media contains 232 unique DWG/DWT files.  Its 27 current
+files use AC1032 and pass 7,893-object strict parity; no media file uses the
+experimental AC103-4 identifier.
+
 The maintained status, acceptance definition, exact remaining version gaps and
 evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
 audit record is in `target/README.md`.
 
 Current development priority is DWG 2000 and later.  Real-file parity evidence
-for the remaining R2000/R2004/R2007/R2010/R2013/R2018/R2022 exact variants must
+for the remaining R2000/R2004/R2007/R2010/R2013/R2018 exact variants must
 be completed before actively pursuing additional pre-2000 historical evidence.
 
 The strings API is UTF-8 (WTF8 really, Windows UCS-2 has no surrogate

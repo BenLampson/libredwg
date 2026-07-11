@@ -66,7 +66,7 @@ DWG 2000 and later is the current high-priority target. Work on real historical
 evidence must proceed in this order:
 
 1. `R_2000b`, `R_2004a`, `R_2004c`,
-   `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`, `R_2018b`, and `R_2022b`;
+   `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`, and `R_2018b`;
 2. remaining pre-2000 exact versions and the historical R12 evidence gap.
 
 Do not let searches for early AutoCAD media displace the first group. A version
@@ -87,7 +87,7 @@ R_13b1, R_13b2, R_13c3,
 R_2000b,
 R_2004a, R_2004c,
 R_2007a, R_2007b,
-R_2010b, R_2013b, R_2018b, R_2022b
+R_2010b, R_2013b, R_2018b
 ```
 
 Original AutoCAD 2000i and AutoCAD 2002 media contain 151 DWG paths reducing
@@ -97,6 +97,11 @@ pass strict parity over 150,147 objects. `AC1016`/`R_2000i` and
 product formats. An independently sourced historical R12 file remains
 desirable because `R_12` aliases `R_11` in the enum and cannot be distinguished
 by header bytes alone.
+
+Original AutoCAD 2022 media contains 232 unique DWG/DWT files. All 27 current
+files use `AC1032`/R2018-family format and pass strict parity over 7,893 objects;
+none uses `AC103-4`. `R_2022b` therefore remains a synthetic dispatch guard,
+not a missing historical product format.
 
 Unknown headers return `DWG_ERR_INVALIDDWG` without callbacks or fallback. A
 future known version without a Stream route must return
@@ -116,6 +121,8 @@ future known version without a Stream route must return
   evidence that AutoCAD 2000i/2002 use AC1015, plus 76-file strict parity.
 - `target/kaggle-dwg-audit.txt`: 132-file modern-version classification and two
   licensed R2018 strict parity results.
+- `target/internet-archive-autocad-2022-media-audit.txt`: original AutoCAD 2022
+  media classification and 27-file strict parity.
 - `target/internet-archive-dwg-search-audit.txt`: direct Archive.org DWG search
   boundary and classifications.
 - `target/gnu-release-dwg-audit.txt`: signed GNU release archive evidence.

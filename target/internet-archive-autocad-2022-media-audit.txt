@@ -1,0 +1,73 @@
+Internet Archive AutoCAD 2022 media audit
+==========================================
+
+Audit date: 2026-07-11
+
+Purpose
+-------
+
+Determine whether original AutoCAD 2022 product media emits the experimental
+AC103-4/R_2022b identifier, classify all included DWG and DWT files, and verify
+the current-format files through strict C blocking-versus-Stream parity.
+
+Media
+-----
+
+Item: https://archive.org/details/auto-cad-2022-english-win-64bit-dlm.sfx
+File: AutoCAD_2022_English_Win_64bit_dlm.sfx.exe
+Size: 1,845,389,944 bytes
+SHA1: 3D958C5AAC1E255102F3E45160E8DFE0967B3560
+SHA256: F7C886D879BD311635EBF229B9F5D9B6CE2171C668E905EE83C239FE9BBF2FB9
+
+The Autodesk SFX was run only in documented extraction mode:
+
+  -suppresslaunch -d <isolated audit directory>
+
+The extraction process returned zero and did not launch Setup.exe. AutoCAD and
+its system components were not installed.
+
+Classification
+--------------
+
+The extracted product tree contains 232 unique CAD files: 160 DWGs and 72
+DWTs. Their complete header and internal-version distribution is:
+
+  AC1021/0x1b: 144
+  AC1021/0x1f: 1
+  AC1024/0x1d: 60
+  AC1032/0x21: 27
+
+The old-format files are samples and templates intentionally shipped with the
+product. None of the 232 files uses AC103-4. The 27 current-format files all use
+the normal AC1032 header and internal version 0x21.
+
+This original-product evidence agrees with Autodesk's public DWG version enum,
+which identifies the 2018-through-2022 family as AC1032 and does not define
+AC103-4. LibreDWG retains AC103-4/R_2022b as a synthetic dispatch guard, but it
+is not treated as a missing historical product format.
+
+Strict parity result
+--------------------
+
+All 27 AC1032/0x21 files were tested independently with:
+
+  LIBREDWG_STREAM_TEST_DWG=<extracted DWG or DWT>
+  LIBREDWG_STREAM_TEST_REFS=1
+
+Results:
+
+  passed: 27
+  failed: 0
+  objects: 7,893
+  entities: 2,305
+  non-entities: 5,588
+  Stream decode errors: 0
+  full: 0 for every file
+
+License boundary
+----------------
+
+The item does not provide a data license permitting redistribution of Autodesk
+installation content. No installer, DWG, or DWT is committed. This file records
+the exact media identity, extraction boundary, classification, and strict test
+results as reproducible external evidence.

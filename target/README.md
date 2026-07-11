@@ -25,7 +25,7 @@ ProtocolVNext for stream TDD or validation unless the user explicitly changes
 the scope.
 
 Current version priority is DWG 2000 and later. Complete real-file strict parity
-for the remaining R2000, R2004, R2007, R2010, R2013, R2018, and R2022 exact
+for the remaining R2000, R2004, R2007, R2010, R2013, and R2018 exact
 variants before actively searching for additional pre-2000 historical evidence.
 Older gaps remain recorded and must not be forgotten, but they are the second
 queue rather than the current development focus.
@@ -686,7 +686,7 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream route; mixed evidence | `R_2010b`, `R_2010` | Uses the R2004/2010+ data-section object-map reader with R2010 object headers. Real fixtures cover R2010 and a generated MINSERT fixture covers exact R2010b. AutoCAD 2011/2012 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013, and a generated exact R2013b MINSERT fixture passes 37-object strict parity with `full=0`. The beta object layout is aligned by reading `has_ds_data` from the same R2013b boundary used by the encoder. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2018 and a generated MINSERT fixture covers exact R2018b. AutoCAD 2019/2020/2021 are not separate enum values here. |
-| Pure stream route; generated evidence | `R_2022b` | Uses the R2004/2010+ data-section object-map reader. Current validation uses a generated exact-version R2022b MINSERT fixture because no repository R2022 fixture exists. |
+| Pure stream route; product-family and synthetic evidence | `R_2022b` | Uses the R2004/2010+ data-section object-map reader. Original AutoCAD 2022 media contains 232 unique DWG/DWT files; all 27 current-format files use AC1032/0x21 and pass strict parity, while none uses AC103-4. A generated exact-version R2022b MINSERT fixture remains as a synthetic dispatch guard rather than evidence of a distinct historical product format. |
 | Pure stream route; real R11 plus generated R12 evidence | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, control, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. Real C parity covers 23 R11 DWGs from two independent sources. An ODA 27.1 `ACAD12` conversion adds explicit R12 provenance and covers two entities plus 24 table records. Seventeen external 2010 R12-labelled files add 732-object strict parity after exposing omitted table controls and synthetic block boundaries. Both Stream flag settings are covered by committed pre-R13 tests; per-handle references and `full=0` pass. `R_12` aliases `R_11` in the enum, and no independently sourced historical R12 file is present. |
 
 Version routing is determined from the DWG file header before selecting a stream
@@ -742,7 +742,7 @@ Header magic codes relevant to the current stream target:
 | `AC1024` | `R_2010b` / `R_2010` | Generated beta and real release parity |
 | `AC1027` | `R_2013b` / `R_2013` | Generated beta and real release parity |
 | `AC1032` | `R_2018b` / `R_2018` | Generated beta and real release parity |
-| `AC103-4` | `R_2022b` | Generated exact-version parity |
+| `AC103-4` | `R_2022b` | Synthetic dispatch guard; absent from 232 original AutoCAD 2022 media files |
 
 The evidence labels above are intentional. Generated coverage proves that the
 C writer, blocking reader, and stream reader agree on the generated fixture;
@@ -1084,6 +1084,17 @@ non-entities with zero Stream decode errors and `full=0`. Dataset URLs, archive
 hashes, file hashes, classifications, and the license boundary are recorded in
 `target/kaggle-dwg-audit.txt`.
 
+Original AutoCAD 2022 installation media was extracted with Autodesk's
+`-suppresslaunch` option, without launching its installer. The product tree has
+232 unique CAD files: 160 DWGs and 72 DWTs. The complete set contains 145
+AC1021, 60 AC1024, and 27 AC1032 files. All 27 current AC1032/0x21 files pass
+strict reference parity with 7,893 objects, 2,305 entities, 5,588 non-entities,
+zero Stream decode errors, and `full=0`. No file uses `AC103-4`. This confirms
+the real AutoCAD 2022 product uses the established AC1032/R2018 family and
+reclassifies R_2022b as a synthetic dispatch guard, not an open historical
+product-format gap. Exact media hashes, extraction boundary, and results are in
+`target/internet-archive-autocad-2022-media-audit.txt`.
+
 The proprietary `AC402b` file supplies external real-file parity evidence.
 Blocking and pure Stream both accept it as `R_2004b`; strict Stream
 parity covers 50 objects, including 14 entities and 36 non-entities, references,
@@ -1114,11 +1125,13 @@ none
 Generated-only exact-version support still needing real historical DWG files:
 R_1_3, R_2_0b, R_2_0, R_2_21, R_2_22, R_9c1,
 R_11b1, R_11b2, R_13b1, R_13b2, R_13c3, R_2000b, R_2004a,
-R_2004c, R_2007a, R_2007b, R_2010b, R_2013b, R_2018b,
-R_2022b
+R_2004c, R_2007a, R_2007b, R_2010b, R_2013b, R_2018b
 
 Historical product aliases represented by the shared AC1015 format:
 R_2000i, R_2002 (76 unique files from original product media pass as R_2000)
+
+Experimental identifier absent from audited original product media:
+R_2022b (synthetic AC103-4 guard; AutoCAD 2022 media uses AC1032/0x21)
 
 Pure stream routes with no valid exact-version fixture at all:
 none
@@ -1182,7 +1195,8 @@ R_2007a and R_2007b generated, R_2007 generated multipage and real,
 R_2010b generated, R_2010 real,
 R_2013b generated, R_2013 real,
 R_2018b generated, R_2018 real,
-R_2022b generated
+R_2022b synthetic dispatch guard; original AutoCAD 2022 media uses R_2018
+family format and passes 27-file strict parity
 ```
 
 Development targets from the current state to complete stream parity:
@@ -1190,13 +1204,15 @@ Development targets from the current state to complete stream parity:
 1. Complete the remaining exact-version and historical fixture gaps.
    - First, replace generated-only modern evidence for `R_2000b`, `R_2004a`,
      `R_2004c`, `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`,
-     `R_2018b`, and `R_2022b` with independently sourced real historical DWG
-     files.
+     and `R_2018b` with independently sourced real historical DWG files.
    - Keep the synthetic `R_2000i` and `R_2002` dispatch checks, but do not count
      AC1016/AC1017 as missing historical product formats. Original AutoCAD
      2000i and 2002 media establish that both products use AC1015/R2000. R2004c
      retains a synthetic real-family payload check in addition to its generated
      exact fixture.
+   - Keep the synthetic `R_2022b` dispatch check, but do not count AC103-4 as a
+     missing historical AutoCAD 2022 format. Original product media establishes
+     that AutoCAD 2022 uses AC1032/0x21.
    - After the DWG 2000-and-later queue is complete, replace generated-only
      evidence for `R_1_3`, `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_9c1`,
      `R_11b1`, `R_11b2`, `R_13b1`, `R_13b2`, and `R_13c3` with real historical
