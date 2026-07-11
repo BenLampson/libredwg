@@ -892,6 +892,21 @@ release-version files do not close any exact-version gap. They remain external
 audit evidence and avoid increasing the committed fixture set without changing
 the acceptance boundary.
 
+The complete SourceForge libdxfrw release tree was audited separately because
+release archives can retain test data that is absent from live source-control
+branches. Eleven releases in version directories cover `0.0.1` through `0.5.0`;
+fourteen root releases cover `0.5.3` through `0.6.3`, including `0.6.0-b`.
+Every one of the 25 unique source tarballs has a valid bzip2/tar structure, and
+none contains a `.dwg` member. The `0.5.12` source RPM contains one source
+tarball whose SHA256 is byte-for-byte identical to the root `0.5.12` archive,
+plus packaging metadata, so it adds no independent payload. The exact archive
+names, sizes, and SHA256 values are recorded in
+`target/sourceforge-libdxfrw-sha256.txt`. The apparent non-beta `0.6.0` filename
+found in page metadata has no downloadable file (the official mirror returns
+HTTP 404) and is not counted as an audited archive. Therefore the published
+libdxfrw releases supply no DWG candidate and close none of the exact-version
+or historical fixture gaps.
+
 The 2010 Internet Archive item
 [`LibredwgTestSuite0.1`](https://archive.org/details/LibredwgTestSuite0.1)
 was also audited outside the repository. Its 0.1 archive contains 1,335 DWGs:
