@@ -289,19 +289,6 @@ dwg_decode (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
   return DWG_ERR_INVALIDDWG;
 }
 
-static int
-reject_unsupported_modern_development_stream (const Dwg_Data *restrict dwg,
-                                              int *restrict stream_supported)
-{
-  if (!dwg_stream_version_is_unsupported (dwg->header.from_version))
-    return 0;
-  if (stream_supported)
-    *stream_supported = 0;
-  LOG_ERROR ("DWG stream reader does not support development version %s",
-             dwg_version_type (dwg->header.from_version));
-  return DWG_ERR_NOTYETSUPPORTED;
-}
-
 int
 dwg_decode_stream (Bit_Chain *restrict dat,
                    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
@@ -356,8 +343,8 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         // clang-format on
       }
       refine_from_version (dat, &dwg);
-      error = reject_unsupported_modern_development_stream (&dwg,
-                                                            stream_supported);
+      error = dwg_stream_reject_unsupported_version (
+          dwg.header.from_version, stream_supported);
       if (error)
         {
           dwg_free (&dwg);
@@ -385,8 +372,8 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         // clang-format on
       }
       refine_from_version (dat, &dwg);
-      error = reject_unsupported_modern_development_stream (&dwg,
-                                                            stream_supported);
+      error = dwg_stream_reject_unsupported_version (
+          dwg.header.from_version, stream_supported);
       if (error)
         {
           dwg_free (&dwg);
@@ -415,8 +402,8 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         // clang-format on
       }
       refine_from_version (dat, &dwg);
-      error = reject_unsupported_modern_development_stream (&dwg,
-                                                            stream_supported);
+      error = dwg_stream_reject_unsupported_version (
+          dwg.header.from_version, stream_supported);
       if (error)
         {
           dwg_free (&dwg);
@@ -445,8 +432,8 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         // clang-format on
       }
       refine_from_version (dat, &dwg);
-      error = reject_unsupported_modern_development_stream (&dwg,
-                                                            stream_supported);
+      error = dwg_stream_reject_unsupported_version (
+          dwg.header.from_version, stream_supported);
       if (error)
         {
           dwg_free (&dwg);

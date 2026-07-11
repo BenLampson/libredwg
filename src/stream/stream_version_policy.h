@@ -6,5 +6,7 @@
 #include "dwg.h"
 
 int dwg_stream_version_is_unsupported (Dwg_Version_Type version);
+int dwg_stream_reject_unsupported_version (Dwg_Version_Type version,
+                                           int *stream_supported);
 
 #endif
