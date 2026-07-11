@@ -907,6 +907,32 @@ HTTP 404) and is not counted as an audited archive. Therefore the published
 libdxfrw releases supply no DWG candidate and close none of the exact-version
 or historical fixture gaps.
 
+Official GNU LibreDWG release archives were audited independently of the live
+tree. All 24 formal `.tar.xz` releases from 0.5 through 0.13.3 pass XZ and tar
+integrity checks and have valid detached signatures from fingerprint
+`2895A881D34270FABFE8F747B4F63339E65D6414`. They contain 3,008 DWG paths but
+only 145 unique blobs. Their exact archive hashes, sizes, member counts, and
+verification results are in `target/gnu-release-dwg-audit.txt`.
+
+The 145 unique file headers are one `AC1.40`, two `AC2.10`, two `AC1003`, one
+`AC1004`, two `AC1006`, three `AC1009`, one `AC1012`, four `AC1014`, 24
+`AC1015`, 25 `AC1018`, 19 `AC1021`, 20 `AC1024`, 20 `AC1027`, and 21
+`AC1032`. None has a generated-only or synthetic-only exact-version magic. Six
+release blobs are absent from the current repository: two `AC1015`, three
+`AC1018`, and one `AC1024`. All six pass strict blocking-versus-Stream reference
+parity with `full=0` and no per-object decode errors, covering 51,122 objects,
+48,685 entities, and 2,437 non-entities. They are retained as external signed
+release evidence because importing release-version duplicates would not close
+an exact-version gap.
+
+The three alpha.gnu.org archives (`0.4.900`, `0.4.924`, and `0.4.938`) could
+not be downloaded through the current network path, so their archive signatures
+are not claimed as verified. Their corresponding Git tags are present, however,
+and each tag has 118 DWG paths whose path/blob pairs are identical to tag 0.5.
+The signed 0.5 tar also matches tag 0.5 for all 118 DWG path/blob pairs. This
+proves the alpha-tag DWG tree adds no different sample while keeping the
+unavailable alpha release archives outside the verified-archive boundary.
+
 Internet Archive metadata was searched directly on 2026-07-11 rather than by
 assuming that an item title implied file content. `title:DWG` returned 161
 identifiers and `subject:DWG` returned 224; 48 overlap, leaving 337 unique
