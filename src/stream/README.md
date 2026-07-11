@@ -15,13 +15,13 @@ Current files:
   to a reader whose name states its DWG release range.
 - `stream_read_r13_to_r2002.c`: R13, R14, R2000, R2000i, and R2002 object-map
   reading.
+- `stream_read_r2004_to_r2006_and_r2010_to_r2022.c`: compressed object pages
+  and handle maps shared by the AC1018 and R2010-and-later format ranges.
 
 Planned reader files, migrated one format range at a time:
 
 - `stream_read_r1_to_r11.c`: R1.1 through R11.
-- `stream_read_r2004_to_r2006.c`: the AC1018 format family.
 - `stream_read_r2007.c`: the R2007 handle stream and object routing.
-- `stream_read_r2010_to_r2018.c`: R2010, R2013, and R2018.
 
 Shared compression or bit-reading helpers must be named after the mechanism,
 not called `legacy`, `modern`, or `common`. Public Stream API declarations stay
