@@ -4,6 +4,10 @@ This document defines the active C-side target for the DWG stream work. The
 development target is libredwg C code, and the verification path is C blocking
 read versus C stream read.
 
+For the concise current answer, real-version coverage, remaining exact-version
+gaps, and maintenance rule, see `target/STREAM_BLOCKING_PARITY.md`. Keep that
+status file, this detailed target, and the top-level `README` synchronized.
+
 Scope correction: the active target is not ProtocolVNext and not any downstream
 consumer. Stream TDD is developed and judged on the C side only. Every blocking
 versus stream comparison in this phase means `dwg_read_file` in libredwg C
