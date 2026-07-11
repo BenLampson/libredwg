@@ -8,6 +8,11 @@ For the concise current answer, real-version coverage, remaining exact-version
 gaps, and maintenance rule, see `target/STREAM_BLOCKING_PARITY.md`. Keep that
 status file, this detailed target, and the top-level `README` synchronized.
 
+The latest reproducible search for independently sourced modern beta files is
+recorded in `target/modern-beta-source-audit.txt`. It found identifier
+documentation but no qualifying real file, so all eight modern gaps remain
+open.
+
 Scope correction: the active target is not ProtocolVNext and not any downstream
 consumer. Stream TDD is developed and judged on the C side only. Every blocking
 versus stream comparison in this phase means `dwg_read_file` in libredwg C
@@ -24,11 +29,13 @@ ProtocolVNext is not part of this target. Do not inspect, edit, build, or use
 ProtocolVNext for stream TDD or validation unless the user explicitly changes
 the scope.
 
-Current version priority is DWG 2000 and later. Complete real-file strict parity
-for the remaining R2000, R2004, R2007, R2010, R2013, and R2018 exact
-variants before actively searching for additional pre-2000 historical evidence.
-Older gaps remain recorded and must not be forgotten, but they are the second
-queue rather than the current development focus.
+Current version priority is DWG 2000 and later. The active development queue is
+`R_2000b`, `R_2004a`, `R_2004c`, `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`,
+and `R_2018b`. Do not move active development or evidence-search work to a
+pre-2000 gap until every item in this modern queue either has independently
+sourced real-file strict C blocking-versus-Stream parity with `full=0`, or is
+individually documented as not being a historical public DWG format. Older
+gaps remain recorded and must not be forgotten, but they are the second queue.
 
 Current iteration rule: all TDD and verification work stays in this repository.
 Compare the C blocking reader against the C stream reader only:

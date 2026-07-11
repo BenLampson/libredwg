@@ -1,0 +1,65 @@
+LibreDWG modern beta/development DWG source audit
+=================================================
+
+Audit date: 2026-07-11
+Scope: independently sourced historical files for the active DWG 2000+
+       blocking-versus-Stream parity queue
+
+Active unresolved queue
+-----------------------
+
+R_2000b  AC1500
+R_2004a  AC402a
+R_2004c  AC1018 with internal version 0x18
+R_2007a  AC701a
+R_2007b  AC1021 with internal version 0x1a
+R_2010b  AC1024 with internal version 0x1c
+R_2013b  AC1027 with internal version 0x1e
+R_2018b  AC1032 with internal version 0x20
+
+The first, second, and fourth entries have distinct six-byte file magic. The
+other entries share release-family magic and therefore require the decoded
+common-header version; filename, product year, and six-byte magic alone are
+not sufficient evidence.
+
+Authoritative identifier check
+------------------------------
+
+Autodesk's ObjectARX managed reference lists AC2100a=0x1a,
+AC2400a=0x1c, AC2700a=0x1e, and AC3200a=0x20 in DwgVersion, alongside the
+corresponding final values AC1021=0x1b, AC1024=0x1d, AC1027=0x1f, and
+AC1032=0x21:
+
+https://help.autodesk.com/view/OARX/2026/ENU/?guid=OARX-ManagedRefGuide-Autodesk_AutoCAD_DatabaseServices_DwgVersion
+
+This establishes that the identifiers are part of Autodesk's API contract. It
+does not establish that a public historical DWG carrying any identifier is
+available, and it is not real-file parity evidence.
+
+Public archive catalog audit
+----------------------------
+
+Internet Archive advanced-search metadata was queried for AutoCAD titles and
+descriptions containing beta, and separately for AutoCAD 2000, 2004, 2007,
+2010, 2013, and 2018 media. On 2026-07-11 the beta query returned one item:
+
+  autocad.7z  Autodesk AutoCAD R13 c4 beta #4
+
+That item predates the active queue. The product-year searches returned final
+media, books, training material, and unrelated uploads, but no cataloged beta
+or alpha media for an active modern identifier. Search-engine queries for the
+exact AC2100a, AC2400a, AC2700a, and AC3200a names returned enum/API
+documentation rather than downloadable historical DWG samples.
+
+BetaArchive catalog searches were also attempted for the six product families,
+but its public pages returned a Cloudflare JavaScript challenge. No catalog or
+file claim is derived from that inaccessible result.
+
+Result and acceptance rule
+--------------------------
+
+No active gap is closed by this audit. All eight entries remain unresolved.
+Future candidates must be classified from file contents and then pass the C
+strict comparison between dwg_read_file and dwg_stream_file_ex with zero
+per-object decode errors and full=0. A catalog listing, enum definition,
+synthetic header rewrite, or generated fixture cannot replace that evidence.

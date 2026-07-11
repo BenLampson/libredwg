@@ -62,16 +62,22 @@ Two Apache-2.0 Kaggle R2018 files add 9,670 strictly aligned objects. A broader
 
 ## Development priority
 
-DWG 2000 and later is the current high-priority target. Work on real historical
-evidence must proceed in this order:
+DWG 2000 and later is the current high-priority target. This is a development
+gate, not merely a search preference. Work on real historical evidence must
+proceed in this order:
 
 1. `R_2000b`, `R_2004a`, `R_2004c`,
    `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`, and `R_2018b`;
 2. remaining pre-2000 exact versions and the historical R12 evidence gap.
 
-Do not let searches for early AutoCAD media displace the first group. A version
-leaves either group only after an independently sourced real file passes strict
-C blocking-versus-Stream parity with no fallback.
+Do not move active development or evidence-search work to the second group
+while any first-group item remains unresolved. A first-group version is
+resolved only after an independently sourced real file passes strict C
+blocking-versus-Stream parity with `full=0`, or after evidence for that exact
+identifier is individually recorded and establishes that it was not a
+historical public DWG format. The latter result must not be reported as
+real-file parity. Pre-2000 gaps stay recorded so they become the active queue
+after this modern gate is complete.
 
 ## Remaining exact-version evidence gaps
 
@@ -121,6 +127,9 @@ future known version without a Stream route must return
   evidence that AutoCAD 2000i/2002 use AC1015, plus 76-file strict parity.
 - `target/kaggle-dwg-audit.txt`: 132-file modern-version classification and two
   licensed R2018 strict parity results.
+- `target/modern-beta-source-audit.txt`: exact screening rules and the
+  2026-07-11 public catalog search for the eight active modern gaps; no gap was
+  closed by that search.
 - `target/internet-archive-autocad-2022-media-audit.txt`: original AutoCAD 2022
   media classification and 27-file strict parity.
 - `target/internet-archive-dwg-search-audit.txt`: direct Archive.org DWG search
