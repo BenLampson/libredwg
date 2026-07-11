@@ -39,6 +39,11 @@ full-reader fallback.  This proves alignment for the tested files; it is not a
 claim that every possible DWG or object type in those versions has been
 exhaustively tested.
 
+Original AutoCAD 2000i and 2002 media add 76 unique real DWGs and 150,147
+strictly aligned objects.  Both products store these files as the shared
+`AC1015`/R2000 format; they do not introduce distinct AC1016 or AC1017 DWG
+formats.
+
 The maintained status, acceptance definition, exact remaining version gaps and
 evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
 audit record is in `target/README.md`.

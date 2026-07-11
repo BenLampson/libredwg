@@ -62,7 +62,7 @@ files.
 DWG 2000 and later is the current high-priority target. Work on real historical
 evidence must proceed in this order:
 
-1. `R_2000b`, `R_2000i`, `R_2002`, `R_2004a`, `R_2004c`,
+1. `R_2000b`, `R_2004a`, `R_2004c`,
    `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`, `R_2018b`, and `R_2022b`;
 2. remaining pre-2000 exact versions and the historical R12 evidence gap.
 
@@ -87,11 +87,13 @@ R_2007a, R_2007b,
 R_2010b, R_2013b, R_2018b, R_2022b
 ```
 
-`R_2000i` and `R_2002` have synthetic exact-header parity over a real R2000
-payload, but still need independently sourced historical files. An
-independently sourced historical R12 file also remains desirable because
-`R_12` aliases `R_11` in the enum and cannot be distinguished by header bytes
-alone.
+Original AutoCAD 2000i and AutoCAD 2002 media contain 151 DWG paths reducing
+to 76 unique files. All use the shared `AC1015`/R2000 on-disk format, and all 76
+pass strict parity over 150,147 objects. `AC1016`/`R_2000i` and
+`AC1017`/`R_2002` remain synthetic dispatch guards, not missing historical
+product formats. An independently sourced historical R12 file remains
+desirable because `R_12` aliases `R_11` in the enum and cannot be distinguished
+by header bytes alone.
 
 Unknown headers return `DWG_ERR_INVALIDDWG` without callbacks or fallback. A
 future known version without a Stream route must return
@@ -107,6 +109,8 @@ future known version without a Stream route must return
 - `target/govdocs1-dwg-audit.txt`: independent real R14 evidence.
 - `target/github-objectarx-ac402b-audit.txt`: external real R2004b strict
   parity evidence and its non-redistribution boundary.
+- `target/internet-archive-autocad-2000i-2002-audit.txt`: original-product
+  evidence that AutoCAD 2000i/2002 use AC1015, plus 76-file strict parity.
 - `target/internet-archive-dwg-search-audit.txt`: direct Archive.org DWG search
   boundary and classifications.
 - `target/gnu-release-dwg-audit.txt`: signed GNU release archive evidence.

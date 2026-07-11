@@ -1,0 +1,79 @@
+Internet Archive AutoCAD 2000i and 2002 media audit
+===================================================
+
+Audit date: 2026-07-11
+
+Purpose
+-------
+
+Determine whether real AutoCAD 2000i and AutoCAD 2002 product media contain
+distinct AC1016/AC1017 DWG formats, and verify their actual C blocking-versus-
+Stream behavior without installing either product.
+
+Media
+-----
+
+AutoCAD 2000i:
+
+  Item: https://archive.org/details/auto-desk-auto-cad-2000i-win-2000
+  File: AutoDesk_AutoCAD_2000i-WIN-2000.iso
+  Size: 230,172,672 bytes
+  SHA1: B47D73581613F10986E990B8EDDF1C4479D120A4
+  SHA256: E3C2C906977632CE25A2A577635C20DCF5F1867BF8FB876A7A72F8C347DC8403
+
+AutoCAD 2002 Korean:
+
+  Item: https://archive.org/details/autodesk-autocad-2002-korean
+  File: Autodesk AutoCAD 2002 (Korean).iso
+  Size: 261,543,936 bytes
+  SHA1: D74E8FB2B44F41349AACB483123F4A739DCC251E
+  SHA256: 639B74F54B95B2DCAABA263E12E741DDD78368F6F5911D7E1A0738C955ED6358
+
+Classification
+--------------
+
+The main ACAD1.CAB files were inspected directly. No software was installed.
+
+AutoCAD 2000i contains 75 DWGs. Every file has magic AC1015 and internal DWG
+version 0x17. Their maintenance-version distribution is 0x03: 1, 0x06: 20,
+and 0x08: 54.
+
+AutoCAD 2002 contains 76 DWGs. Every file also has magic AC1015 and internal
+DWG version 0x17. Its distribution is the same 75 byte-identical files plus
+MKMPlan.dwg at maintenance version 0x0A.
+
+Across both product media there are 151 paths and 76 unique DWG blobs. Neither
+media contains AC1016 or AC1017. The real product provenance is 2000i/2002, but
+the on-disk DWG format is the shared AC1015 family that LibreDWG identifies as
+R_2000. AC1016/R_2000i and AC1017/R_2002 remain useful synthetic dispatch
+guards; they are not treated as missing real product formats.
+
+Strict parity result
+--------------------
+
+All 76 unique DWGs were tested independently with:
+
+  LIBREDWG_STREAM_TEST_DWG=<media DWG>
+  LIBREDWG_STREAM_TEST_REFS=1
+
+Results:
+
+  passed: 76
+  failed: 0
+  objects: 150,147
+  entities: 139,047
+  non-entities: 11,100
+  Stream decode errors: 0
+  full: 0 for every file
+
+The AutoCAD 2002-only MKMPlan.dwg is 1,391,891 bytes, SHA256
+9D4B39E326A2A45FF052B93D626D4BD0488D39ED04885B49880CDDC5394600A4,
+and alone covers 14,961 objects, 9,425 entities, and 5,536 non-entities.
+
+License boundary
+----------------
+
+The Archive.org items do not provide a data license that permits importing the
+Autodesk binaries. No ISO or DWG from these media is committed. This file keeps
+the source, hashes, classification, and strict results reproducible as external
+evidence.
