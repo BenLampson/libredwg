@@ -5,8 +5,8 @@ Audit date: 2026-07-11
 Scope: independently sourced historical files for the active DWG 2000+
        blocking-versus-Stream parity queue
 
-Active unresolved queue
------------------------
+Historical identifiers screened
+--------------------------------
 
 R_2000b  AC1500
 R_2004a  AC402a
@@ -94,7 +94,8 @@ no associated pull request, and repository issue searches for `AC1500` and
 This establishes only that the maintainer used some AC1500 input in 2026. It
 does not establish that the input is independently sourced, historical, or
 publicly retrievable, and it cannot be run through the strict C comparison.
-R_2000b therefore remains open.
+At the time of this search R_2000b lacked real-file evidence. The later scope
+decision below classifies it as recognized but deliberately unsupported.
 
 Upstream history for the other modern identifiers
 -------------------------------------------------
@@ -125,13 +126,15 @@ Commit absence is not proof that the formats were never distributed. It only
 establishes that upstream history currently provides no retrievable candidate
 for strict blocking-versus-Stream validation. All seven gaps remain open.
 
-Result and acceptance rule
---------------------------
+Result and subsequent scope decision
+------------------------------------
 
-No active gap is closed by this audit. All eight entries remain unresolved.
-Negative catalog or repository-index search results are insufficient to label
-an identifier as a format that was never historically public. Future candidates
-must be classified from file contents and then pass the C strict comparison
-between dwg_read_file and dwg_stream_file_ex with zero per-object decode errors
-and full=0. A catalog listing, enum definition, synthetic header rewrite, or
-generated fixture cannot replace that evidence.
+This audit found no independently sourced historical file for any of the eight
+identifiers. Negative search results are not proof that a file never existed.
+
+The project owner subsequently removed these development formats from the
+supported Stream product scope. They are now recognized and explicitly return
+DWG_ERR_NOTYETSUPPORTED with no callbacks or fallback. The authoritative policy
+is `target/MODERN_DEVELOPMENT_VERSION_POLICY.md`; searching for these files is
+no longer a completion gate. This file remains as historical decision evidence,
+not as an active backlog.

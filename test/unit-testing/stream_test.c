@@ -3002,6 +3002,90 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
 }
 
 static int
+test_generated_minsert_stream_rejects (Dwg_Version_Type version,
+                                       const char *label)
+{
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Dwg_Stream_Callbacks legacy_callbacks = { 0 };
+  Stream_Stats stats = { 0 };
+  Dwg_Data blocking = { 0 };
+  char path[128];
+  unsigned int flags;
+  int error;
+  int i;
+
+  error
+      = write_generated_minsert_fixture (version, label, path, sizeof (path));
+  if (error)
+    return error;
+
+  error = dwg_read_file (path, &blocking);
+  if (error >= DWG_ERR_CRITICAL || blocking.header.from_version != version
+      || !blocking.num_objects)
+    {
+      printf ("generated %s blocking version failed: error=0x%x "
+              "version=%u expected=%u objects=%lu\n",
+              label, error, (unsigned)blocking.header.from_version,
+              (unsigned)version, (unsigned long)blocking.num_objects);
+      dwg_free (&blocking);
+      remove (path);
+      return 1;
+    }
+  dwg_free (&blocking);
+
+  callbacks.object = stream_object_callback;
+  callbacks.decoded_object = stream_decoded_object_callback;
+  callbacks.decode_error = stream_decode_error_callback;
+  for (i = 0; i < 2; i++)
+    {
+      flags = i ? DWG_STREAM_F_NO_FULL_FALLBACK : 0;
+      memset (&stats, 0, sizeof (stats));
+      callbacks.flags = flags;
+      error = dwg_stream_file_ex (path, &callbacks, &stats);
+      if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+          || stats.lightweight_objects || stats.decoded_objects
+          || stats.decode_error_objects || stats.full_decode_objects)
+        {
+          printf ("generated %s Stream rejection failed: flags=0x%x "
+                  "error=0x%x expected=0x%x objects=%lu lightweight=%lu "
+                  "decoded=%lu decode_errors=%lu full=%lu\n",
+                  label, flags, error, DWG_ERR_NOTYETSUPPORTED,
+                  (unsigned long)stats.num_objects,
+                  (unsigned long)stats.lightweight_objects,
+                  (unsigned long)stats.decoded_objects,
+                  (unsigned long)stats.decode_error_objects,
+                  (unsigned long)stats.full_decode_objects);
+          remove (path);
+          return 1;
+        }
+    }
+
+  memset (&stats, 0, sizeof (stats));
+  legacy_callbacks.object = stream_object_callback;
+  legacy_callbacks.flags = 0;
+  error = dwg_stream_file (path, &legacy_callbacks, &stats);
+  remove (path);
+  if (error != DWG_ERR_NOTYETSUPPORTED || stats.num_objects
+      || stats.lightweight_objects || stats.decoded_objects
+      || stats.decode_error_objects || stats.full_decode_objects)
+    {
+      printf ("generated %s legacy Stream rejection failed: error=0x%x "
+              "expected=0x%x objects=%lu lightweight=%lu decoded=%lu "
+              "decode_errors=%lu full=%lu\n",
+              label, error, DWG_ERR_NOTYETSUPPORTED,
+              (unsigned long)stats.num_objects,
+              (unsigned long)stats.lightweight_objects,
+              (unsigned long)stats.decoded_objects,
+              (unsigned long)stats.decode_error_objects,
+              (unsigned long)stats.full_decode_objects);
+      return 1;
+    }
+
+  printf ("generated %s rejected as unsupported by Stream APIs\n", label);
+  return 0;
+}
+
+static int
 mutate_r2004_section_map_checksum (const char *path,
                                    const BITCODE_RL section_map_address)
 {
@@ -3143,8 +3227,6 @@ test_modern_header_version_stream (void)
       "synthetic R2000i header stream parity ok" },
     { "test/test-data/example_2000.dwg", R_2002, "AC1017", 0x17,
       "synthetic R2002 header stream parity ok" },
-    { "test/test-data/example_2004.dwg", R_2004c, "AC1018", 0x18,
-      "synthetic R2004 beta header stream parity ok" },
   };
   char source_path[1024];
   size_t i;
@@ -4593,38 +4675,31 @@ main (void)
   if (test_generated_minsert_stream_fixture (
           R_13c3, "generated R13c3 MINSERT stream parity ok"))
     return 1;
-  if (test_generated_minsert_stream_fixture (
-          R_2000b, "generated R2000 beta MINSERT stream parity ok"))
+  if (test_generated_minsert_stream_rejects (R_2000b, "R2000 beta MINSERT"))
     return 1;
   if (test_generated_minsert_stream_fixture (
           R_2000, "generated R2000 MINSERT stream parity ok"))
     return 1;
-  if (test_generated_minsert_stream_fixture (
-          R_2004a, "generated R2004 alpha MINSERT stream parity ok"))
+  if (test_generated_minsert_stream_rejects (R_2004a, "R2004 alpha MINSERT"))
     return 1;
   if (test_generated_minsert_stream_fixture (
           R_2004b, "generated R2004 beta MINSERT stream parity ok"))
     return 1;
-  if (test_generated_minsert_stream_fixture (
-          R_2004c, "generated R2004 candidate MINSERT stream parity ok"))
+  if (test_generated_minsert_stream_rejects (R_2004c,
+                                             "R2004 candidate MINSERT"))
     return 1;
-  if (test_generated_minsert_stream_fixture (
-          R_2007a, "generated R2007 alpha MINSERT stream parity ok"))
+  if (test_generated_minsert_stream_rejects (R_2007a, "R2007 alpha MINSERT"))
     return 1;
-  if (test_generated_minsert_stream_fixture (
-          R_2007b, "generated R2007 beta MINSERT stream parity ok"))
+  if (test_generated_minsert_stream_rejects (R_2007b, "R2007 beta MINSERT"))
     return 1;
   if (test_generated_minsert_stream_fixture (
           R_2007, "generated R2007 MINSERT stream parity ok"))
     return 1;
-  if (test_generated_minsert_stream_fixture (
-          R_2010b, "generated R2010 beta MINSERT stream parity ok"))
+  if (test_generated_minsert_stream_rejects (R_2010b, "R2010 beta MINSERT"))
     return 1;
-  if (test_generated_minsert_stream_fixture (
-          R_2013b, "generated R2013 beta MINSERT stream parity ok"))
+  if (test_generated_minsert_stream_rejects (R_2013b, "R2013 beta MINSERT"))
     return 1;
-  if (test_generated_minsert_stream_fixture (
-          R_2018b, "generated R2018 beta MINSERT stream parity ok"))
+  if (test_generated_minsert_stream_rejects (R_2018b, "R2018 beta MINSERT"))
     return 1;
   stream_trace_stage ("test_modern_header_version_stream");
   if (test_modern_header_version_stream ())

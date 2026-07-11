@@ -550,8 +550,8 @@ dwg_stream_file_ex (const char *restrict filename,
           strncpy (magic, (const char *)bit_chain.chain, 10);
           magic[10] = '\0';
           version = dwg_version_hdr_type (magic);
-          LOG_ERROR ("DWG stream reader does not support version code %s "
-                     "(%s): %s",
+          LOG_ERROR ("DWG stream reader does not support input with version "
+                     "code %s (header family %s): %s",
                      magic, dwg_version_type (version), filename);
         }
     }

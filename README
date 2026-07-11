@@ -55,7 +55,8 @@ experimental AC103-4 identifier.
 Original AutoCAD 2007 media adds 372 clean unique AC1021/R2007 DWG/DWT files
 and 713,309 strictly aligned objects.  It also exposed and now guards the
 R2007 Stream classification of OLEFRAME/OLE2FRAME as entities.  The media has
-no AC701a/R2007a or internal 0x1a/R2007b file, so those beta gaps remain open.
+no AC701a/R2007a or internal 0x1a/R2007b file. Those development formats are
+now explicitly outside the supported Stream scope described below.
 
 A private project-owned business corpus adds 20 clean DWGs spanning R2000,
 R2004, R2007, R2010, R2013 and R2018.  All 6,347,881 objects pass strict
@@ -69,24 +70,18 @@ Stream-parity task.  The accepted project-owned corpus is therefore 20/20.
 Per-file blocking/Stream time, peak working set, and object counts for the
 accepted corpus are recorded in `result.md`.
 
-The maintained status, acceptance definition, exact remaining version gaps and
-evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
+The maintained status, acceptance definition, exact unsupported-version policy
+and evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
 audit record is in `target/README.md`.
 
-Current development priority is DWG 2000 and later.  The eight remaining
-modern exact variants -- R2000b, R2004a, R2004c, R2007a, R2007b, R2010b,
-R2013b, and R2018b -- are the active development queue.  Do not move active
-work to pre-2000 evidence gaps until each modern item either has independently
-sourced real-file strict parity or is individually documented as not being a
-historical public DWG format.  Pre-2000 gaps remain tracked as the second queue.
-The reproducible public-source audit now includes exact web, archive-catalog,
-and GitHub repository-index searches; none produced a qualifying file, and a
-zero-result search is not treated as proof that a historical file never existed.
-An upstream 2026 commit mentions decoding an AC1500 input, but publishes no
-fixture or provenance, so it does not close the R2000b historical-file gap.
-The remaining modern identifiers have no upstream commit that publishes or
-identifies a historical input; enum and version-boundary edits are not counted
-as real-file evidence.
+Current product scope supports the formal DWG 2000-and-later formats.  Eight
+historical development formats -- R2000b, R2004a, R2004c, R2007a, R2007b,
+R2010b, R2013b, and R2018b -- are deliberately unsupported by the Stream APIs.
+They are recognized from the file header and required internal version fields,
+then return `DWG_ERR_NOTYETSUPPORTED` before any callback and without blocking
+fallback.  Unknown headers return `DWG_ERR_INVALIDDWG`.  This policy and its
+exact test contract are recorded in
+`target/MODERN_DEVELOPMENT_VERSION_POLICY.md`.
 
 The strings API is UTF-8 (WTF8 really, Windows UCS-2 has no surrogate
 pairs), and encodes to the internal 8-bit or UCS-2 strings, depending

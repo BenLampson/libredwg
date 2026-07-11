@@ -11583,6 +11583,8 @@ EXPORT int dwg_read_file (const char *restrict filename,
 EXPORT int dwg_stream_file (const char *restrict filename,
                             const Dwg_Stream_Callbacks *restrict callbacks,
                             void *restrict user);
+/* Stream deliberately rejects R_2000b, R_2004a, R_2004c, R_2007a, R_2007b,
+   R_2010b, R_2013b and R_2018b with DWG_ERR_NOTYETSUPPORTED. */
 EXPORT int dwg_stream_file_ex (
     const char *restrict filename,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks, void *restrict user);

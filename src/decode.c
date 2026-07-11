@@ -288,6 +288,39 @@ dwg_decode (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
   return DWG_ERR_INVALIDDWG;
 }
 
+static int
+stream_unsupported_modern_development_version (const Dwg_Version_Type version)
+{
+  switch (version)
+    {
+    case R_2000b:
+    case R_2004a:
+    case R_2004c:
+    case R_2007a:
+    case R_2007b:
+    case R_2010b:
+    case R_2013b:
+    case R_2018b:
+      return 1;
+    default:
+      return 0;
+    }
+}
+
+static int
+reject_unsupported_modern_development_stream (const Dwg_Data *restrict dwg,
+                                              int *restrict stream_supported)
+{
+  if (!stream_unsupported_modern_development_version (
+          dwg->header.from_version))
+    return 0;
+  if (stream_supported)
+    *stream_supported = 0;
+  LOG_ERROR ("DWG stream reader does not support development version %s",
+             dwg_version_type (dwg->header.from_version));
+  return DWG_ERR_NOTYETSUPPORTED;
+}
+
 int
 dwg_decode_stream (Bit_Chain *restrict dat,
                    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
@@ -342,6 +375,13 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         // clang-format on
       }
       refine_from_version (dat, &dwg);
+      error = reject_unsupported_modern_development_stream (&dwg,
+                                                            stream_supported);
+      if (error)
+        {
+          dwg_free (&dwg);
+          return error;
+        }
 
       error = read_r13_r2000_meta_data_stream (dat, &dwg, callbacks,
                                                input_mode, user);
@@ -364,6 +404,13 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         // clang-format on
       }
       refine_from_version (dat, &dwg);
+      error = reject_unsupported_modern_development_stream (&dwg,
+                                                            stream_supported);
+      if (error)
+        {
+          dwg_free (&dwg);
+          return error;
+        }
 
       error = read_r2004_meta_data_stream (dat, &dwg, callbacks, input_mode,
                                            user);
@@ -387,6 +434,13 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         // clang-format on
       }
       refine_from_version (dat, &dwg);
+      error = reject_unsupported_modern_development_stream (&dwg,
+                                                            stream_supported);
+      if (error)
+        {
+          dwg_free (&dwg);
+          return error;
+        }
 
       error = read_r2004_meta_data_stream (dat, &dwg, callbacks, input_mode,
                                            user);
@@ -410,6 +464,13 @@ dwg_decode_stream (Bit_Chain *restrict dat,
         // clang-format on
       }
       refine_from_version (dat, &dwg);
+      error = reject_unsupported_modern_development_stream (&dwg,
+                                                            stream_supported);
+      if (error)
+        {
+          dwg_free (&dwg);
+          return error;
+        }
       r2007_hdl_dat.from_version = dat->from_version;
 
       error = read_r2007_meta_data_stream (dat, &r2007_hdl_dat, &dwg,

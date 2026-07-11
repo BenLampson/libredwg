@@ -8,16 +8,11 @@ For the concise current answer, real-version coverage, remaining exact-version
 gaps, and maintenance rule, see `target/STREAM_BLOCKING_PARITY.md`. Keep that
 status file, this detailed target, and the top-level `README` synchronized.
 
-The latest reproducible search for independently sourced modern beta files is
-recorded in `target/modern-beta-source-audit.txt`. It found identifier
-documentation but no qualifying real file. Exact GitHub repository-index
-queries also returned zero repositories; that negative search is not proof of
-nonexistence, so all eight modern gaps remain open.
-An upstream maintainer's 2026 AC1500-related encoder fix confirms that an input
-was used privately, but no fixture, attachment, issue, PR, or provenance is
-publicly linked; it therefore does not close R2000b.
-An exact upstream-history audit for the other seven identifiers found only ODA
-enum-table and version-boundary code changes, not a public historical input.
+The modern Alpha/Beta search and its negative evidence remain recorded in
+`target/modern-beta-source-audit.txt`. The resulting product decision is now
+authoritative in `target/MODERN_DEVELOPMENT_VERSION_POLICY.md`: eight modern
+development formats are recognized but deliberately unsupported by Stream,
+returning `DWG_ERR_NOTYETSUPPORTED` without callbacks or fallback.
 
 Original AutoCAD 2007 media contributes 372 clean unique AC1021/R2007 files
 with 713,309 strictly aligned objects and `full=0`. It exposed a missing
@@ -57,13 +52,10 @@ ProtocolVNext is not part of this target. Do not inspect, edit, build, or use
 ProtocolVNext for stream TDD or validation unless the user explicitly changes
 the scope.
 
-Current version priority is DWG 2000 and later. The active development queue is
-`R_2000b`, `R_2004a`, `R_2004c`, `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`,
-and `R_2018b`. Do not move active development or evidence-search work to a
-pre-2000 gap until every item in this modern queue either has independently
-sourced real-file strict C blocking-versus-Stream parity with `full=0`, or is
-individually documented as not being a historical public DWG format. Older
-gaps remain recorded and must not be forgotten, but they are the second queue.
+Current product priority is formal DWG 2000-and-later support. `R_2000b`,
+`R_2004a`, `R_2004c`, `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`, and
+`R_2018b` are outside the support target because they are development formats.
+Encountering one is an explicit unsupported result, not a parity backlog item.
 
 Current iteration rule: all TDD and verification work stays in this repository.
 Compare the C blocking reader against the C stream reader only:
@@ -155,11 +147,11 @@ cmake --build .\build-codex-stream-tdd --target stream_test
 # generated blocking-versus-stream parity for both. It cross-checks the real
 # R1.4, R2.10, R2.6, R9, R10, and R11 fixtures against the blocking reader and
 # checks generated fixtures for old versions without repository DWG files.
-# Modern exact-version checks include generated R13b1/R13b2/R13c3/R2000b,
-# R2004a/R2004b/R2004c, R2007a/R2007b/R2007,
-# R2010b/R2013b/R2018b/R2022b fixtures and synthetic AC1016/AC1017/R2004c
-# header variants. The generated R2007 release fixture spans multiple object
-# data pages.
+# Modern formal-version checks include generated R2000, R2004b, R2007 and
+# R2022b fixtures plus synthetic AC1016/AC1017 dispatch guards. Generated
+# R2000b, R2004a/R2004c, R2007a/R2007b, R2010b, R2013b, and R2018b fixtures
+# verify explicit DWG_ERR_NOTYETSUPPORTED rejection with no callbacks. The
+# generated R2007 release fixture spans multiple object data pages.
 # An unknown AC9999 header must return DWG_ERR_INVALIDDWG with no callbacks.
 # Old-version entity sections are decoded one object at a time; the tests compare
 # reference snapshots and require at most three resident host entities.
@@ -221,9 +213,8 @@ Smoke requirements:
 - No native crash.
 - Callback abort errors are propagated exactly, even when decoding accumulated
   an earlier noncritical warning.
-- Any known legal version without a stream route returns
-  `DWG_ERR_NOTYETSUPPORTED` without invoking any stream callbacks. There are no
-  such versions in the current `Dwg_Version_Type` enum.
+- The eight excluded modern development versions return
+  `DWG_ERR_NOTYETSUPPORTED` without invoking any stream callbacks.
 - Unknown or invalid version headers return `DWG_ERR_INVALIDDWG` without
   invoking any stream callbacks.
 
@@ -361,20 +352,22 @@ objects=38 decoded=38 r13=38 full=0 file_map=38
 minserts=1 block_owned=3 entmode3=1
 ```
 
-Modern exact-version fixture parity:
+Modern exact-version behavior:
 
 ```text
 Generated C-writer MINSERT fixtures pass exact-version blocking-versus-stream
-parity for R_13b1, R_13b2, R_13c3, R_2000b, R_2000, R_2004a, R_2004b,
-R_2004c, R_2007a, R_2007b, R_2007, R_2010b, R_2013b, R_2018b, and R_2022b.
+parity for R_13b1, R_13b2, R_13c3, R_2000, R_2004b, R_2007, and R_2022b.
+Generated R_2000b, R_2004a, R_2004c, R_2007a, R_2007b, R_2010b, R_2013b,
+and R_2018b fixtures are recognized by the blocking reader and rejected by
+both Stream APIs with `DWG_ERR_NOTYETSUPPORTED`, zero callbacks, and no
+fallback.
 
 The R2007 C writer now emits an R2007 container instead of silently upgrading
 the target to R2010. Its generated fixtures use the exact AC701a/AC1021 header,
 the 0x400 file header, interleaved RS(255,239) system pages, duplicate page and
 section maps, direct uncompressed data pages, and a duplicate trailing file
-header. R2007a and R2007b each pass 38-object strict parity, including fixed
-type 74 OLE2FRAME. The generated
-R2007 release fixture adds 2,000 LINE entities, spans multiple object data
+header. Generated R2007a and R2007b inputs verify explicit unsupported
+rejection. The generated R2007 release fixture adds 2,000 LINE entities, spans multiple object data
 pages, and passes 2,038-object strict parity with `full=0`.
 
 This is C-writer/C-reader evidence for the stream target. CRC64/check-data and
@@ -382,16 +375,14 @@ external AutoCAD/ODA writer interoperability are not claimed by these tests;
 real independently sourced R2007 alpha/beta files are still required for
 historical evidence.
 
-Synthetic header fixtures derived from real family payloads pass for R_2000i,
-R_2002, and R_2004c. The R_2000i and R_2002 fixtures replace the six-byte
-R2000 magic with AC1016 or AC1017; the R_2004c fixture also sets the internal
-dwg_version byte to 0x18. Each blocking read reports the exact expected enum,
-both stream flag settings match the blocking object and decoded-object counts,
-all callbacks report the same source version, and full=0.
+Synthetic header fixtures derived from real family payloads pass for R_2000i
+and R_2002. They replace the six-byte R2000 magic with AC1016 or AC1017. Each
+blocking read reports the exact expected enum, both stream flag settings match
+the blocking object and decoded-object counts, all callbacks report the same
+source version, and full=0.
 
 These synthetic files prove routing, header classification, and family-payload
-parity. For R2004c they do not replace an independently sourced historical
-file. For R2000i/R2002 they guard accepted synthetic identifiers while original
+parity. For R2000i/R2002 they guard accepted synthetic identifiers while original
 product media independently proves that real files use the shared AC1015
 format.
 ```
@@ -515,9 +506,9 @@ reader deliberately preserves the existing tolerant behavior for suspicious but
 historically accepted `handleoff` values; treating those as hard skips broke
 valid C parity on `example_2004.dwg`.
 `dwg_stream_file_ex` distinguishes version routing errors from callback errors
-raised inside an already-selected stream decoder. Every current legal enum
-version has a stream route. Unknown headers return `DWG_ERR_INVALIDDWG`; a
-future known version without a route would return `DWG_ERR_NOTYETSUPPORTED`.
+raised inside an already-selected stream decoder. Every supported enum version
+has a stream route. The eight deliberately excluded modern development versions
+return `DWG_ERR_NOTYETSUPPORTED`; unknown headers return `DWG_ERR_INVALIDDWG`.
 Callback return values are propagated exactly and are not swallowed,
 reinterpreted as fallback requests, or combined with earlier noncritical decode
 warnings. The generated R2004b regression fixture corrupts only the Section Page
@@ -718,12 +709,12 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream route; real fixture evidence | `R_2_10` | Strict C parity covers 17 real files: the original entity/block fixtures plus 15 independent BSD-2-Clause AC2.10 entity files. Coverage includes POLYLINE with four VERTEX records and SEQEND, REPEAT/ENDREP, block sections, table entries, and per-handle references. The Stream reader now treats a zero optional-section start as absent even when its size word contains legacy high-bit flags, matching the blocking reader. No known committed or audited R2.10 fixture currently fails Stream. |
 | Pure stream route; real fixture evidence | `R_2_6`, `R_9`, `R_10` | Strict C parity covers ten R2.6 files, one R9 file, and 19 R10 files. The independent sets add 3DFACE, ATTDEF, ARC, CIRCLE, DIMENSION, INSERT, JUMP, POLYLINE/VERTEX/SEQEND, SHAPE, SOLID, and TEXT evidence. Object/type counts, decoded callbacks, per-handle references, and table fixedtype masks match the blocking reader with `full=0`; R10 also streams UCS, VPORT, and APPID tables. |
 | Partial pure stream support | `R_11b1`, `R_11b2` | The shared pre-R11 reader passes exact-version blocking-vs-stream parity on minimal C-writer LINE fixtures with table-entry coverage, decoded callbacks, `full=0`, and both stream flag settings. No real historical beta DWG fixture is present, so this remains generated coverage. |
-| Pure stream route; mixed evidence | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map reader through `R_2002`. Real fixtures cover R13, R14, and R2000. Original AutoCAD 2000i and 2002 media add 76 unique real AC1015/R2000-family files and 150,147 strictly aligned objects; neither product emits AC1016/AC1017. Generated MINSERT fixtures cover R13b1, R13b2, R13c3, and R2000b. Synthetic exact-header variants retain dispatch regression coverage for R2000i and R2002 with 750 objects and both flag settings. |
-| Pure stream route; mixed evidence | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map reader. Generated exact-version MINSERT fixtures cover R2004a, R2004b, and R2004c with 37 objects, strict references, both stream flag settings, and `full=0`. An external real Autodesk ObjectARX `AC402b` sample covers R2004b with 50-object strict parity; its license prevents committing the binary. Real fixtures cover R2004, and a synthetic exact R2004c header over the real R2004 payload additionally passes 735-object parity. AutoCAD 2005/2006 are not separate enum values here. |
-| Pure stream route; mixed evidence | `R_2007a`, `R_2007b`, `R_2007` | Uses the R2007 object-map reader. Generated exact-version fixtures cover R2007a and R2007b with MINSERT and OLE2FRAME, strict references, both stream flag settings, and `full=0`. The generated R2007 release fixture also covers a multipage object section. Real fixtures cover R2007 release, including 372 clean unique files and 713,309 objects from original AutoCAD 2007 media. That media contains no independently sourced historical R2007a/b file. AutoCAD 2008/2009 are not separate enum values here. |
-| Pure stream route; mixed evidence | `R_2010b`, `R_2010` | Uses the R2004/2010+ data-section object-map reader with R2010 object headers. Real fixtures cover R2010 and a generated MINSERT fixture covers exact R2010b. AutoCAD 2011/2012 are not separate enum values here. |
-| Pure stream route; mixed evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013, and a generated exact R2013b MINSERT/OLE2FRAME fixture passes 38-object strict parity with `full=0`. The beta object layout is aligned by reading `has_ds_data` from the same R2013b boundary used by the encoder. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
-| Pure stream route; mixed evidence | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2018 and a generated MINSERT fixture covers exact R2018b. AutoCAD 2019/2020/2021 are not separate enum values here. |
+| Mixed policy | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Real fixtures cover R13, R14, and R2000. R13 development versions retain generated Stream coverage. R2000b is recognized but deliberately returns `DWG_ERR_NOTYETSUPPORTED`. Original AutoCAD 2000i and 2002 media use AC1015/R2000; AC1016/AC1017 remain supported synthetic dispatch guards. |
+| Mixed policy | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | R2004a and R2004c are recognized development formats and explicitly unsupported. R2004b remains supported because an external real Autodesk ObjectARX AC402b sample passes strict parity. Real fixtures cover formal R2004. AutoCAD 2005/2006 are not separate enum values here. |
+| Mixed policy | `R_2007a`, `R_2007b`, `R_2007` | R2007a and R2007b are recognized development formats and explicitly unsupported. Generated and 372 original-media files cover formal R2007; the generated release fixture spans multiple object pages. AutoCAD 2008/2009 are not separate enum values here. |
+| Mixed policy | `R_2010b`, `R_2010` | R2010b is recognized and explicitly unsupported. Real fixtures cover formal R2010. AutoCAD 2011/2012 are not separate enum values here. |
+| Mixed policy | `R_2013b`, `R_2013` | R2013b is recognized and explicitly unsupported. Real fixtures cover formal R2013. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
+| Mixed policy | `R_2018b`, `R_2018` | R2018b is recognized and explicitly unsupported. Real fixtures cover formal R2018. AutoCAD 2019/2020/2021 are not separate enum values here. |
 | Pure stream route; product-family and synthetic evidence | `R_2022b` | Uses the R2004/2010+ data-section object-map reader. Original AutoCAD 2022 media contains 232 unique DWG/DWT files; all 27 current-format files use AC1032/0x21 and pass strict parity, while none uses AC103-4. A generated exact-version R2022b MINSERT fixture remains as a synthetic dispatch guard rather than evidence of a distinct historical product format. |
 | Pure stream route; real R11 plus generated R12 evidence | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, control, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. Real C parity covers 23 R11 DWGs from two independent sources. An ODA 27.1 `ACAD12` conversion adds explicit R12 provenance and covers two entities plus 24 table records. Seventeen external 2010 R12-labelled files add 732-object strict parity after exposing omitted table controls and synthetic block boundaries. Both Stream flag settings are covered by committed pre-R13 tests; per-handle references and `full=0` pass. `R_12` aliases `R_11` in the enum, and no independently sourced historical R12 file is present. |
 
@@ -768,18 +759,18 @@ Header magic codes relevant to the current stream target:
 | `AC1012` | `R_13` | Real fixture parity |
 | `AC1013` | `R_13c3` | Generated exact-version parity |
 | `AC1014` | `R_14` | Real fixture parity |
-| `AC1500` | `R_2000b` | Generated exact-version parity |
+| `AC1500` | `R_2000b` | Recognized; Stream returns `DWG_ERR_NOTYETSUPPORTED` |
 | `AC1015` | `R_2000` | Real fixture parity, including original AutoCAD 2000i and 2002 media |
 | `AC1016` | `R_2000i` | Synthetic dispatch guard; original 2000i media uses AC1015 |
 | `AC1017` | `R_2002` | Synthetic dispatch guard; original 2002 media uses AC1015 |
-| `AC402a` | `R_2004a` | Generated exact-version parity |
+| `AC402a` | `R_2004a` | Recognized; Stream returns `DWG_ERR_NOTYETSUPPORTED` |
 | `AC402b` | `R_2004b` | External real-file strict parity plus generated exact-version parity; binary not redistributable |
-| `AC1018` | `R_2004c` / `R_2004` | Internal version refines the enum; generated and synthetic candidate parity plus real release parity |
-| `AC701a` | `R_2007a` | Generated exact-version parity; no real historical fixture |
-| `AC1021` | `R_2007b` / `R_2007` | Internal version refines the enum; generated beta parity plus generated multipage and real release parity |
-| `AC1024` | `R_2010b` / `R_2010` | Generated beta and real release parity |
-| `AC1027` | `R_2013b` / `R_2013` | Generated beta and real release parity |
-| `AC1032` | `R_2018b` / `R_2018` | Generated beta and real release parity |
+| `AC1018` | `R_2004c` / `R_2004` | Internal version distinguishes unsupported candidate from supported real release |
+| `AC701a` | `R_2007a` | Recognized; Stream returns `DWG_ERR_NOTYETSUPPORTED` |
+| `AC1021` | `R_2007b` / `R_2007` | Internal version distinguishes unsupported beta from supported generated/real release |
+| `AC1024` | `R_2010b` / `R_2010` | Internal version distinguishes unsupported beta from supported real release |
+| `AC1027` | `R_2013b` / `R_2013` | Internal version distinguishes unsupported beta from supported real release |
+| `AC1032` | `R_2018b` / `R_2018` | Internal version distinguishes unsupported beta from supported real release |
 | `AC103-4` | `R_2022b` | Synthetic dispatch guard; absent from 232 original AutoCAD 2022 media files |
 
 The evidence labels above are intentional. Generated coverage proves that the
@@ -1116,7 +1107,8 @@ The public Kaggle dataset catalog was also searched for DWG and AutoCAD data.
 Three datasets supplied 132 DWGs: one unknown-license set has 130 files spanning
 AC1015, AC1018, AC1021, AC1024, AC1027, and AC1032, while two Apache-2.0 sets
 each add one AC1032/R2018 file. Internal version bytes were checked for all 132;
-none matches a remaining modern development target. Both licensed R2018 files
+none matches one of the subsequently excluded modern development identifiers.
+Both licensed R2018 files
 pass strict reference parity, adding 9,670 objects, 6,606 entities, and 3,064
 non-entities with zero Stream decode errors and `full=0`. Dataset URLs, archive
 hashes, file hashes, classifications, and the license boundary are recorded in
@@ -1148,22 +1140,22 @@ redistributable regression fixture. Reproducible source, hash, result, and
 license-boundary details are in `target/github-objectarx-ac402b-audit.txt`.
 
 The important distinction is that a successful blocking read elsewhere does not
-count as stream support. Every current legal enum version now has an explicit
-stream route. A future known version without a route must fail clearly with
-`DWG_ERR_NOTYETSUPPORTED`, while an unknown header fails with
+count as stream support. Eight recognized modern development versions are
+deliberately unsupported. They fail clearly with `DWG_ERR_NOTYETSUPPORTED`,
+while an unknown header fails with
 `DWG_ERR_INVALIDDWG`; neither case may load the whole file through
 `dwg_read_file`.
 
 The explicit missing pure-stream route list is therefore:
 
 ```text
-Current legal Dwg_Version_Type versions without a pure stream route:
-none
+Recognized versions deliberately unsupported by Stream policy:
+R_2000b, R_2004a, R_2004c, R_2007a, R_2007b,
+R_2010b, R_2013b, R_2018b
 
 Generated-only exact-version support still needing real historical DWG files:
 R_1_3, R_2_0b, R_2_0, R_2_21, R_2_22, R_9c1,
-R_11b1, R_11b2, R_13b1, R_13b2, R_13c3, R_2000b, R_2004a,
-R_2004c, R_2007a, R_2007b, R_2010b, R_2013b, R_2018b
+R_11b1, R_11b2, R_13b1, R_13b2, R_13c3
 
 Historical product aliases represented by the shared AC1015 format:
 R_2000i, R_2002 (76 unique files from original product media pass as R_2000)
@@ -1171,14 +1163,14 @@ R_2000i, R_2002 (76 unique files from original product media pass as R_2000)
 Experimental identifier absent from audited original product media:
 R_2022b (synthetic AC103-4 guard; AutoCAD 2022 media uses AC1032/0x21)
 
-Pure stream routes with no valid exact-version fixture at all:
+Supported pure stream routes with no valid exact-version fixture at all:
 none
 
-Known blocking-success/Stream-failure fixtures in the committed regression set,
+Unexpected blocking-success/Stream-failure fixtures in the committed regression set,
 the audited licensed GitHub and readable GitLab sets, the Debian-source set, or
 the Govdocs1 set, historical AutoCAD media sets, externally checked proprietary
 AC402b sample, and Internet Archive R12-labelled set:
-none
+none; the eight policy exclusions are expected `DWG_ERR_NOTYETSUPPORTED`
 
 Strict real-file counts for the expanded historical families:
 R_1_4: 25
@@ -1225,33 +1217,33 @@ R_11 generated coverage plus 23 real R11 fixtures from two independent sources,
 R_12 ODA 27.1 `ACAD12` fixture coverage with 26 decoded objects,
 R_13b1 and R_13b2 generated, R_13 real, R_13c3 generated,
 R_14,
-R_2000b generated; R_2000 real, including 76 unique original AutoCAD 2000i
+R_2000b recognized and explicitly unsupported; R_2000 real, including 76 unique original AutoCAD 2000i
 and 2002 media files; R_2000i and R_2002 synthetic dispatch guards,
-R_2004a and R_2004c generated, R_2004b external real plus generated,
-R_2004c also synthetic, R_2004 real,
-R_2007a and R_2007b generated, R_2007 generated multipage and real,
-R_2010b generated, R_2010 real,
-R_2013b generated, R_2013 real,
-R_2018b generated, R_2018 real,
+R_2004a and R_2004c recognized and explicitly unsupported,
+R_2004b external real plus generated, R_2004 real,
+R_2007a and R_2007b recognized and explicitly unsupported,
+R_2007 generated multipage and real,
+R_2010b recognized and explicitly unsupported, R_2010 real,
+R_2013b recognized and explicitly unsupported, R_2013 real,
+R_2018b recognized and explicitly unsupported, R_2018 real,
 R_2022b synthetic dispatch guard; original AutoCAD 2022 media uses R_2018
 family format and passes 27-file strict parity
 ```
 
 Development targets from the current state to complete stream parity:
 
-1. Complete the remaining exact-version and historical fixture gaps.
-   - First, replace generated-only modern evidence for `R_2000b`, `R_2004a`,
-     `R_2004c`, `R_2007a`, `R_2007b`, `R_2010b`, `R_2013b`,
-     and `R_2018b` with independently sourced real historical DWG files.
+1. Preserve the explicit modern development-version policy.
+   - Keep `R_2000b`, `R_2004a`, `R_2004c`, `R_2007a`, `R_2007b`,
+     `R_2010b`, `R_2013b`, and `R_2018b` recognized but unsupported.
+   - Do not reopen historical-file searching for those versions as a product
+     completion gate unless the project owner explicitly changes scope.
    - Keep the synthetic `R_2000i` and `R_2002` dispatch checks, but do not count
      AC1016/AC1017 as missing historical product formats. Original AutoCAD
-     2000i and 2002 media establish that both products use AC1015/R2000. R2004c
-     retains a synthetic real-family payload check in addition to its generated
-     exact fixture.
+     2000i and 2002 media establish that both products use AC1015/R2000.
    - Keep the synthetic `R_2022b` dispatch check, but do not count AC103-4 as a
      missing historical AutoCAD 2022 format. Original product media establishes
      that AutoCAD 2022 uses AC1032/0x21.
-   - After the DWG 2000-and-later queue is complete, replace generated-only
+   - As a non-blocking historical-evidence backlog, replace generated-only
      evidence for `R_1_3`, `R_2_0b`, `R_2_0`, `R_2_21`, `R_2_22`, `R_9c1`,
      `R_11b1`, `R_11b2`, `R_13b1`, `R_13b2`, and `R_13c3` with real historical
      DWG fixtures.
@@ -1272,17 +1264,18 @@ Development targets from the current state to complete stream parity:
    - The pure stream path should keep the native side incremental.
    - Downstream aggregation is not part of this C-side acceptance check.
 
-The project status is: every current legal `Dwg_Version_Type` has a C pure
-stream route. C stream parity is real for the modern families and has real
+The project status is: formal modern release formats have C pure Stream routes.
+The eight listed modern development formats are recognized and explicitly
+unsupported. C Stream parity is real for the modern release families and has
+real
 pre-R13 coverage for R1.4, R2.10, R2.6, R9, R10, and R11. Generated coverage
 additionally reaches R1.1-R1.3, R2.0 beta, R2.0, R2.21, R2.22, R2.4, R2.5,
-R9c1, R11b1, R11b2, R13b1, R13b2, R13c3, R2000b, R2004a/b/c,
-R2007a/b, R2010b, R2013b, R2018b, and R2022b. Generated multipage coverage
+R9c1, R11b1, R11b2, R13b1, R13b2, R13c3, R2004b, and R2022b. Generated
+multipage coverage
 also reaches R2007 release. Synthetic exact-header parity reaches R2000i,
-R2002, and R2004c. Every current enum now has at least one valid exact-version
-fixture accepted by the blocking reader and the pure stream reader. Complete
-historical evidence coverage is not done: the generated, synthetic, and
-historical exact-version gaps above remain open. There is currently no known
+R2002. Generated exact-version fixtures prove deterministic unsupported behavior
+for all eight modern policy exclusions. Complete historical evidence coverage
+for supported old formats is not done. There is currently no unexpected known
 blocking-success/Stream-failure fixture in the committed set, the broader
 licensed GitHub audit, the readable GitLab audit, the Debian-source audit, or
 the externally checked AC402b and Internet Archive samples.

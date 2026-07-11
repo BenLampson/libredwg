@@ -45,7 +45,7 @@ The 130-file unlicensed dataset contains:
   AC1032: 2
 
 Internal DWG-version bytes were checked for every file. None matches the
-remaining modern development targets R_2000b, R_2004a, R_2004c, R_2007a,
+subsequently excluded modern development identifiers R_2000b, R_2004a, R_2004c, R_2007a,
 R_2007b, R_2010b, R_2013b, R_2018b, or R_2022b.
 
 The two Apache-2.0 datasets each contain one AC1032 file with internal version
