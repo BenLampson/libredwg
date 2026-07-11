@@ -70,10 +70,18 @@ strictly aligned objects across R2000, R2004, R2007, R2010, R2013, and R2018.
 Every file reports zero decode errors and `full=0`. Identifying source details
 and binaries remain private and are not committed.
 
-One additional private R2004 business file is a dedicated open investigation:
-it reports structural warning 0x40 and does not currently produce a comparable
-blocking baseline in the strict harness. It is excluded from parity totals and
-must be resolved separately; the clean R2004 results do not close it.
+One additional private R2004 file reports structural warning 0x40 and does not
+produce a comparable blocking baseline in the strict harness. The project
+owner classifies it as an abnormal input outside the supported business corpus,
+so it is an explicit exclusion rather than an open Stream-parity task. Excluding
+that file, the accepted project-owned corpus passes 20/20.
+
+`result.md` records a fresh per-file benchmark of those 20 accepted inputs.
+Across 1,012,448,531 bytes and 6,347,881 objects, the single-run warm-cache
+totals were 46.152 seconds for blocking and 49.831 seconds for Stream. The
+largest per-file peak working sets were 17,674 MiB for blocking and 2,680 MiB
+for Stream. These measurements describe this machine and corpus, not a general
+performance guarantee.
 
 ## Development priority
 
@@ -144,6 +152,8 @@ future known version without a Stream route must return
   media classification, 372-file strict parity, and warning-file exclusions.
 - `target/project-owned-dwg-corpus-audit.txt`: privacy-safe aggregate evidence
   for the 20-file, 6,347,881-object project-owned business corpus.
+- `result.md`: privacy-safe per-file IDs, blocking/Stream elapsed time, peak
+  working set, and object counts for the accepted 20-file corpus.
 - `target/kaggle-dwg-audit.txt`: 132-file modern-version classification and two
   licensed R2018 strict parity results.
 - `target/modern-beta-source-audit.txt`: exact screening rules and the

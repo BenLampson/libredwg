@@ -27,9 +27,12 @@ real business DWGs across R2000, R2004, R2007, R2010, R2013, and R2018. All
 errors and `full=0`. One additional structurally warned R2004 input is excluded.
 No source file or identifying path is committed; aggregate evidence and the
 privacy boundary are recorded in `target/project-owned-dwg-corpus-audit.txt`.
-The project owner has reserved that warned R2004 input as a separate decoder
-investigation. It remains explicitly open until its warning, blocking result,
-Stream behavior, and strict acceptance are resolved and documented.
+The project owner classifies that warned input as an abnormal file outside the
+supported business corpus. It is retained only as an exclusion record, not as
+an open decoder or Stream-parity task. The accepted project-owned corpus is
+20/20 and all 20 files pass.
+Per-file blocking/Stream elapsed time, process peak working set, and object
+counts are recorded in `result.md`.
 
 Scope correction: the active target is not ProtocolVNext and not any downstream
 consumer. Stream TDD is developed and judged on the C side only. Every blocking

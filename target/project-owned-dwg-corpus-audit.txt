@@ -53,29 +53,31 @@ Strict object totals by version:
   R2013:  247813
   R2018:  288602
 
-One additional R2004 file reports structural warning 0x40 during probing. It
-is excluded from the strict-pass totals rather than being silently counted as
-parity evidence. The warning file remains project material and is not named or
-copied here.
+One additional R2004 file reports structural warning 0x40 during probing. The
+normal blocking baseline produces no comparable object set in the strict
+harness, while a Stream-only diagnostic can traverse a large object sequence.
+The project owner also reports that forcing this file open previously consumed
+32 GB of memory. These observations are recorded without claiming a completed
+corruption diagnosis.
 
-Dedicated R2004 warning fixture
--------------------------------
+Abnormal R2004 input exclusion
+------------------------------
 
-The project owner has designated that warned R2004 file for separate follow-up.
-Its private local identity is known outside the repository. Initial strict
-testing does not establish blocking-versus-Stream parity: the normal blocking
-baseline produces no comparable object set in the strict harness, while a
-Stream-only diagnostic can traverse a large object sequence. The diagnostic
-was stopped after classification; no success result is claimed.
+The project owner classifies this file as an abnormal input and excludes it
+from the supported business corpus. It is not a pending decoder investigation,
+not a Stream-parity completion gate, and must not reduce the accepted corpus
+result below 20/20. Its private identity remains known outside the repository;
+the filename, path, binary, and content hash are not committed here.
 
-Keep this item open as a dedicated decoder investigation. Completion requires
-all of the following:
+This exclusion does not claim that arbitrary malformed DWGs are supported. If
+malformed-input resource limits become a separate future target, use this file
+only under that explicitly changed scope.
 
-1. identify the exact source of warning 0x40 and the blocking baseline result;
-2. define whether the file is valid, recoverable, or structurally corrupt;
-3. make blocking and Stream behavior agree under the applicable policy;
-4. run the strict C comparison with zero unaccounted decode errors and full=0;
-5. update this record before counting the file in project-corpus parity.
+Per-file performance record
+---------------------------
 
-Do not let the other five clean R2004 files or the broader 20-file result close
-this dedicated item.
+`result.md` records privacy-safe per-file IDs for the 20 accepted inputs, with
+blocking and pure Stream elapsed time, process peak working set, and object
+counts. The benchmark totals reproduce this audit's 6,347,881 objects,
+5,410,837 entities, 937,044 non-entities, zero Stream decode errors, and
+20/20 accepted-file result.
