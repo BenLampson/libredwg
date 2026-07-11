@@ -970,7 +970,11 @@ reference parity with `full=0` and no decode errors: 185 objects for R1.1 and
 1,522 for R1.2. None duplicates a repository fixture. This replaces
 generated-only status for both versions, while `R_1_3` remains an explicit
 real-historical-file gap. This item also has no license URL, so its binaries
-remain external-only evidence.
+remain external-only evidence. A separate Victor Pulse D005 AutoCAD-86
+training disk was also checked: all 18 real members are `AC1.2`, five duplicate
+the first archive and 13 are new, and all pass 1,664-object strict parity. Its
+18 AppleDouble `._*.DWG` sidecars are not drawings. It therefore expands R1.2
+evidence but confirms no `AC1.3` sample in the two available training sets.
 
 A separate 1986 student work disk contains 20 `AC2.10` files. Nineteen pass
 strict parity, covering 3,867 objects; `POLYLINE.DWG` fails the blocking reader
