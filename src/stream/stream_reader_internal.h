@@ -5,6 +5,8 @@
 
 #include "decode.h"
 
+#define DWG_R13_MAX_HEADER_SIZE 2048
+
 void dwg_refine_from_version (Bit_Chain *dat, Dwg_Data *dwg);
 
 int dwg_stream_read_r13_to_r2002 (

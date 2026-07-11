@@ -9,13 +9,16 @@ Current files:
 - `stream_version_policy.c`: the single list of versions deliberately rejected
   by Stream APIs.
 - `stream_callbacks.c`: decoded-object and decode-error callback handling.
+- `stream_object_helpers.c`: object bounds, record-size, entity classification,
+  and handle-offset checks shared by multiple format readers.
 - `stream_reader.c`: header detection, exact-version refinement, and dispatch
   to a reader whose name states its DWG release range.
+- `stream_read_r13_to_r2002.c`: R13, R14, R2000, R2000i, and R2002 object-map
+  reading.
 
 Planned reader files, migrated one format range at a time:
 
 - `stream_read_r1_to_r11.c`: R1.1 through R11.
-- `stream_read_r13_to_r2002.c`: R13, R14, R2000, R2000i, and R2002.
 - `stream_read_r2004_to_r2006.c`: the AC1018 format family.
 - `stream_read_r2007.c`: the R2007 handle stream and object routing.
 - `stream_read_r2010_to_r2018.c`: R2010, R2013, and R2018.
