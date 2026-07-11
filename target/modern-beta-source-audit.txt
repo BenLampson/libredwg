@@ -75,6 +75,27 @@ repository names, descriptions, and other fields indexed by that API. It is
 not a content-level scan of every GitHub blob, and it does not prove that a
 historical file never existed or that no unindexed/private copy exists.
 
+Upstream AC1500 lead
+--------------------
+
+GitHub's commit index returned one relevant LibreDWG upstream commit:
+
+  12cd6e9063fad0114db83c5654efcea665d1dbb5
+  Fix assertion failure in section_move_before for R13 encoding
+  Author date: 2026-06-12
+
+Its message says an AC1500/R2000b input with six R13-family sections exposed an
+encoder assertion while being re-encoded as R13. The commit was made directly
+by upstream maintainer Reini Urban and changes only `src/encode.c`. It contains
+no fixture, filename, hash, source provenance, or test addition. GitHub reports
+no associated pull request, and repository issue searches for `AC1500` and
+`R2000b` return no issue or public attachment.
+
+This establishes only that the maintainer used some AC1500 input in 2026. It
+does not establish that the input is independently sourced, historical, or
+publicly retrievable, and it cannot be run through the strict C comparison.
+R_2000b therefore remains open.
+
 Result and acceptance rule
 --------------------------
 
