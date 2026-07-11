@@ -670,7 +670,7 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Pure stream route; mixed evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013, and a generated exact R2013b MINSERT fixture passes 37-object strict parity with `full=0`. The beta object layout is aligned by reading `has_ds_data` from the same R2013b boundary used by the encoder. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2018 and a generated MINSERT fixture covers exact R2018b. AutoCAD 2019/2020/2021 are not separate enum values here. |
 | Pure stream route; generated evidence | `R_2022b` | Uses the R2004/2010+ data-section object-map reader. Current validation uses a generated exact-version R2022b MINSERT fixture because no repository R2022 fixture exists. |
-| Pure stream route; real R11 plus ODA R12 evidence | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. Real C parity covers 23 R11 DWGs from two independent sources. An ODA 27.1 `ACAD12` conversion adds explicit R12 provenance and covers two entities plus 24 table records. Its table pointers are valid although several table sentinels do not occur at the R11-assumed offsets; blocking and Stream now retain strict bounds while treating a missing table sentinel as noncritical. Both Stream flag settings, per-handle references, and `full=0` pass. `R_12` aliases `R_11` in the enum, and no independently sourced historical R12 file is present. |
+| Pure stream route; real R11 plus generated R12 evidence | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, control, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. Real C parity covers 23 R11 DWGs from two independent sources. An ODA 27.1 `ACAD12` conversion adds explicit R12 provenance and covers two entities plus 24 table records. Seventeen external 2010 R12-labelled files add 732-object strict parity after exposing omitted table controls and synthetic block boundaries. Both Stream flag settings are covered by committed pre-R13 tests; per-handle references and `full=0` pass. `R_12` aliases `R_11` in the enum, and no independently sourced historical R12 file is present. |
 
 Version routing is determined from the DWG file header before selecting a stream
 reader. The C decoder reads the header magic at the start of the file and maps
@@ -853,6 +853,42 @@ two non-DWG files and these exact DWG header counts: `AC1.40` 1, `AC2.10` 2,
 `AC1032` 83. No generated-only or synthetic-only exact-version magic occurred
 in the readable GitLab set.
 
+The 2010 Internet Archive item
+[`LibredwgTestSuite0.1`](https://archive.org/details/LibredwgTestSuite0.1)
+was also audited outside the repository. Its 0.1 archive contains 1,335 DWGs:
+267 each of `AC1012`,
+`AC1014`, `AC1015`, `AC1018`, and `AC1021`, so it adds no missing exact-version
+header. The later `testsuite0.2.tar.gz` contains 187 DWGs. Eighty-five paths
+start with `AC1009`, but they are only 17 unique blobs: the files under the
+`2.5`, `2.6`, `9`, `10`, and `12` directories are byte-identical by basename.
+They therefore cannot be counted as five independent old formats. The archive
+description labels the 17 drawings as empty, LINE, RAY, XLINE, 2D/3D POLYLINE,
+polygon, rectangle, ARC, CIRCLE, donut, SPLINE, ELLIPSE, HATCH, REGION, TEXT,
+and MTEXT cases.
+
+Before the current fix, all 17 R12-labelled unique files were blocking-success
+but Stream-failure cases. Stream omitted ten table control objects and the
+zero-sized synthetic `BLOCK`/`ENDBLK` pair that the blocking pre-R13 decoder
+creates. After emitting those existing decoded objects, all 17 pass strict
+reference parity with `full=0`: 732 objects in total, 29-98 per file, with
+4-71 entities and 25-30 non-entities per file. The regression suite now counts
+the complete blocking object array for pre-R13 fixtures and keys reference
+snapshots by handle, fixedtype, and supertype because old files can reuse a
+handle across different object kinds.
+
+The audit archives have SHA256
+`363A4EEFF081268C78B79FF016FB289C40D4B8B36BC820693A2E9615475D8C71`
+for 0.1 and
+`4D8E5DA30278C07D294115B6D0528955B2B5FF4C57A49A27D3055CF6B277D79D`
+for 0.2. The item metadata currently points to a public-domain license and the
+[contemporaneous test-suite discussion](https://lists.gnu.org/archive/html/libredwg/2010-01/msg00076.html)
+says newly created files should be released to the public domain. However, an
+[earlier message](https://www.mail-archive.com/libredwg%40gnu.org/msg00049.html)
+explicitly rejected the initial 0.1 upload as CC BY-NC, and the 0.2 tarball has
+no embedded data license. The binary files therefore remain external-only audit
+material. They were generated in 2010 and do not close the independently
+sourced historical R12 gap.
+
 The proprietary `AC402b` file was used only as an external interoperability
 check. Blocking and pure Stream both accept it as `R_2004b`; strict Stream
 parity covers 50 objects, including 14 entities and 36 non-entities, references,
@@ -890,7 +926,7 @@ none
 
 Known blocking-success/Stream-failure fixtures in the committed regression set,
 the audited licensed GitHub set, or the externally checked proprietary AC402b
-sample:
+sample and Internet Archive R12-labelled set:
 none
 
 Committed strict real-file counts for the expanded historical families:
@@ -905,6 +941,11 @@ R_12 remaining historical-evidence gap:
 an independently sourced historical R12 DWG file. The committed ODA 27.1
 `ACAD12` fixture supplies explicit R12 provenance from an independent writer,
 but it was generated in 2026 and must not be relabeled as a historical sample.
+The 17 external Internet Archive files were generated in 2010, all five
+purported older-version directory copies collapse to the same 17 `AC1009`
+blobs, and their tarball lacks an embedded data license. They expand external
+R12-labelled interoperability coverage but do not close the historical or
+redistributable-fixture gap.
 `R_12` aliases `R_11` in the enum, so header bytes alone cannot distinguish
 the two releases.
 

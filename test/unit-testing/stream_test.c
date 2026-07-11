@@ -229,9 +229,9 @@ static void snapshot_object_refs (const Dwg_Object *obj,
                                   Stream_Ref_Snapshot *snapshot);
 static void snapshot_block_header_refs (const Dwg_Object *obj,
                                         Stream_Ref_Snapshot *snapshot);
-static int compare_ref_snapshot_handle (const void *a, const void *b);
-static const Stream_Ref_Snapshot *find_ref_snapshot (const Stream_Stats *stats,
-                                                     BITCODE_RLL handle);
+static int compare_ref_snapshot_key (const void *a, const void *b);
+static const Stream_Ref_Snapshot *
+find_ref_snapshot (const Stream_Stats *stats, const Stream_Ref_Snapshot *key);
 static int ref_snapshots_equal (const Stream_Ref_Snapshot *a,
                                 const Stream_Ref_Snapshot *b);
 static void stream_record_decode_error_bucket (
@@ -1599,7 +1599,7 @@ snapshot_object_refs (const Dwg_Object *obj, Stream_Ref_Snapshot *snapshot)
 }
 
 static int
-compare_ref_snapshot_handle (const void *a, const void *b)
+compare_ref_snapshot_key (const void *a, const void *b)
 {
   const Stream_Ref_Snapshot *left = (const Stream_Ref_Snapshot *)a;
   const Stream_Ref_Snapshot *right = (const Stream_Ref_Snapshot *)b;
@@ -1608,21 +1608,25 @@ compare_ref_snapshot_handle (const void *a, const void *b)
     return -1;
   if (left->handle > right->handle)
     return 1;
+  if (left->fixedtype < right->fixedtype)
+    return -1;
+  if (left->fixedtype > right->fixedtype)
+    return 1;
+  if (left->supertype < right->supertype)
+    return -1;
+  if (left->supertype > right->supertype)
+    return 1;
   return 0;
 }
 
 static const Stream_Ref_Snapshot *
-find_ref_snapshot (const Stream_Stats *stats, BITCODE_RLL handle)
+find_ref_snapshot (const Stream_Stats *stats, const Stream_Ref_Snapshot *key)
 {
-  Stream_Ref_Snapshot key;
-
   if (!stats || !stats->baseline_refs || !stats->baseline_ref_count)
     return NULL;
-  memset (&key, 0, sizeof (key));
-  key.handle = handle;
   return (const Stream_Ref_Snapshot *)bsearch (
-      &key, stats->baseline_refs, stats->baseline_ref_count,
-      sizeof (stats->baseline_refs[0]), compare_ref_snapshot_handle);
+      key, stats->baseline_refs, stats->baseline_ref_count,
+      sizeof (stats->baseline_refs[0]), compare_ref_snapshot_key);
 }
 
 static int
@@ -1737,12 +1741,12 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
     }
   if (stats->baseline_refs && object->handle.value)
     {
-      baseline_ref = find_ref_snapshot (stats, object->handle.value);
+      snapshot_object_refs (object, &decoded_ref);
+      baseline_ref = find_ref_snapshot (stats, &decoded_ref);
       if (!baseline_ref)
         stats->decoded_ref_missing++;
       else
         {
-          snapshot_object_refs (object, &decoded_ref);
           stats->decoded_ref_checked++;
           if (!ref_snapshots_equal (baseline_ref, &decoded_ref))
             {
@@ -2547,7 +2551,7 @@ test_stream_file_parity (const char *path, int compare_refs,
     }
   if (baseline.baseline_refs)
     qsort (baseline.baseline_refs, baseline.baseline_ref_count,
-           sizeof (baseline.baseline_refs[0]), compare_ref_snapshot_handle);
+           sizeof (baseline.baseline_refs[0]), compare_ref_snapshot_key);
   streamed.baseline_refs = baseline.baseline_refs;
   streamed.baseline_ref_count = baseline.baseline_ref_count;
   dwg_free (&dwg);
@@ -3522,7 +3526,9 @@ test_pre_r2_legacy_entity_stream (void)
   Stream_Stats stats = { 0 };
   Dwg_Data dwg = { 0 };
   char path[1024];
+  BITCODE_BL baseline_objects = 0;
   BITCODE_BL baseline_entities = 0;
+  BITCODE_BL baseline_non_entities = 0;
   BITCODE_BL i;
   unsigned long long baseline_mask = 0;
   int error;
@@ -3543,10 +3549,14 @@ test_pre_r2_legacy_entity_stream (void)
       return 1;
     }
 
-  baseline_entities = dwg.header_vars.numentities;
+  baseline_objects = dwg.num_objects;
   for (i = 0; i < dwg.num_objects; i++)
     {
       Dwg_Object *obj = &dwg.object[i];
+      if (obj->supertype == DWG_SUPERTYPE_ENTITY)
+        baseline_entities++;
+      else
+        baseline_non_entities++;
       baseline_mask |= pre_r2_legacy_entity_bit (obj->fixedtype);
     }
   dwg_free (&dwg);
@@ -3563,26 +3573,31 @@ test_pre_r2_legacy_entity_stream (void)
   callbacks.decode_error = stream_decode_error_callback;
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
   error = dwg_stream_file_ex (path, &callbacks, &stats);
-  if (error >= DWG_ERR_CRITICAL || !stats.num_objects
-      || stats.num_entities != baseline_entities || stats.num_non_entities
+  if (error >= DWG_ERR_CRITICAL || stats.num_objects != baseline_objects
+      || stats.num_entities != baseline_entities
+      || stats.num_non_entities != baseline_non_entities
       || stats.full_decode_objects
       || stats.lightweight_objects != stats.num_objects
       || stats.prer13_entity_objects != stats.num_objects
       || stats.decoded_objects != stats.num_objects
-      || stats.decoded_entities != stats.num_objects
+      || stats.decoded_entities != baseline_entities
+      || stats.decoded_non_entities != baseline_non_entities
       || stats.max_host_entities > 3 || stats.decode_error_objects
       || (stats.prer2_legacy_fixedtype_mask & expected_mask) != expected_mask)
     {
       printf ("R1.4 legacy stream failed: error=0x%x objects=%lu "
-              "entities=%lu expected_entities=%lu non_entities=%lu "
+              "expected_objects=%lu entities=%lu expected_entities=%lu "
+              "non_entities=%lu expected_non_entities=%lu "
               "lightweight=%lu prer13=%lu full=%lu decoded=%lu "
               "decoded_entities=%lu max_host_entities=%lu decode_errors=%lu "
               "mask=0x%llx "
               "expected=0x%llx\n",
               error, (unsigned long)stats.num_objects,
+              (unsigned long)baseline_objects,
               (unsigned long)stats.num_entities,
               (unsigned long)baseline_entities,
               (unsigned long)stats.num_non_entities,
+              (unsigned long)baseline_non_entities,
               (unsigned long)stats.lightweight_objects,
               (unsigned long)stats.prer13_entity_objects,
               (unsigned long)stats.full_decode_objects,
@@ -3618,7 +3633,9 @@ test_generated_pre_r2_version_stream (void)
       Dwg_Data *gen;
       Dwg_Object *mspace;
       Dwg_Object_BLOCK_HEADER *hdr;
+      BITCODE_BL expected_objects = 0;
       BITCODE_BL expected_entities = 0;
+      BITCODE_BL expected_non_entities = 0;
       BITCODE_BL j;
       int found_line = 0;
       dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
@@ -3673,11 +3690,14 @@ test_generated_pre_r2_version_stream (void)
           remove (path);
           return 1;
         }
+      expected_objects = blocking.num_objects;
       for (j = 0; j < blocking.num_objects; j++)
         {
           Dwg_Object *obj = &blocking.object[j];
-          if (obj->supertype == DWG_SUPERTYPE_ENTITY && obj->size)
+          if (obj->supertype == DWG_SUPERTYPE_ENTITY)
             expected_entities++;
+          else
+            expected_non_entities++;
           if (obj->fixedtype == DWG_TYPE_LINE)
             found_line = 1;
         }
@@ -3697,25 +3717,29 @@ test_generated_pre_r2_version_stream (void)
       callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
       error = dwg_stream_file_ex (path, &callbacks, &stats);
       remove (path);
-      if (error >= DWG_ERR_CRITICAL || stats.num_objects != expected_entities
-          || stats.num_entities != expected_entities || stats.num_non_entities
+      if (error >= DWG_ERR_CRITICAL || stats.num_objects != expected_objects
+          || stats.num_entities != expected_entities
+          || stats.num_non_entities != expected_non_entities
           || stats.full_decode_objects
-          || stats.lightweight_objects != expected_entities
-          || stats.prer13_entity_objects != expected_entities
-          || stats.decoded_objects != expected_entities
+          || stats.lightweight_objects != expected_objects
+          || stats.prer13_entity_objects != expected_objects
+          || stats.decoded_objects != expected_objects
           || stats.decoded_entities != expected_entities
-          || stats.decoded_non_entities || stats.max_host_entities > 3
-          || stats.decode_error_objects)
+          || stats.decoded_non_entities != expected_non_entities
+          || stats.max_host_entities > 3 || stats.decode_error_objects)
         {
           printf ("%s stream failed: error=0x%x objects=%lu expected=%lu "
-                  "entities=%lu non_entities=%lu lightweight=%lu prer13=%lu "
+                  "entities=%lu expected_entities=%lu non_entities=%lu "
+                  "expected_non_entities=%lu lightweight=%lu prer13=%lu "
                   "full=%lu decoded=%lu decoded_entities=%lu "
                   "decoded_non_entities=%lu max_host_entities=%lu "
                   "decode_errors=%lu\n",
                   versions[i].label, error, (unsigned long)stats.num_objects,
-                  (unsigned long)expected_entities,
+                  (unsigned long)expected_objects,
                   (unsigned long)stats.num_entities,
+                  (unsigned long)expected_entities,
                   (unsigned long)stats.num_non_entities,
+                  (unsigned long)expected_non_entities,
                   (unsigned long)stats.lightweight_objects,
                   (unsigned long)stats.prer13_entity_objects,
                   (unsigned long)stats.full_decode_objects,
@@ -3787,18 +3811,17 @@ test_pre_r11_fixture_path (const char *restrict path,
     {
       Dwg_Object *obj = &dwg.object[i];
       snapshot_object_refs (obj, &baseline_refs[i]);
-      if (obj->supertype == DWG_SUPERTYPE_ENTITY && obj->size)
+      if (obj->supertype == DWG_SUPERTYPE_ENTITY)
         {
           expected_entities++;
           if (obj->type < 64)
             expected_type_mask |= 1ULL << obj->type;
         }
-      if (fixture->expected_version >= R_2_0b
-          && obj->supertype != DWG_SUPERTYPE_ENTITY
-          && pre_r13_table_entry_bit (obj->fixedtype))
+      else
         {
           expected_non_entities++;
-          expected_table_mask |= pre_r13_table_entry_bit (obj->fixedtype);
+          if (pre_r13_table_entry_bit (obj->fixedtype))
+            expected_table_mask |= pre_r13_table_entry_bit (obj->fixedtype);
         }
       baseline_legacy_mask |= pre_r2_legacy_entity_bit (obj->fixedtype);
       if (fixture->required_fixedtype
@@ -3806,10 +3829,9 @@ test_pre_r11_fixture_path (const char *restrict path,
         found_required_fixedtype = 1;
     }
   qsort (baseline_refs, baseline_ref_count, sizeof (baseline_refs[0]),
-         compare_ref_snapshot_handle);
+         compare_ref_snapshot_key);
   dwg_free (&dwg);
-  if (!expected_entities
-      || (fixture->expected_version >= R_2_0b && !expected_non_entities)
+  if (!expected_entities || !expected_non_entities
       || (baseline_legacy_mask & fixture->required_legacy_mask)
              != fixture->required_legacy_mask
       || (fixture->required_fixedtype && !found_required_fixedtype))
@@ -4216,9 +4238,11 @@ test_generated_pre_r13_stream_basic (void)
   unsigned long long expected_vertex_mask = (1ULL << 5) - 1;
   unsigned long long expected_table_mask = 0;
   unsigned long long expected_table_fixedtype_mask = (1ULL << 10) - 1;
-  BITCODE_BL expected_entity_count = 71;
+  const BITCODE_BL required_entity_count = 71;
+  BITCODE_BL expected_entity_count = 0;
+  BITCODE_BL expected_non_entity_count = 0;
   BITCODE_BL expected_table_count = 0;
-  BITCODE_BL expected_count = expected_entity_count;
+  BITCODE_BL expected_count = 0;
   BITCODE_BL expected_block_count = 46;
   BITCODE_BL i;
   dwg_point_3d pt1 = { 0.0, 0.0, 0.0 };
@@ -4414,6 +4438,10 @@ test_generated_pre_r13_stream_basic (void)
     }
   for (i = 0; i < dwg.num_objects; i++)
     {
+      if (dwg.object[i].supertype == DWG_SUPERTYPE_ENTITY)
+        expected_entity_count++;
+      else
+        expected_non_entity_count++;
       if (is_pre_r13_table_entry (&dwg.object[i]))
         {
           expected_table_count++;
@@ -4421,9 +4449,13 @@ test_generated_pre_r13_stream_basic (void)
               |= pre_r13_table_entry_bit (dwg.object[i].fixedtype);
         }
     }
-  if (!expected_table_count)
+  if (expected_entity_count < required_entity_count || !expected_table_count)
     {
-      printf ("generated R11 blocking read did not cover table entries\n");
+      printf ("generated R11 blocking coverage too small: entities=%lu "
+              "required=%lu table_entries=%lu\n",
+              (unsigned long)expected_entity_count,
+              (unsigned long)required_entity_count,
+              (unsigned long)expected_table_count);
       dwg_free (&dwg);
       remove (path);
       return 1;
@@ -4438,7 +4470,7 @@ test_generated_pre_r13_stream_basic (void)
       remove (path);
       return 1;
     }
-  expected_count = expected_entity_count + expected_table_count;
+  expected_count = dwg.num_objects;
   dwg_free (&dwg);
 
   callbacks.object = stream_object_callback;
@@ -4448,13 +4480,13 @@ test_generated_pre_r13_stream_basic (void)
   remove (path);
   if (error >= DWG_ERR_CRITICAL || stats.num_objects != expected_count
       || stats.num_entities != expected_entity_count
-      || stats.num_non_entities != expected_table_count
+      || stats.num_non_entities != expected_non_entity_count
       || stats.full_decode_objects
       || stats.lightweight_objects != expected_count
       || stats.prer13_entity_objects != expected_count
       || stats.decoded_objects != expected_count
       || stats.decoded_entities != expected_entity_count
-      || stats.decoded_non_entities != expected_table_count
+      || stats.decoded_non_entities != expected_non_entity_count
       || stats.decode_error_objects
       || stats.r11_table_fixedtype_mask != expected_table_mask
       || stats.r11_block_section_objects != expected_block_count
@@ -4474,7 +4506,8 @@ test_generated_pre_r13_stream_basic (void)
     {
       printf ("generated R11 basic stream failed: error=0x%x objects=%lu "
               "entities=%lu entity_expected=%lu non_entities=%lu "
-              "table_expected=%lu lightweight=%lu prer13=%lu full=%lu "
+              "non_entity_expected=%lu table_entries=%lu lightweight=%lu "
+              "prer13=%lu full=%lu "
               "decoded=%lu decoded_entities=%lu decoded_non_entities=%lu "
               "decode_errors=%lu mask=0x%llx expected=0x%llx "
               "table_mask=0x%llx table_mask_expected=0x%llx "
@@ -4490,6 +4523,7 @@ test_generated_pre_r13_stream_basic (void)
               (unsigned long)stats.num_entities,
               (unsigned long)expected_entity_count,
               (unsigned long)stats.num_non_entities,
+              (unsigned long)expected_non_entity_count,
               (unsigned long)expected_table_count,
               (unsigned long)stats.lightweight_objects,
               (unsigned long)stats.prer13_entity_objects,

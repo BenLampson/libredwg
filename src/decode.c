@@ -8803,22 +8803,37 @@ stream_pre_r13_object_info (const Dwg_Data *restrict dwg,
 }
 
 static int
-is_pre_r13_table_entry_object (const Dwg_Object *restrict obj)
+is_pre_r13_existing_table_object (const Dwg_Object *restrict obj)
 {
-  if (!obj || obj->supertype == DWG_SUPERTYPE_ENTITY)
+  if (!obj)
     return 0;
+
+  if (obj->supertype == DWG_SUPERTYPE_ENTITY)
+    return (obj->fixedtype == DWG_TYPE_BLOCK
+            || obj->fixedtype == DWG_TYPE_ENDBLK)
+           && !obj->address && !obj->size;
 
   switch (obj->fixedtype)
     {
+    case DWG_TYPE_BLOCK_CONTROL:
     case DWG_TYPE_BLOCK_HEADER:
+    case DWG_TYPE_LAYER_CONTROL:
     case DWG_TYPE_LAYER:
+    case DWG_TYPE_STYLE_CONTROL:
     case DWG_TYPE_STYLE:
+    case DWG_TYPE_LTYPE_CONTROL:
     case DWG_TYPE_LTYPE:
+    case DWG_TYPE_VIEW_CONTROL:
     case DWG_TYPE_VIEW:
+    case DWG_TYPE_UCS_CONTROL:
     case DWG_TYPE_UCS:
+    case DWG_TYPE_VPORT_CONTROL:
     case DWG_TYPE_VPORT:
+    case DWG_TYPE_APPID_CONTROL:
     case DWG_TYPE_APPID:
+    case DWG_TYPE_DIMSTYLE_CONTROL:
     case DWG_TYPE_DIMSTYLE:
+    case DWG_TYPE_VX_CONTROL:
     case DWG_TYPE_VX_TABLE_RECORD:
       return 1;
     default:
@@ -8827,7 +8842,7 @@ is_pre_r13_table_entry_object (const Dwg_Object *restrict obj)
 }
 
 static int
-emit_pre_r13_existing_table_entries_stream (
+emit_pre_r13_existing_table_objects_stream (
     Dwg_Data *restrict dwg, const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     const Dwg_Stream_Input_Mode input_mode, void *restrict user,
     const BITCODE_BL object_count, BITCODE_BL *restrict index)
@@ -8840,7 +8855,7 @@ emit_pre_r13_existing_table_entries_stream (
       Dwg_Stream_Object_Info info;
       int callback_error;
 
-      if (!is_pre_r13_table_entry_object (obj))
+      if (!is_pre_r13_existing_table_object (obj))
         continue;
 
       stream_pre_r13_object_info (dwg, obj, *index, input_mode, &info);
@@ -9381,11 +9396,16 @@ read_pre_r2_meta_data_stream (
   start = dwg->header.entities_start;
   end = dwg->header.entities_end;
 
-  return read_pre_r13_entity_section_stream (
+  error = read_pre_r13_entity_section_stream (
       dat, dwg, callbacks, input_mode, user, start, end,
       DWG_SENTINEL_R11_ENTITIES_BEGIN, "DWG_SENTINEL_R11_ENTITIES_BEGIN",
       DWG_SENTINEL_R11_ENTITIES_END, "DWG_SENTINEL_R11_ENTITIES_END",
       ENTITIES_SECTION_INDEX, &index);
+  if (error >= DWG_ERR_CRITICAL || error == DWG_ERR_NOTYETSUPPORTED)
+    return error;
+
+  return emit_pre_r13_existing_table_objects_stream (
+      dwg, callbacks, input_mode, user, dwg->num_objects, &index);
 }
 
 static int
@@ -9511,7 +9531,7 @@ read_pre_r10_meta_data_stream (
         return error;
     }
 
-  return emit_pre_r13_existing_table_entries_stream (
+  return emit_pre_r13_existing_table_objects_stream (
       dwg, callbacks, input_mode, user, dwg->num_objects, &index);
 }
 
@@ -9625,7 +9645,7 @@ read_pre_r13_meta_data_stream (
         return error;
     }
 
-  error = emit_pre_r13_existing_table_entries_stream (
+  error = emit_pre_r13_existing_table_objects_stream (
       dwg, callbacks, input_mode, user, dwg->num_objects, &index);
   if (error)
     return error;
