@@ -1727,9 +1727,9 @@ read_R2004_section_info (Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
   Bit_Chain dec = { 0 };
   BITCODE_BL i, j;
   int error;
-  const uint32_t max_decomp_size = get_max_r2004_decomp_size ();
+  const uint32_t configured_max_decomp_size = get_max_r2004_decomp_size ();
 
-  if (decomp_data_size > max_decomp_size
+  if (decomp_data_size > configured_max_decomp_size
       && (decomp_data_size > 8 * comp_data_size || comp_data_size > dat->size))
     {
       LOG_ERROR ("Invalid r2004_header.decomp_data_size %" PRIu32,

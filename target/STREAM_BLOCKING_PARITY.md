@@ -92,6 +92,8 @@ object combination never represented by a test file.
   `stream_test_r13_to_r2022.c`, and `stream_test_r1_to_r11.c`.
 - `result.md`: Chinese 20-file business result and benchmark.
 - `target/project-owned-dwg-corpus-audit.txt`: aggregate private corpus audit.
+- `target/LARGE_R2004_3F_00.md`: separate large-R2004 result, decompression-cap
+  history, Stream evidence, and blocking-reader safety boundary.
 - `target/modern-beta-source-audit.txt`: retained historical search and decision
   background; it is no longer a completion backlog.
 - `target/internet-archive-autocad-2000i-2002-audit.txt`: AC1015 product-family

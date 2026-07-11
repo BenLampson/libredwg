@@ -70,6 +70,14 @@ Stream-parity task.  The accepted project-owned corpus is therefore 20/20.
 Per-file blocking/Stream time, peak working set, and object counts for the
 accepted corpus are recorded in `result.md`.
 
+The known large R2004 file `3F.00.dwg` is not part of that normal parity
+corpus.  Its `AcDbObjects` section expands beyond the blocking reader's default
+790 MiB safety cap.  The pure C Stream reader handles it incrementally without
+fallback.  Operators who intentionally need the blocking reader may raise the
+cap with, for example, `LIBREDWG_MAX_DECOMP_SIZE=0x7fffffff`, but the blocking
+path can then require very large amounts of memory.  See
+`target/LARGE_R2004_3F_00.md` for the measured result and safety boundary.
+
 The maintained status, acceptance definition, exact unsupported-version policy
 and evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
 audit record is in `target/README.md`.
