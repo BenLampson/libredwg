@@ -237,7 +237,9 @@ file_map=89034
 Both the normal run and the same run with
 `LIBREDWG_STREAM_TEST_REFS=1` pass with exit code zero. The reference-enabled
 run compares the per-handle reference snapshots emitted by the decoded Stream
-callbacks against the blocking `dwg_read_file` baseline.
+callbacks against the blocking `dwg_read_file` baseline. For every decoded
+`BLOCK_HEADER`, this includes `num_inserts` and an ordered hash of the complete
+`inserts[]` handle vector, not only its owned entity chain.
 
 Latest local `test1.dwg` memory comparison:
 
@@ -256,7 +258,8 @@ POSIX it uses `ru_maxrss`.
 Latest local `test1.dwg` semantic coverage:
 
 ```text
-block_headers=2434 block_headers_owned=2433 block_chains=2434
+block_headers=2434 block_headers_owned=2433 block_headers_inserted=248
+block_chains=2434
 anonymous_dim_blocks=2067 inserts=8753 minserts=0 dimension_blocks=2067
 poly3d_vertices=5 hatches=804 wipeouts=16 texts=663 mtexts=2817
 ownerhandle_entities=57479 ownerless_entities=20345 model=20343 paper=2
@@ -467,6 +470,18 @@ reinterpreted as fallback requests, or combined with earlier noncritical decode
 warnings. The generated R2004b regression fixture corrupts only the Section Page
 Map checksum, verifies blocking and Stream `DWG_ERR_WRONGCRC`, and then verifies
 exact object, not-supported-bit, and decoded-object callback abort values.
+Reference-enabled parity snapshots include each `BLOCK_HEADER`'s owned entity
+chain, `num_inserts`, and ordered `inserts[]` handle mix. The repository semantic
+coverage gate requires at least one block header with reverse INSERT references;
+`test1.dwg` covers 248 such block headers and 8,753 INSERT entities. This makes
+block reference counting and later block replay verifiable without layer-name
+or traversal-order guesses.
+POLYLINE reference snapshots likewise compare `num_owned`, `first_vertex`,
+`last_vertex`, the ordered hash of every `vertex[]` handle, and `seqend` for 2D,
+3D, mesh, and polyface polylines. The semantic gate requires real
+POLYLINE_3D-with-vertices coverage; `test1.dwg` currently supplies five. A
+Stream implementation with reordered, dropped, or guessed pending vertices
+therefore fails C parity.
 The blocking and stream R13/R2000 dispatch ranges both extend through `R_2002`,
 so unique `AC1016` and `AC1017` headers no longer fall out after `R_2000`.
 After the common modern header is parsed, both paths refine shared magic through

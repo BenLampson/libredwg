@@ -36,6 +36,7 @@ typedef struct _stream_semantic_coverage
 {
   BITCODE_BL block_headers;
   BITCODE_BL block_headers_with_owned;
+  BITCODE_BL block_headers_with_inserts;
   BITCODE_BL block_entity_chains;
   BITCODE_BL anonymous_dimension_blocks;
   BITCODE_BL inserts;
@@ -127,11 +128,15 @@ typedef struct _stream_ref_snapshot
   BITCODE_BL num_owned;
   BITCODE_RLL first_vertex;
   BITCODE_RLL last_vertex;
+  unsigned long long owned_refs_mix;
+  BITCODE_RLL seqend;
   BITCODE_RLL block_entity;
   BITCODE_RLL first_entity;
   BITCODE_RLL last_entity;
   BITCODE_RLL endblk_entity;
   unsigned long long block_entities_mix;
+  BITCODE_RL block_num_inserts;
+  unsigned long long block_inserts_mix;
   unsigned long long block_header_name_hash;
   unsigned long long semantic_hash;
   double block_base_x;
@@ -751,6 +756,8 @@ stats_add_semantic_coverage (Stream_Stats *stats, const Dwg_Object *obj)
           coverage->block_headers++;
           if (block->num_owned)
             coverage->block_headers_with_owned++;
+          if (block->num_inserts)
+            coverage->block_headers_with_inserts++;
           if (block->block_entity || block->first_entity || block->last_entity
               || block->endblk_entity || block->num_owned)
             coverage->block_entity_chains++;
@@ -846,6 +853,7 @@ semantic_coverage_equal (const Stream_Semantic_Coverage *a,
 {
   return a->block_headers == b->block_headers
          && a->block_headers_with_owned == b->block_headers_with_owned
+         && a->block_headers_with_inserts == b->block_headers_with_inserts
          && a->block_entity_chains == b->block_entity_chains
          && a->anonymous_dimension_blocks == b->anonymous_dimension_blocks
          && a->inserts == b->inserts && a->minserts == b->minserts
@@ -874,6 +882,7 @@ semantic_coverage_add (Stream_Semantic_Coverage *dst,
 
   dst->block_headers += src->block_headers;
   dst->block_headers_with_owned += src->block_headers_with_owned;
+  dst->block_headers_with_inserts += src->block_headers_with_inserts;
   dst->block_entity_chains += src->block_entity_chains;
   dst->anonymous_dimension_blocks += src->anonymous_dimension_blocks;
   dst->inserts += src->inserts;
@@ -901,7 +910,8 @@ print_semantic_coverage (const char *label,
                          const Stream_Semantic_Coverage *coverage)
 {
   printf ("%s: block_headers=%lu block_headers_owned=%lu "
-          "block_chains=%lu anonymous_dim_blocks=%lu inserts=%lu "
+          "block_headers_inserted=%lu block_chains=%lu "
+          "anonymous_dim_blocks=%lu inserts=%lu "
           "minserts=%lu dimension_blocks=%lu poly3d_vertices=%lu "
           "hatches=%lu wipeouts=%lu texts=%lu mtexts=%lu "
           "ownerhandle_entities=%lu ownerless_entities=%lu model=%lu "
@@ -909,6 +919,7 @@ print_semantic_coverage (const char *label,
           "entmode2=%lu entmode3=%lu entmode_other=%lu\n",
           label, (unsigned long)coverage->block_headers,
           (unsigned long)coverage->block_headers_with_owned,
+          (unsigned long)coverage->block_headers_with_inserts,
           (unsigned long)coverage->block_entity_chains,
           (unsigned long)coverage->anonymous_dimension_blocks,
           (unsigned long)coverage->inserts, (unsigned long)coverage->minserts,
@@ -950,6 +961,7 @@ semantic_coverage_require_repository_sweep (
 
   REQUIRE_COVERAGE (block_headers);
   REQUIRE_COVERAGE (block_headers_with_owned);
+  REQUIRE_COVERAGE (block_headers_with_inserts);
   REQUIRE_COVERAGE (block_entity_chains);
   REQUIRE_COVERAGE (anonymous_dimension_blocks);
   REQUIRE_COVERAGE (inserts);
@@ -1455,6 +1467,9 @@ snapshot_block_header_refs (const Dwg_Object *obj,
   snapshot->endblk_entity = ref_absolute (block->endblk_entity);
   snapshot->block_entities_mix
       = hash_ref_array (block->entities, block->num_owned);
+  snapshot->block_num_inserts = block->num_inserts;
+  snapshot->block_inserts_mix
+      = hash_ref_array (block->inserts, block->num_inserts);
   snapshot->block_header_name_hash
       = utf8_field_hash (block, "BLOCK_HEADER", "name");
 }
@@ -1477,6 +1492,10 @@ snapshot_polyline_refs (const Dwg_Object *obj, Stream_Ref_Snapshot *snapshot)
               = ref_absolute (entity->tio.POLYLINE_2D->first_vertex);
           snapshot->last_vertex
               = ref_absolute (entity->tio.POLYLINE_2D->last_vertex);
+          snapshot->owned_refs_mix
+              = hash_ref_array (entity->tio.POLYLINE_2D->vertex,
+                                entity->tio.POLYLINE_2D->num_owned);
+          snapshot->seqend = ref_absolute (entity->tio.POLYLINE_2D->seqend);
         }
       break;
     case DWG_TYPE_POLYLINE_3D:
@@ -1487,6 +1506,10 @@ snapshot_polyline_refs (const Dwg_Object *obj, Stream_Ref_Snapshot *snapshot)
               = ref_absolute (entity->tio.POLYLINE_3D->first_vertex);
           snapshot->last_vertex
               = ref_absolute (entity->tio.POLYLINE_3D->last_vertex);
+          snapshot->owned_refs_mix
+              = hash_ref_array (entity->tio.POLYLINE_3D->vertex,
+                                entity->tio.POLYLINE_3D->num_owned);
+          snapshot->seqend = ref_absolute (entity->tio.POLYLINE_3D->seqend);
         }
       break;
     case DWG_TYPE_POLYLINE_MESH:
@@ -1497,6 +1520,10 @@ snapshot_polyline_refs (const Dwg_Object *obj, Stream_Ref_Snapshot *snapshot)
               = ref_absolute (entity->tio.POLYLINE_MESH->first_vertex);
           snapshot->last_vertex
               = ref_absolute (entity->tio.POLYLINE_MESH->last_vertex);
+          snapshot->owned_refs_mix
+              = hash_ref_array (entity->tio.POLYLINE_MESH->vertex,
+                                entity->tio.POLYLINE_MESH->num_owned);
+          snapshot->seqend = ref_absolute (entity->tio.POLYLINE_MESH->seqend);
         }
       break;
     case DWG_TYPE_POLYLINE_PFACE:
@@ -1507,6 +1534,10 @@ snapshot_polyline_refs (const Dwg_Object *obj, Stream_Ref_Snapshot *snapshot)
               = ref_absolute (entity->tio.POLYLINE_PFACE->first_vertex);
           snapshot->last_vertex
               = ref_absolute (entity->tio.POLYLINE_PFACE->last_vertex);
+          snapshot->owned_refs_mix
+              = hash_ref_array (entity->tio.POLYLINE_PFACE->vertex,
+                                entity->tio.POLYLINE_PFACE->num_owned);
+          snapshot->seqend = ref_absolute (entity->tio.POLYLINE_PFACE->seqend);
         }
       break;
     default:
@@ -1605,11 +1636,14 @@ ref_snapshots_equal (const Stream_Ref_Snapshot *a,
          && a->dimension_block == b->dimension_block
          && a->num_owned == b->num_owned && a->first_vertex == b->first_vertex
          && a->last_vertex == b->last_vertex
+         && a->owned_refs_mix == b->owned_refs_mix && a->seqend == b->seqend
          && a->block_entity == b->block_entity
          && a->first_entity == b->first_entity
          && a->last_entity == b->last_entity
          && a->endblk_entity == b->endblk_entity
          && a->block_entities_mix == b->block_entities_mix
+         && a->block_num_inserts == b->block_num_inserts
+         && a->block_inserts_mix == b->block_inserts_mix
          && a->block_header_name_hash == b->block_header_name_hash
          && a->semantic_hash == b->semantic_hash
          && a->block_base_x == b->block_base_x
@@ -1714,35 +1748,40 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
             {
               stats->decoded_ref_mismatches++;
               if (stats->decoded_ref_mismatches <= 25)
-                printf ("decoded ref mismatch handle=%llu type=%u "
-                        "owner=%llu/%llu layer=%llu/%llu block=%llu/%llu "
-                        "dimblock=%llu/%llu owned=%lu/%lu first=%llu/%llu "
-                        "last=%llu/%llu entmode=%u/%u sem=%llu/%llu\n",
-                        (unsigned long long)object->handle.value,
-                        (unsigned)object->fixedtype,
-                        (unsigned long long)baseline_ref->ownerhandle,
-                        (unsigned long long)decoded_ref.ownerhandle,
-                        (unsigned long long)baseline_ref->layer,
-                        (unsigned long long)decoded_ref.layer,
-                        (unsigned long long)baseline_ref->block_header,
-                        (unsigned long long)decoded_ref.block_header,
-                        (unsigned long long)baseline_ref->dimension_block,
-                        (unsigned long long)decoded_ref.dimension_block,
-                        (unsigned long)baseline_ref->num_owned,
-                        (unsigned long)decoded_ref.num_owned,
-                        (unsigned long long)baseline_ref->first_vertex,
-                        (unsigned long long)decoded_ref.first_vertex,
-                        (unsigned long long)baseline_ref->last_vertex,
-                        (unsigned long long)decoded_ref.last_vertex,
-                        (unsigned)baseline_ref->entmode,
-                        (unsigned)decoded_ref.entmode,
-                        baseline_ref->semantic_hash,
-                        decoded_ref.semantic_hash);
+                printf (
+                    "decoded ref mismatch handle=%llu type=%u "
+                    "owner=%llu/%llu layer=%llu/%llu block=%llu/%llu "
+                    "dimblock=%llu/%llu owned=%lu/%lu first=%llu/%llu "
+                    "last=%llu/%llu owned_refs=%llu/%llu "
+                    "seqend=%llu/%llu entmode=%u/%u sem=%llu/%llu\n",
+                    (unsigned long long)object->handle.value,
+                    (unsigned)object->fixedtype,
+                    (unsigned long long)baseline_ref->ownerhandle,
+                    (unsigned long long)decoded_ref.ownerhandle,
+                    (unsigned long long)baseline_ref->layer,
+                    (unsigned long long)decoded_ref.layer,
+                    (unsigned long long)baseline_ref->block_header,
+                    (unsigned long long)decoded_ref.block_header,
+                    (unsigned long long)baseline_ref->dimension_block,
+                    (unsigned long long)decoded_ref.dimension_block,
+                    (unsigned long)baseline_ref->num_owned,
+                    (unsigned long)decoded_ref.num_owned,
+                    (unsigned long long)baseline_ref->first_vertex,
+                    (unsigned long long)decoded_ref.first_vertex,
+                    (unsigned long long)baseline_ref->last_vertex,
+                    (unsigned long long)decoded_ref.last_vertex,
+                    baseline_ref->owned_refs_mix, decoded_ref.owned_refs_mix,
+                    (unsigned long long)baseline_ref->seqend,
+                    (unsigned long long)decoded_ref.seqend,
+                    (unsigned)baseline_ref->entmode,
+                    (unsigned)decoded_ref.entmode, baseline_ref->semantic_hash,
+                    decoded_ref.semantic_hash);
               if (object->fixedtype == DWG_TYPE_BLOCK_HEADER)
                 printf ("decoded block mismatch handle=%llu "
                         "blockent=%llu/%llu first=%llu/%llu "
                         "last=%llu/%llu endblk=%llu/%llu "
-                        "entities=%llu/%llu name=%llu/%llu "
+                        "entities=%llu/%llu inserts=%lu/%lu "
+                        "insert_refs=%llu/%llu name=%llu/%llu "
                         "base=(%.17g,%.17g,%.17g)/"
                         "(%.17g,%.17g,%.17g)\n",
                         (unsigned long long)object->handle.value,
@@ -1756,6 +1795,10 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
                         (unsigned long long)decoded_ref.endblk_entity,
                         baseline_ref->block_entities_mix,
                         decoded_ref.block_entities_mix,
+                        (unsigned long)baseline_ref->block_num_inserts,
+                        (unsigned long)decoded_ref.block_num_inserts,
+                        baseline_ref->block_inserts_mix,
+                        decoded_ref.block_inserts_mix,
                         baseline_ref->block_header_name_hash,
                         decoded_ref.block_header_name_hash,
                         baseline_ref->block_base_x, baseline_ref->block_base_y,
