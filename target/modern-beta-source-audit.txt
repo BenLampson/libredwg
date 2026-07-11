@@ -55,11 +55,33 @@ BetaArchive catalog searches were also attempted for the six product families,
 but its public pages returned a Cloudflare JavaScript challenge. No catalog or
 file claim is derived from that inaccessible result.
 
+Public GitHub repository-index audit
+------------------------------------
+
+GitHub's public repository search API was queried on 2026-07-11 with these
+exact repository-level searches:
+
+  AC1500 dwg
+  AC402a dwg
+  AC701a dwg
+  AC2100a dwg
+  AC2400a dwg
+  AC2700a dwg
+  AC3200a dwg
+  AutoCAD beta DWG samples
+
+Every query returned total_count=0. This is a reproducible negative result for
+repository names, descriptions, and other fields indexed by that API. It is
+not a content-level scan of every GitHub blob, and it does not prove that a
+historical file never existed or that no unindexed/private copy exists.
+
 Result and acceptance rule
 --------------------------
 
 No active gap is closed by this audit. All eight entries remain unresolved.
-Future candidates must be classified from file contents and then pass the C
-strict comparison between dwg_read_file and dwg_stream_file_ex with zero
-per-object decode errors and full=0. A catalog listing, enum definition,
-synthetic header rewrite, or generated fixture cannot replace that evidence.
+Negative catalog or repository-index search results are insufficient to label
+an identifier as a format that was never historically public. Future candidates
+must be classified from file contents and then pass the C strict comparison
+between dwg_read_file and dwg_stream_file_ex with zero per-object decode errors
+and full=0. A catalog listing, enum definition, synthetic header rewrite, or
+generated fixture cannot replace that evidence.

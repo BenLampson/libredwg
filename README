@@ -74,6 +74,9 @@ R2013b, and R2018b -- are the active development queue.  Do not move active
 work to pre-2000 evidence gaps until each modern item either has independently
 sourced real-file strict parity or is individually documented as not being a
 historical public DWG format.  Pre-2000 gaps remain tracked as the second queue.
+The reproducible public-source audit now includes exact web, archive-catalog,
+and GitHub repository-index searches; none produced a qualifying file, and a
+zero-result search is not treated as proof that a historical file never existed.
 
 The strings API is UTF-8 (WTF8 really, Windows UCS-2 has no surrogate
 pairs), and encodes to the internal 8-bit or UCS-2 strings, depending

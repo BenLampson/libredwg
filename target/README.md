@@ -10,8 +10,9 @@ status file, this detailed target, and the top-level `README` synchronized.
 
 The latest reproducible search for independently sourced modern beta files is
 recorded in `target/modern-beta-source-audit.txt`. It found identifier
-documentation but no qualifying real file, so all eight modern gaps remain
-open.
+documentation but no qualifying real file. Exact GitHub repository-index
+queries also returned zero repositories; that negative search is not proof of
+nonexistence, so all eight modern gaps remain open.
 
 Original AutoCAD 2007 media contributes 372 clean unique AC1021/R2007 files
 with 713,309 strictly aligned objects and `full=0`. It exposed a missing
