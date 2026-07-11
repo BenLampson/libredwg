@@ -786,6 +786,31 @@ Additional code-index partitions for `r12`, `r13`, `r2004`, `r2007`, and
 byte-identical GPL-2.0 paths whose content starts with `<!DOCTYPE` and is HTML,
 not DWG. The only `beta` result was in a repository without a reusable license.
 
+The licensed-repository audit also enumerated every non-default branch of the
+79 repositories that contain DWG files. Twenty-four repositories had multiple
+branches: 125 alternate branch trees were read without error, yielding 1,322 DWG
+paths and 377 unique blob IDs. Their complete header distribution was `AC1.40`
+1, `AC2.10` 2, `AC1003` 2, `AC1004` 1, `AC1006` 2, `AC1009` 3, `AC1012` 3,
+`AC1014` 19, `AC1015` 51, `AC1018` 46, `AC1021` 35, `AC1024` 31, `AC1027`
+46, and `AC1032` 133, plus one non-DWG text file and one `AC402b` candidate.
+The `AC402b` blob is
+`kevinzhwl/AutoCAD.DK@arx-2004:ObjectARX/samples/editor/CircleStandard/StandardTest.dwg`.
+It is byte-identical to the already excluded Autodesk SDK sample: 25,577 bytes,
+SHA256 `623E79D3A5422DEE1EA9206E698466EC96C994CC0FA925F7F9A348DEB8E09D1D`.
+Adjacent source identifies Autodesk copyright and grants software distribution
+only in object-code form; it does not clearly relicense the DWG test data. The
+repository's root GPL file cannot replace the third-party file's missing data
+license, so this duplicate remains external-only evidence and is not imported.
+
+Release tags were audited separately because they can retain fixtures deleted
+from all live branches. Twenty-three of the 79 licensed DWG repositories had
+tags. All 364 unique tagged commits were resolved and read with no tag or tree
+errors, covering 4,409 DWG paths and 413 unique blobs. Their exact header counts
+were `AC1.40` 1, `AC2.10` 2, `AC1003` 2, `AC1004` 1, `AC1006` 2, `AC1009` 3,
+`AC1012` 1, `AC1014` 24, `AC1015` 55, `AC1018` 49, `AC1021` 40, `AC1024` 42,
+`AC1027` 61, and `AC1032` 130. No generated-only or synthetic-only exact
+version magic occurred in any licensed release tag.
+
 The proprietary `AC402b` file was used only as an external interoperability
 check. Blocking and pure Stream both accept it as `R_2004b`; strict Stream
 parity covers 50 objects, including 14 entities and 36 non-entities, references,
