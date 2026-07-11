@@ -57,6 +57,11 @@ and 713,309 strictly aligned objects.  It also exposed and now guards the
 R2007 Stream classification of OLEFRAME/OLE2FRAME as entities.  The media has
 no AC701a/R2007a or internal 0x1a/R2007b file, so those beta gaps remain open.
 
+A private project-owned business corpus adds 20 clean DWGs spanning R2000,
+R2004, R2007, R2010, R2013 and R2018.  All 6,347,881 objects pass strict
+blocking-versus-Stream parity with zero decode errors and `full=0`.  No source
+file, business filename, absolute path or content hash is committed.
+
 The maintained status, acceptance definition, exact remaining version gaps and
 evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
 audit record is in `target/README.md`.

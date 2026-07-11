@@ -20,6 +20,13 @@ by the generated R2007+ fixture. The media contains no R2007a/b file; full
 identity, classification, exclusions, and results are in
 `target/internet-archive-autocad-2007-media-audit.txt`.
 
+A project-owned private CAD quantity-estimation corpus contributes 20 clean
+real business DWGs across R2000, R2004, R2007, R2010, R2013, and R2018. All
+6,347,881 objects pass strict C blocking-versus-Stream parity with zero decode
+errors and `full=0`. One additional structurally warned R2004 input is excluded.
+No source file or identifying path is committed; aggregate evidence and the
+privacy boundary are recorded in `target/project-owned-dwg-corpus-audit.txt`.
+
 Scope correction: the active target is not ProtocolVNext and not any downstream
 consumer. Stream TDD is developed and judged on the C side only. Every blocking
 versus stream comparison in this phase means `dwg_read_file` in libredwg C
@@ -83,20 +90,22 @@ If a stream result is wrong, the preferred fix is to expose the missing DWG sema
 
 ## 3. Primary test file
 
-Use this file as the first TDD fixture:
+Use one small project-owned file as the first TDD fixture. Keep its local path
+outside the repository, for example:
 
 ```text
-E:\cadTestFolder\test1.dwg
+C:\path\to\private\small-fixture.dwg
 ```
 
-Optional large-file validation set:
+Use project-owned large files as the optional validation set, for example:
 
 ```text
-C:\Users\benla\Desktop\CAD测试文件\最新5个大的
-E:\项目额外大文件\CAD项目\CAD算量材料(1)\3F.00.dwg
+C:\path\to\private\large-file-set
+C:\path\to\private\large-fixture.dwg
 ```
 
-The optional large files are useful for performance and memory checks, but they must not replace the strict parity test on `test1.dwg`.
+The optional large files are useful for performance and memory checks, but
+they must not replace strict parity on a small controlled fixture.
 
 ## 4. Validation boundary
 
@@ -157,7 +166,7 @@ $env:LIBREDWG_STREAM_TEST_REFS = "1"
 .\build-codex-stream-tdd\test\unit-testing\stream_test.exe
 Remove-Item Env:LIBREDWG_STREAM_TEST_REPOSITORY_SWEEP -ErrorAction SilentlyContinue
 
-$env:LIBREDWG_STREAM_TEST_DWG = "E:\cadTestFolder\test1.dwg"
+$env:LIBREDWG_STREAM_TEST_DWG = "C:\path\to\private\small-fixture.dwg"
 Remove-Item Env:LIBREDWG_STREAM_TEST_REFS -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_LARGE_DWG -ErrorAction SilentlyContinue
 .\build-codex-stream-tdd\test\unit-testing\stream_test.exe
@@ -167,12 +176,12 @@ $env:LIBREDWG_STREAM_TEST_REFS = "1"
 ```
 
 Use the large fixture as a smoke/performance guard, not as a replacement for
-strict C parity on `test1.dwg`:
+strict C parity on the small fixture:
 
 ```powershell
 Remove-Item Env:LIBREDWG_STREAM_TEST_DWG -ErrorAction SilentlyContinue
 Remove-Item Env:LIBREDWG_STREAM_TEST_REFS -ErrorAction SilentlyContinue
-$env:LIBREDWG_STREAM_TEST_LARGE_DWG = "E:\项目额外大文件\CAD项目\CAD算量材料(1)\3F.00.dwg"
+$env:LIBREDWG_STREAM_TEST_LARGE_DWG = "C:\path\to\private\large-fixture.dwg"
 .\build-codex-stream-tdd\test\unit-testing\stream_test.exe
 ```
 
@@ -1300,7 +1309,7 @@ The native stream implementation should not allocate the same full DWG object gr
 
 Acceptance is staged:
 
-1. First pass C strict parity on `E:\cadTestFolder\test1.dwg`.
+1. First pass C strict parity on a small controlled project-owned fixture.
 2. Then validate that native stream avoids `dwg_read_file`.
 3. Then measure peak memory on the large-file set.
 

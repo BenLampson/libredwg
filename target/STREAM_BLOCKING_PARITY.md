@@ -65,6 +65,11 @@ Original AutoCAD 2007 media adds 372 clean unique AC1021/R2007 files and
 classification defect that is fixed and covered by a generated regression.
 The media contains no R2007a or R2007b file, so both beta gaps remain open.
 
+A project-owned private business corpus adds 20 clean real DWGs and 6,347,881
+strictly aligned objects across R2000, R2004, R2007, R2010, R2013, and R2018.
+Every file reports zero decode errors and `full=0`. Identifying source details
+and binaries remain private and are not committed.
+
 ## Development priority
 
 DWG 2000 and later is the current high-priority target. This is a development
@@ -132,6 +137,8 @@ future known version without a Stream route must return
   evidence that AutoCAD 2000i/2002 use AC1015, plus 76-file strict parity.
 - `target/internet-archive-autocad-2007-media-audit.txt`: original AutoCAD 2007
   media classification, 372-file strict parity, and warning-file exclusions.
+- `target/project-owned-dwg-corpus-audit.txt`: privacy-safe aggregate evidence
+  for the 20-file, 6,347,881-object project-owned business corpus.
 - `target/kaggle-dwg-audit.txt`: 132-file modern-version classification and two
   licensed R2018 strict parity results.
 - `target/modern-beta-source-audit.txt`: exact screening rules and the

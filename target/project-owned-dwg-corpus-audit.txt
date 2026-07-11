@@ -1,0 +1,59 @@
+LibreDWG project-owned DWG corpus Stream audit
+==============================================
+
+Audit date: 2026-07-11
+Source: project-owned private CAD quantity-estimation material
+
+Privacy and repository boundary
+-------------------------------
+
+The source files are local project material. They were read in place and were
+not copied, modified, downloaded, or committed. This record intentionally omits
+business filenames, absolute paths, drawings, and content hashes. It retains
+only the aggregate evidence needed to maintain the C Stream target.
+
+Version classification
+----------------------
+
+The corpus contains 21 unique DWG files with this exact decoded distribution:
+
+  R2000: 6
+  R2004: 6
+  R2007: 4
+  R2010: 2
+  R2013: 1
+  R2018: 2
+
+Every file uses a final public format identifier and final internal version.
+No R2000b, R2004a/c, R2007a/b, R2010b, R2013b, or R2018b file is present, so
+this corpus does not close any of the eight modern beta/development evidence
+gaps.
+
+Strict parity result
+--------------------
+
+Twenty files are clean dwgprobe inputs. Every one passes the strict C
+comparison between dwg_read_file and dwg_stream_file_ex with reference
+comparison enabled:
+
+  files:         20 / 20
+  input bytes:   1012448531
+  objects:       6347881
+  entities:      5410837
+  non-entities:   937044
+  decode errors:       0
+  fallback:       full=0 for every file
+
+Strict object totals by version:
+
+  R2000: 1405400
+  R2004: 2994584
+  R2007:  403454
+  R2010: 1008028
+  R2013:  247813
+  R2018:  288602
+
+One additional R2004 file reports structural warning 0x40 during probing. It
+is excluded from the strict-pass totals rather than being silently counted as
+parity evidence. The warning file remains project material and is not named or
+copied here.
