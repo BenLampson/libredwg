@@ -1,0 +1,78 @@
+Kaggle DWG dataset audit
+========================
+
+Audit date: 2026-07-11
+
+Purpose
+-------
+
+Search a previously unaudited public dataset source for modern DWG development
+versions, classify every available DWG by magic and internal version, and add
+strict parity evidence from clearly licensed datasets.
+
+Search boundary
+---------------
+
+The public Kaggle dataset API was searched for `dwg`, `autocad`, and
+`cad drawing`. The three downloaded datasets that actually supplied DWGs were:
+
+1. https://www.kaggle.com/datasets/manisha717/dataset-for-dwg
+   - API license: Unknown
+   - downloaded archive SHA256:
+     086FECE0582DB56713809E62B41FD62E41A76F7EB6C9309F4D59DA235C4524EE
+   - 130 DWG paths
+2. https://www.kaggle.com/datasets/artemboiko/dwg-excel-datadrivenconstruction
+   - API license: Apache 2.0
+   - downloaded archive SHA256:
+     338A348DF9A3C647C145E6EF03232D13BFC1CB12C5E0CD81BB4473A66696AC94
+   - one DWG
+3. https://www.kaggle.com/datasets/artemboiko/house-example-ddc
+   - API license: Apache 2.0
+   - downloaded archive SHA256:
+     124574729C4BA39EEEAA56C8882BB67C8DDDD4BD8935A20662FD662346E84EC9
+   - one DWG
+
+Classification
+--------------
+
+The 130-file unlicensed dataset contains:
+
+  AC1015: 51
+  AC1018: 17
+  AC1021: 36
+  AC1024: 18
+  AC1027: 6
+  AC1032: 2
+
+Internal DWG-version bytes were checked for every file. None matches the
+remaining modern development targets R_2000b, R_2004a, R_2004c, R_2007a,
+R_2007b, R_2010b, R_2013b, R_2018b, or R_2022b.
+
+The two Apache-2.0 datasets each contain one AC1032 file with internal version
+0x21, so both are R_2018 release files:
+
+  building_floor_example.dwg
+  size: 558,527 bytes
+  SHA256: B87F167401796098186440BCB04061626207B3AD7F077F4E713E9F15F5A85AE5
+
+  Example_House_Project_DDC.dwg
+  size: 255,282 bytes
+  SHA256: 60F68CA7F8B7637A30D47F81ABFE51E3D0A0D11BC26D2697F186D2CBB7F7CADA
+
+Strict parity result
+--------------------
+
+Both licensed files passed current `test/unit-testing/stream_test.c` strict
+reference parity with `LIBREDWG_STREAM_TEST_REFS=1`:
+
+  passed: 2
+  failed: 0
+  objects: 9,670
+  entities: 6,606
+  non-entities: 3,064
+  Stream decode errors: 0
+  full: 0 for both files
+
+No dataset binary is committed. The licensed files remain reproducible from
+their pinned archive hashes, while the unlicensed dataset is classification
+evidence only.

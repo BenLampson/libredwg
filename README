@@ -44,6 +44,10 @@ strictly aligned objects.  Both products store these files as the shared
 `AC1015`/R2000 format; they do not introduce distinct AC1016 or AC1017 DWG
 formats.
 
+Two Apache-2.0 Kaggle R2018 drawings add 9,670 strictly aligned objects from
+independent sources.  The broader 132-file Kaggle audit found no remaining
+modern development-version identifier.
+
 The maintained status, acceptance definition, exact remaining version gaps and
 evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
 audit record is in `target/README.md`.

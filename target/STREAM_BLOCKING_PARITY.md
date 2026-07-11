@@ -57,6 +57,9 @@ license that permits importing its DWG binaries. The hashes, source media, and
 results remain recorded so the evidence is reproducible without committing the
 files.
 
+Two Apache-2.0 Kaggle R2018 files add 9,670 strictly aligned objects. A broader
+132-file Kaggle audit found no remaining modern development-version identifier.
+
 ## Development priority
 
 DWG 2000 and later is the current high-priority target. Work on real historical
@@ -111,6 +114,8 @@ future known version without a Stream route must return
   parity evidence and its non-redistribution boundary.
 - `target/internet-archive-autocad-2000i-2002-audit.txt`: original-product
   evidence that AutoCAD 2000i/2002 use AC1015, plus 76-file strict parity.
+- `target/kaggle-dwg-audit.txt`: 132-file modern-version classification and two
+  licensed R2018 strict parity results.
 - `target/internet-archive-dwg-search-audit.txt`: direct Archive.org DWG search
   boundary and classifications.
 - `target/gnu-release-dwg-audit.txt`: signed GNU release archive evidence.

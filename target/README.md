@@ -1074,6 +1074,16 @@ and 2002 while confirming that their files use the shared R2000 format. Exact
 media hashes, maintenance-version distributions, and results are recorded in
 `target/internet-archive-autocad-2000i-2002-audit.txt`.
 
+The public Kaggle dataset catalog was also searched for DWG and AutoCAD data.
+Three datasets supplied 132 DWGs: one unknown-license set has 130 files spanning
+AC1015, AC1018, AC1021, AC1024, AC1027, and AC1032, while two Apache-2.0 sets
+each add one AC1032/R2018 file. Internal version bytes were checked for all 132;
+none matches a remaining modern development target. Both licensed R2018 files
+pass strict reference parity, adding 9,670 objects, 6,606 entities, and 3,064
+non-entities with zero Stream decode errors and `full=0`. Dataset URLs, archive
+hashes, file hashes, classifications, and the license boundary are recorded in
+`target/kaggle-dwg-audit.txt`.
+
 The proprietary `AC402b` file supplies external real-file parity evidence.
 Blocking and pure Stream both accept it as `R_2004b`; strict Stream
 parity covers 50 objects, including 14 entities and 36 non-entities, references,
