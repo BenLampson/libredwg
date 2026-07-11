@@ -2908,6 +2908,12 @@ write_generated_minsert_fixture (Dwg_Version_Type version, const char *label,
   block_line->parent->entmode = 3;
   dwg_add_ENDBLK (blk);
   dwg_add_MINSERT (hdr, &pt1, "bloko", 1.0, 1.0, 1.0, 0.0, 2, 1, 1.0, 0.0);
+  if (version >= R_2007a && !dwg_add_OLE2FRAME (hdr, &pt1, &pt2))
+    {
+      printf ("failed to create generated %s OLE2FRAME\n", label);
+      dwg_free (dwg);
+      return 1;
+    }
   if (version == R_2007)
     {
       for (i = 0; i < 2000; i++)

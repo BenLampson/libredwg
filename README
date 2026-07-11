@@ -52,6 +52,11 @@ Original AutoCAD 2022 media contains 232 unique DWG/DWT files.  Its 27 current
 files use AC1032 and pass 7,893-object strict parity; no media file uses the
 experimental AC103-4 identifier.
 
+Original AutoCAD 2007 media adds 372 clean unique AC1021/R2007 DWG/DWT files
+and 713,309 strictly aligned objects.  It also exposed and now guards the
+R2007 Stream classification of OLEFRAME/OLE2FRAME as entities.  The media has
+no AC701a/R2007a or internal 0x1a/R2007b file, so those beta gaps remain open.
+
 The maintained status, acceptance definition, exact remaining version gaps and
 evidence links are in `target/STREAM_BLOCKING_PARITY.md`.  The complete TDD and
 audit record is in `target/README.md`.

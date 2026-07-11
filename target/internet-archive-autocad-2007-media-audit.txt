@@ -1,0 +1,55 @@
+LibreDWG AutoCAD 2007 original-media Stream audit
+=================================================
+
+Audit date: 2026-07-11
+Internet Archive item: autocad2007_espanol
+Archive file: 20211104_215639.iso
+Archive URL:
+https://archive.org/download/autocad2007_espanol/20211104_215639.iso
+
+Media identity
+--------------
+
+Size:   798027776 bytes
+SHA1:   FBEC427F761A98664D98AEF45B88494AE33D8C9A
+SHA256: 336C6C4A9458AF924FCB7222FC798F87BD125077BEF1FBBAF81C6AB941725AB9
+
+The SHA1 matches the Internet Archive metadata. The ISO was extracted only
+inside the ignored .build-modern-version-audit directory. No Autodesk binary
+is committed to this repository.
+
+Version classification
+----------------------
+
+The media contains 382 DWG/DWT paths and 381 unique SHA256 payloads. Every
+file has AC1021 magic. Decoding the common header classifies every file as
+R_2007 with internal dwg_version 0x1b. No AC701a/R_2007a file and no
+AC1021/0x1a R_2007b file is present, so this audit does not close either beta
+evidence gap.
+
+Strict parity result
+--------------------
+
+Of the 381 unique payloads, 372 are clean dwgprobe inputs. After the OLE fixed
+type classification correction, all 372 pass the strict C comparison between
+dwg_read_file and dwg_stream_file_ex with reference comparison enabled:
+
+  files:         372 / 372
+  objects:       713309
+  entities:      632315
+  non-entities:   80994
+  decode errors:      0
+  fallback:       full=0 for every file
+
+The real Tablet.dwg exposed the fixed type 74 OLE2FRAME defect: the R2007
+Stream metadata classified it as an object while the C decoder correctly
+decoded it as an entity. Adding OLEFRAME and OLE2FRAME to the R2007 fixed-type
+entity table aligns the paths. A generated R2007-and-later OLE2FRAME is now
+part of stream_test so this regression does not depend on the external file.
+
+Nine unique files report structural warning 0x40 and are excluded from the
+strict-pass total. Seven give the blocking baseline only incomplete heap/probe
+objects, Toy House.dwg contains a malformed object record, and Map2Globe.Dwg
+has an incomplete/corrupt handle map: blocking heap recovery sees 989 objects
+while the Stream object map contains 154. These files are recorded as warning
+inputs, not silently counted as parity and not evidence of a beta format.

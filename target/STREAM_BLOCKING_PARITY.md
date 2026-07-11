@@ -60,6 +60,11 @@ files.
 Two Apache-2.0 Kaggle R2018 files add 9,670 strictly aligned objects. A broader
 132-file Kaggle audit found no remaining modern development-version identifier.
 
+Original AutoCAD 2007 media adds 372 clean unique AC1021/R2007 files and
+713,309 strictly aligned objects. It exposed an OLEFRAME/OLE2FRAME Stream
+classification defect that is fixed and covered by a generated regression.
+The media contains no R2007a or R2007b file, so both beta gaps remain open.
+
 ## Development priority
 
 DWG 2000 and later is the current high-priority target. This is a development
@@ -125,6 +130,8 @@ future known version without a Stream route must return
   parity evidence and its non-redistribution boundary.
 - `target/internet-archive-autocad-2000i-2002-audit.txt`: original-product
   evidence that AutoCAD 2000i/2002 use AC1015, plus 76-file strict parity.
+- `target/internet-archive-autocad-2007-media-audit.txt`: original AutoCAD 2007
+  media classification, 372-file strict parity, and warning-file exclusions.
 - `target/kaggle-dwg-audit.txt`: 132-file modern-version classification and two
   licensed R2018 strict parity results.
 - `target/modern-beta-source-audit.txt`: exact screening rules and the

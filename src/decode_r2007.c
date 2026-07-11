@@ -1909,10 +1909,12 @@ stream_fixed_type_is_entity (const Dwg_Object_Type type)
     case DWG_TYPE_BODY:
     case DWG_TYPE_RAY:
     case DWG_TYPE_XLINE:
+    case DWG_TYPE_OLEFRAME:
     case DWG_TYPE_MTEXT:
     case DWG_TYPE_LEADER:
     case DWG_TYPE_TOLERANCE:
     case DWG_TYPE_MLINE:
+    case DWG_TYPE_OLE2FRAME:
     case DWG_TYPE_LWPOLYLINE:
     case DWG_TYPE_HATCH:
     case DWG_TYPE_PROXY_ENTITY:

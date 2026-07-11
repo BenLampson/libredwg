@@ -13,6 +13,13 @@ recorded in `target/modern-beta-source-audit.txt`. It found identifier
 documentation but no qualifying real file, so all eight modern gaps remain
 open.
 
+Original AutoCAD 2007 media contributes 372 clean unique AC1021/R2007 files
+with 713,309 strictly aligned objects and `full=0`. It exposed a missing
+OLEFRAME/OLE2FRAME entity classification in the R2007 Stream path, now covered
+by the generated R2007+ fixture. The media contains no R2007a/b file; full
+identity, classification, exclusions, and results are in
+`target/internet-archive-autocad-2007-media-audit.txt`.
+
 Scope correction: the active target is not ProtocolVNext and not any downstream
 consumer. Stream TDD is developed and judged on the C side only. Every blocking
 versus stream comparison in this phase means `dwg_read_file` in libredwg C
@@ -342,9 +349,10 @@ The R2007 C writer now emits an R2007 container instead of silently upgrading
 the target to R2010. Its generated fixtures use the exact AC701a/AC1021 header,
 the 0x400 file header, interleaved RS(255,239) system pages, duplicate page and
 section maps, direct uncompressed data pages, and a duplicate trailing file
-header. R2007a and R2007b each pass 37-object strict parity. The generated
+header. R2007a and R2007b each pass 38-object strict parity, including fixed
+type 74 OLE2FRAME. The generated
 R2007 release fixture adds 2,000 LINE entities, spans multiple object data
-pages, and passes 2,037-object strict parity with `full=0`.
+pages, and passes 2,038-object strict parity with `full=0`.
 
 This is C-writer/C-reader evidence for the stream target. CRC64/check-data and
 external AutoCAD/ODA writer interoperability are not claimed by these tests;
@@ -689,9 +697,9 @@ Exact current implementation status by libredwg `Dwg_Version_Type` enum:
 | Partial pure stream support | `R_11b1`, `R_11b2` | The shared pre-R11 reader passes exact-version blocking-vs-stream parity on minimal C-writer LINE fixtures with table-entry coverage, decoded callbacks, `full=0`, and both stream flag settings. No real historical beta DWG fixture is present, so this remains generated coverage. |
 | Pure stream route; mixed evidence | `R_13b1`, `R_13b2`, `R_13`, `R_13c3`, `R_14`, `R_2000b`, `R_2000`, `R_2000i`, `R_2002` | Uses the R13/R2000 handles/object-map reader through `R_2002`. Real fixtures cover R13, R14, and R2000. Original AutoCAD 2000i and 2002 media add 76 unique real AC1015/R2000-family files and 150,147 strictly aligned objects; neither product emits AC1016/AC1017. Generated MINSERT fixtures cover R13b1, R13b2, R13c3, and R2000b. Synthetic exact-header variants retain dispatch regression coverage for R2000i and R2002 with 750 objects and both flag settings. |
 | Pure stream route; mixed evidence | `R_2004a`, `R_2004b`, `R_2004c`, `R_2004` | Uses the R2004 object-map reader. Generated exact-version MINSERT fixtures cover R2004a, R2004b, and R2004c with 37 objects, strict references, both stream flag settings, and `full=0`. An external real Autodesk ObjectARX `AC402b` sample covers R2004b with 50-object strict parity; its license prevents committing the binary. Real fixtures cover R2004, and a synthetic exact R2004c header over the real R2004 payload additionally passes 735-object parity. AutoCAD 2005/2006 are not separate enum values here. |
-| Pure stream route; mixed evidence | `R_2007a`, `R_2007b`, `R_2007` | Uses the R2007 object-map reader. Generated exact-version MINSERT fixtures cover R2007a and R2007b with 37 objects, strict references, both stream flag settings, and `full=0`. The generated R2007 release fixture covers a multipage object section with 2,037 objects. Real fixtures cover R2007 release; no independently sourced historical R2007a/b files are present. AutoCAD 2008/2009 are not separate enum values here. |
+| Pure stream route; mixed evidence | `R_2007a`, `R_2007b`, `R_2007` | Uses the R2007 object-map reader. Generated exact-version fixtures cover R2007a and R2007b with MINSERT and OLE2FRAME, strict references, both stream flag settings, and `full=0`. The generated R2007 release fixture also covers a multipage object section. Real fixtures cover R2007 release, including 372 clean unique files and 713,309 objects from original AutoCAD 2007 media. That media contains no independently sourced historical R2007a/b file. AutoCAD 2008/2009 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2010b`, `R_2010` | Uses the R2004/2010+ data-section object-map reader with R2010 object headers. Real fixtures cover R2010 and a generated MINSERT fixture covers exact R2010b. AutoCAD 2011/2012 are not separate enum values here. |
-| Pure stream route; mixed evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013, and a generated exact R2013b MINSERT fixture passes 37-object strict parity with `full=0`. The beta object layout is aligned by reading `has_ds_data` from the same R2013b boundary used by the encoder. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
+| Pure stream route; mixed evidence | `R_2013b`, `R_2013` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2013, and a generated exact R2013b MINSERT/OLE2FRAME fixture passes 38-object strict parity with `full=0`. The beta object layout is aligned by reading `has_ds_data` from the same R2013b boundary used by the encoder. AutoCAD 2014/2015/2016/2017 are not separate enum values here. |
 | Pure stream route; mixed evidence | `R_2018b`, `R_2018` | Uses the R2004/2010+ data-section object-map reader. Real fixtures cover R2018 and a generated MINSERT fixture covers exact R2018b. AutoCAD 2019/2020/2021 are not separate enum values here. |
 | Pure stream route; product-family and synthetic evidence | `R_2022b` | Uses the R2004/2010+ data-section object-map reader. Original AutoCAD 2022 media contains 232 unique DWG/DWT files; all 27 current-format files use AC1032/0x21 and pass strict parity, while none uses AC103-4. A generated exact-version R2022b MINSERT fixture remains as a synthetic dispatch guard rather than evidence of a distinct historical product format. |
 | Pure stream route; real R11 plus generated R12 evidence | `R_11` / `R_12` | The pre-R13 reader passes generated main, block, extra-entity, control, table, dimension, polyline, vertex, INSERT/MINSERT, and EED coverage. Real C parity covers 23 R11 DWGs from two independent sources. An ODA 27.1 `ACAD12` conversion adds explicit R12 provenance and covers two entities plus 24 table records. Seventeen external 2010 R12-labelled files add 732-object strict parity after exposing omitted table controls and synthetic block boundaries. Both Stream flag settings are covered by committed pre-R13 tests; per-handle references and `full=0` pass. `R_12` aliases `R_11` in the enum, and no independently sourced historical R12 file is present. |
