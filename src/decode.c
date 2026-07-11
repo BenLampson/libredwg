@@ -2752,7 +2752,7 @@ secondheader_private (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
             h->value = (h->value << 8) | h->hdl[k];
         }
       LOG_TRACE ("[%u] %s: 0.%hu." FORMAT_HV "\n", (unsigned)i,
-                 h->name, h->num_hdl, h->value);
+                 h->name ? h->name : "", h->num_hdl, h->value);
     }
   // clang-format on
 
