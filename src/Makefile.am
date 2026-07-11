@@ -37,6 +37,8 @@ libredwg_la_SOURCES = \
 	bits.c \
 	logging.c \
 	decode.c \
+	stream/stream_callbacks.c \
+	stream/stream_version_policy.c \
 	decode2.c \
 	decode_r11.c \
 	decode_r2007.c \
@@ -114,6 +116,8 @@ EXTRA_HEADERS = \
 	bits.h \
 	myalloca.h \
 	decode.h \
+	stream/README.md \
+	stream/stream_version_policy.h \
 	decode_r11.h \
 	dec_macros.h \
 	free.h \
