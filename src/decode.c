@@ -54,8 +54,6 @@ static int cur_ver = 0;
 static BITCODE_BL rcount1 = 0, rcount2 = 0;
 static bool is_teigha = false;
 
-EXPORT int dwg_add_Document (Dwg_Data *restrict dwg, const int imperial);
-
 #ifdef DWG_ABORT
 static unsigned int errors = 0;
 #  ifndef DWG_ABORT_LIMIT

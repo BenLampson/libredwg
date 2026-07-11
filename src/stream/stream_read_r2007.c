@@ -11,6 +11,7 @@
 #include "dwg.h"
 #include "decode.h"
 #include "stream_object_helpers.h"
+#include "stream_reader_internal.h"
 #include "stream_r2007_internal.h"
 
 #define DWG_LOGLEVEL loglevel
@@ -547,4 +548,3 @@ error:
     sections_destroy (sections_map);
   return error;
 }
-
