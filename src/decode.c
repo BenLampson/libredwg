@@ -492,18 +492,21 @@ dwg_decode_stream (Bit_Chain *restrict dat,
   return DWG_ERR_NOTYETSUPPORTED;
 }
 
-EXPORT int
-dwg_stream_emit_decoded_object (
+int
+dwg_stream_emit_decoded_object_ex (
     Dwg_Data *restrict dwg, Bit_Chain *restrict object_dat,
     const Dwg_Stream_Object_Info *restrict info,
-    const Dwg_Stream_Callbacks_Ex *restrict callbacks, void *restrict user)
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks, void *restrict user,
+    int *restrict callback_error)
 {
   Dwg_Data stream_dwg;
   Dwg_Object stream_object;
   int error;
-  int callback_error = 0;
+  int emitted_error = 0;
   BITCODE_BL i;
 
+  if (callback_error)
+    *callback_error = 0;
   if (!dwg || !object_dat || !info || !callbacks || !callbacks->decoded_object)
     return 0;
 
@@ -531,10 +534,10 @@ dwg_stream_emit_decoded_object (
   if (error < DWG_ERR_CRITICAL && stream_dwg.num_objects)
     {
       Dwg_Object *obj = &stream_dwg.object[0];
-      callback_error = callbacks->decoded_object (info, obj, user);
+      emitted_error = callbacks->decoded_object (info, obj, user);
     }
   else if (error < DWG_ERR_CRITICAL && callbacks->decode_error)
-    callback_error = callbacks->decode_error (
+    emitted_error = callbacks->decode_error (
         info, error ? error : DWG_ERR_INTERNALERROR, user);
 
 done:
@@ -550,9 +553,23 @@ done:
     }
   free (stream_dwg.object_ref);
   hash_free (stream_dwg.object_map);
-  if (callback_error)
-    return callback_error;
+  if (emitted_error)
+    {
+      if (callback_error)
+        *callback_error = emitted_error;
+      return emitted_error;
+    }
   return error >= DWG_ERR_CRITICAL ? error : 0;
+}
+
+EXPORT int
+dwg_stream_emit_decoded_object (
+    Dwg_Data *restrict dwg, Bit_Chain *restrict object_dat,
+    const Dwg_Stream_Object_Info *restrict info,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks, void *restrict user)
+{
+  return dwg_stream_emit_decoded_object_ex (dwg, object_dat, info, callbacks,
+                                            user, NULL);
 }
 
 /* ODA 3.2.6 SECTION-LOCATOR RECORDS: p.21
@@ -3914,7 +3931,8 @@ static int
 read_2004_section_handles_buffered_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
-    const Dwg_Stream_Input_Mode input_mode, void *restrict user)
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user,
+    int *restrict callback_error)
 {
   Bit_Chain obj_dat = { 0 }, hdl_dat = { 0 };
   BITCODE_RS section_size = 0;
@@ -4002,10 +4020,11 @@ read_2004_section_handles_buffered_stream (
           prevsize = info.size + 4;
           if (callbacks->object)
             {
-              int callback_error = callbacks->object (&info, user);
-              if (callback_error)
+              int emitted_error = callbacks->object (&info, user);
+              if (emitted_error)
                 {
-                  error = callback_error;
+                  *callback_error = emitted_error;
+                  error = emitted_error;
                   goto done;
                 }
             }
@@ -4013,7 +4032,7 @@ read_2004_section_handles_buffered_stream (
             {
               Bit_Chain object_dat = obj_dat;
               size_t object_size;
-              int callback_error;
+              int emitted_error;
 
               object_error = stream_object_record_size (
                   &info, last_offset, obj_dat.size, &object_size);
@@ -4026,11 +4045,11 @@ read_2004_section_handles_buffered_stream (
               object_dat.byte = 0;
               object_dat.bit = 0;
               object_dat.size = object_size;
-              callback_error = dwg_stream_emit_decoded_object (
-                  dwg, &object_dat, &info, callbacks, user);
-              if (callback_error)
+              emitted_error = dwg_stream_emit_decoded_object_ex (
+                  dwg, &object_dat, &info, callbacks, user, callback_error);
+              if (emitted_error)
                 {
-                  error = callback_error;
+                  error = emitted_error;
                   goto done;
                 }
             }
@@ -4068,7 +4087,8 @@ static int
 read_2004_section_handles_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
-    const Dwg_Stream_Input_Mode input_mode, void *restrict user)
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user,
+    int *restrict callback_error)
 {
   Bit_Chain hdl_dat = { 0 };
   Dwg_Section_Info *obj_info;
@@ -4090,8 +4110,8 @@ read_2004_section_handles_stream (
   if (obj_info->max_decomp_size
       && obj_info->num_sections
              <= (BITCODE_RL)(0x2f000000U / obj_info->max_decomp_size))
-    return read_2004_section_handles_buffered_stream (dat, dwg, callbacks,
-                                                      input_mode, user);
+    return read_2004_section_handles_buffered_stream (
+        dat, dwg, callbacks, input_mode, user, callback_error);
 
   error = r2004_object_stream_init (&obj_stream, dat, obj_info);
   if (error)
@@ -4223,10 +4243,11 @@ read_2004_section_handles_stream (
       info.index = i;
       if (callbacks->object)
         {
-          int callback_error = callbacks->object (&info, user);
-          if (callback_error)
+          int emitted_error = callbacks->object (&info, user);
+          if (emitted_error)
             {
-              error = callback_error;
+              *callback_error = emitted_error;
+              error = emitted_error;
               goto done;
             }
         }
@@ -4235,7 +4256,7 @@ read_2004_section_handles_stream (
           BITCODE_RC *object_bytes;
           Bit_Chain object_dat = { 0 };
           size_t object_size;
-          int callback_error;
+          int emitted_error;
 
           object_error = stream_object_record_size (&info, entries[i].address,
                                                     0, &object_size);
@@ -4263,12 +4284,12 @@ read_2004_section_handles_stream (
           object_dat.byte = 0;
           object_dat.bit = 0;
           object_dat.size = object_size;
-          callback_error = dwg_stream_emit_decoded_object (
-              dwg, &object_dat, &info, callbacks, user);
+          emitted_error = dwg_stream_emit_decoded_object_ex (
+              dwg, &object_dat, &info, callbacks, user, callback_error);
           free (object_bytes);
-          if (callback_error)
+          if (emitted_error)
             {
-              error = callback_error;
+              error = emitted_error;
               goto done;
             }
         }
@@ -5356,6 +5377,8 @@ read_r2004_meta_data_stream (Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
                              void *restrict user)
 {
   int error = 0;
+  int callback_error = 0;
+  int stream_error;
   Dwg_Section *section;
 
   error |= decode_R2004_header (dat, dwg);
@@ -5397,8 +5420,13 @@ read_r2004_meta_data_stream (Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
   if (error < DWG_ERR_CRITICAL)
     error |= read_2004_section_classes (dat, dwg);
   if (error < DWG_ERR_CRITICAL)
-    error |= read_2004_section_handles_stream (dat, dwg, callbacks, input_mode,
-                                               user);
+    {
+      stream_error = read_2004_section_handles_stream (
+          dat, dwg, callbacks, input_mode, user, &callback_error);
+      if (callback_error)
+        return callback_error;
+      error |= stream_error;
+    }
   return error;
 }
 

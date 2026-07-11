@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2948,6 +2949,94 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
 }
 
 static int
+mutate_r2004_section_map_checksum (const char *path,
+                                   const BITCODE_RL section_map_address)
+{
+  const size_t checksum_address = (size_t)section_map_address + 0x110;
+  FILE *fp;
+  int byte;
+
+  if (checksum_address > LONG_MAX)
+    return 1;
+  fp = fopen (path, "r+b");
+  if (!fp)
+    return 1;
+  if (fseek (fp, (long)checksum_address, SEEK_SET) != 0
+      || (byte = fgetc (fp)) == EOF
+      || fseek (fp, (long)checksum_address, SEEK_SET) != 0
+      || fputc (byte ^ 1, fp) == EOF)
+    {
+      fclose (fp);
+      return 1;
+    }
+  return fclose (fp) != 0;
+}
+
+static int
+test_callback_abort_preserves_error (void)
+{
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Stream_Stats stats = { 0 };
+  Dwg_Data blocking = { 0 };
+  char path[128];
+  BITCODE_RL section_map_address;
+  int error;
+
+  error = write_generated_minsert_fixture (R_2004b, "callback warning", path,
+                                           sizeof (path));
+  if (error)
+    return error;
+  error = dwg_read_file (path, &blocking);
+  if (error >= DWG_ERR_CRITICAL || blocking.num_objects < 7)
+    {
+      printf ("callback warning fixture read failed: error=0x%x objects=%lu\n",
+              error, (unsigned long)blocking.num_objects);
+      dwg_free (&blocking);
+      remove (path);
+      return 1;
+    }
+  section_map_address = blocking.fhdr.r2004_header.section_map_address;
+  dwg_free (&blocking);
+  if (mutate_r2004_section_map_checksum (path, section_map_address))
+    {
+      printf ("failed to mutate callback warning fixture checksum\n");
+      remove (path);
+      return 1;
+    }
+
+  error = dwg_read_file (path, &blocking);
+  if (!(error & DWG_ERR_WRONGCRC) || error >= DWG_ERR_CRITICAL
+      || blocking.num_objects < 7)
+    {
+      printf ("mutated blocking warning missing: error=0x%x objects=%lu\n",
+              error, (unsigned long)blocking.num_objects);
+      dwg_free (&blocking);
+      remove (path);
+      return 1;
+    }
+  dwg_free (&blocking);
+
+  callbacks.object = stream_object_callback;
+  callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+  error = dwg_stream_file_ex (path, &callbacks, &stats);
+  if (!(error & DWG_ERR_WRONGCRC) || error >= DWG_ERR_CRITICAL
+      || stats.num_objects < 7 || stats.full_decode_objects)
+    {
+      printf (
+          "mutated stream warning missing: error=0x%x objects=%lu full=%lu\n",
+          error, (unsigned long)stats.num_objects,
+          (unsigned long)stats.full_decode_objects);
+      remove (path);
+      return 1;
+    }
+
+  error = test_stream_file_parity (
+      path, 1, 1, "callback abort with prior warning parity ok", 0, NULL);
+  remove (path);
+  return error;
+}
+
+static int
 write_magic_override_fixture (const char *source_path, const char *path,
                               const char *magic, BITCODE_RC dwg_version)
 {
@@ -4460,6 +4549,9 @@ main (void)
   stream_trace_stage ("test_generated_r2022_minsert_stream_fixture");
   if (test_generated_minsert_stream_fixture (
           R_2022b, "generated R2022 MINSERT stream parity ok"))
+    return 1;
+  stream_trace_stage ("test_callback_abort_preserves_error");
+  if (test_callback_abort_preserves_error ())
     return 1;
   stream_trace_stage ("test_pre_r13_minsert_opts_stream");
   if (test_pre_r13_minsert_opts_stream ())

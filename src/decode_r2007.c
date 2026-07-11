@@ -2203,7 +2203,8 @@ read_2007_section_handles_stream (
     Bit_Chain *dat, Dwg_Data *restrict dwg,
     r2007_section *restrict sections_map, r2007_page *restrict pages_map,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
-    const Dwg_Stream_Input_Mode input_mode, void *restrict user)
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user,
+    int *restrict callback_error)
 {
   R2007_Stream_Page_Cache object_page = { 0 };
   Bit_Chain hdl_dat = { 0 };
@@ -2269,7 +2270,6 @@ read_2007_section_handles_stream (
           BITCODE_MC offset;
           Dwg_Stream_Object_Info info;
           int object_error;
-          int callback_error;
 
           oldpos = hdl_dat.byte;
           handleoff = bit_read_UMC (&hdl_dat);
@@ -2298,10 +2298,10 @@ read_2007_section_handles_stream (
           info.index = index++;
           if (callbacks->object)
             {
-              callback_error = callbacks->object (&info, user);
-              if (callback_error)
+              *callback_error = callbacks->object (&info, user);
+              if (*callback_error)
                 {
-                  error = callback_error;
+                  error = *callback_error;
                   goto done;
                 }
             }
@@ -2332,8 +2332,8 @@ read_2007_section_handles_stream (
                   error = decoded_error;
                   goto done;
                 }
-              decoded_error = dwg_stream_emit_decoded_object (
-                  dwg, &object_dat, &info, callbacks, user);
+              decoded_error = dwg_stream_emit_decoded_object_ex (
+                  dwg, &object_dat, &info, callbacks, user, callback_error);
               if (object_dat.chain)
                 free (object_dat.chain);
               if (decoded_error)
@@ -3070,6 +3070,8 @@ read_r2007_meta_data_stream (Bit_Chain *dat, Bit_Chain *hdl_dat,
   r2007_page *restrict pages_map = NULL, *restrict page;
   r2007_section *restrict sections_map = NULL;
   int error;
+  int callback_error = 0;
+  int stream_error;
 #ifdef USE_TRACING
   char *probe;
 #endif
@@ -3124,9 +3126,15 @@ read_r2007_meta_data_stream (Bit_Chain *dat, Bit_Chain *hdl_dat,
 
   error = read_2007_section_classes (dat, dwg, sections_map, pages_map);
   if (error < DWG_ERR_CRITICAL)
-    error |= read_2007_section_handles_stream (dat, dwg, sections_map,
-                                               pages_map, callbacks,
-                                               input_mode, user);
+    {
+      stream_error = read_2007_section_handles_stream (
+          dat, dwg, sections_map, pages_map, callbacks, input_mode, user,
+          &callback_error);
+      if (callback_error)
+        error = callback_error;
+      else
+        error |= stream_error;
+    }
 
 error:
   pages_destroy (pages_map);

@@ -86,11 +86,17 @@ int dwg_decode_header_variables (Bit_Chain *dat, Bit_Chain *hdl_dat,
 int dwg_decode_add_object (Dwg_Data *restrict dwg, Bit_Chain *dat,
                            Bit_Chain *hdl_dat, size_t address);
 /* Exported for unit-testing/stream_test and internal stream decoders only.
-   Not part of the public API. */
+
+ * Not part of the public API. */
 EXPORT int dwg_stream_emit_decoded_object (
     Dwg_Data *restrict dwg, Bit_Chain *restrict object_dat,
     const Dwg_Stream_Object_Info *restrict info,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks, void *restrict user);
+int dwg_stream_emit_decoded_object_ex (
+    Dwg_Data *restrict dwg, Bit_Chain *restrict object_dat,
+    const Dwg_Stream_Object_Info *restrict info,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks, void *restrict user,
+    int *restrict callback_error);
 int obj_handle_stream (Bit_Chain *restrict dat, Dwg_Object *restrict obj,
                        Bit_Chain *restrict hdl_dat);
 void bfr_read (void *restrict dst, BITCODE_RC *restrict *restrict src,

@@ -172,7 +172,8 @@ Smoke requirements:
 - Entity and non-entity counts match the blocking baseline.
 - Handle mix and decoded handle mix match the blocking baseline.
 - No native crash.
-- Callback abort errors are propagated.
+- Callback abort errors are propagated exactly, even when decoding accumulated
+  an earlier noncritical warning.
 - Any known legal version without a stream route returns
   `DWG_ERR_NOTYETSUPPORTED` without invoking any stream callbacks. There are no
   such versions in the current `Dwg_Version_Type` enum.
@@ -461,8 +462,11 @@ valid C parity on `example_2004.dwg`.
 raised inside an already-selected stream decoder. Every current legal enum
 version has a stream route. Unknown headers return `DWG_ERR_INVALIDDWG`; a
 future known version without a route would return `DWG_ERR_NOTYETSUPPORTED`.
-Callback return values are propagated and are not swallowed or reinterpreted as
-fallback requests.
+Callback return values are propagated exactly and are not swallowed,
+reinterpreted as fallback requests, or combined with earlier noncritical decode
+warnings. The generated R2004b regression fixture corrupts only the Section Page
+Map checksum, verifies blocking and Stream `DWG_ERR_WRONGCRC`, and then verifies
+exact object, not-supported-bit, and decoded-object callback abort values.
 The blocking and stream R13/R2000 dispatch ranges both extend through `R_2002`,
 so unique `AC1016` and `AC1017` headers no longer fall out after `R_2000`.
 After the common modern header is parsed, both paths refine shared magic through
@@ -728,6 +732,35 @@ The committed strict regression subset contains 64 unique entity files from
 AC1.40, AC2.10, AC1003, and AC1006 with exact commits and licenses recorded in
 their fixture directories.
 
+A broader 2026-07-11 GitHub audit enumerated 1,970 unique repositories returned
+by `dwg` and `autocad` repository searches. Of the 331 repositories with an
+explicit SPDX license result, 79 contained DWG paths: 870 paths were inspected
+and 808 complete valid DWGs were classified by their file headers. The exact
+header counts were `AC1.40` 2, `AC2.10` 4, `AC1003` 4, `AC1004` 2, `AC1006`
+37, `AC1009` 6, `AC1012` 4, `AC1014` 37, `AC1015` 96, `AC1018` 77, `AC1021`
+74, `AC1024` 77, `AC1027` 114, and `AC1032` 274. None supplied one of the
+generated-only or synthetic-only exact-version magics listed below. The six
+`AC1009` paths were copies of R11 fixtures already represented by the committed
+R11 sources.
+
+The remaining 1,639 repositories had no reusable repository-wide license
+result. Of those, 358 contained 3,173 DWG paths and 3,167 complete valid DWGs.
+The only files matching a generated-only exact-version magic were five
+byte-identical `AC402b` copies of Autodesk ObjectARX `StandardTest.dwg`, SHA256
+`623E79D3A5422DEE1EA9206E698466EC96C994CC0FA925F7F9A348DEB8E09D1D`.
+Their repository license explicitly excludes Autodesk SDK files from its MIT
+grant, so they cannot be imported as regression fixtures.
+
+The proprietary `AC402b` file was used only as an external interoperability
+check. Blocking and pure Stream both accept it as `R_2004b`; strict Stream
+parity covers 50 objects, including 14 entities and 36 non-entities, references,
+semantic counters, zero decode errors, and `full=0`. It exposed a callback
+contract bug: an existing `DWG_ERR_VALUEOUTOFBOUNDS` warning was being ORed into
+the caller's abort value. R2004 and R2007 metadata streaming now carry callback
+abort state separately and return the callback value exactly. The generated
+checksum-warning regression reproduces the condition without distributing the
+proprietary file, and the external `AC402b` strict run now passes completely.
+
 The important distinction is that a successful blocking read elsewhere does not
 count as stream support. Every current legal enum version now has an explicit
 stream route. A future known version without a route must fail clearly with
@@ -753,8 +786,9 @@ R_2000i, R_2002
 Pure stream routes with no valid exact-version fixture at all:
 none
 
-Known blocking-success/Stream-failure fixtures in the committed regression set
-or the audited AC1.40/AC2.10/AC1003/AC1004/AC1006 repositories:
+Known blocking-success/Stream-failure fixtures in the committed regression set,
+the audited licensed GitHub set, or the externally checked proprietary AC402b
+sample:
 none
 
 Committed strict real-file counts for the expanded historical families:
@@ -845,8 +879,8 @@ R2002, and R2004c. Every current enum now has at least one valid exact-version
 fixture accepted by the blocking reader and the pure stream reader. Complete
 historical evidence coverage is not done: the generated, synthetic, and
 historical exact-version gaps above remain open. There is currently no known
-blocking-success/Stream-failure fixture in the committed set or the five
-audited BSD-2-Clause historical repositories.
+blocking-success/Stream-failure fixture in the committed set, the broader
+licensed GitHub audit, or the externally checked AC402b sample.
 
 ## 9. C-side work items
 
