@@ -853,6 +853,45 @@ two non-DWG files and these exact DWG header counts: `AC1.40` 1, `AC2.10` 2,
 `AC1032` 83. No generated-only or synthetic-only exact-version magic occurred
 in the readable GitLab set.
 
+Debian source archives were audited independently of repository names. The
+complete `main/Contents-source.gz` indexes for sid, bookworm, bullseye, buster,
+and stretch contained respectively 71, 77, 76, 70, and 68 paths ending in
+`.dwg`. Their SHA256 values were
+`69814BE8047E366CAEE4D29E8D786A48868D1E9A36D17441198FDF6BA1A2BBAC`,
+`541C7D9ED1867DFBBB52A10F3BD39664B278A912CAE28E59BFCDFB200563D394`,
+`1848F8563CB212657798A77938C2009D9E33BC7B4E331B2AE74C4D86FB96ECD2`,
+`EA213EF2CE036A735816C2EA7A9457F479EE3F7A83FA0B4A4486C92F6E45F307`,
+and
+`19711ECC947018290F2E4B4E5B17591029AE306C683DE2DC0BCF45B7C0C219EE`.
+The corresponding `Sources.gz` records selected exact source versions and
+archive checksums rather than assuming that a repeated path had unchanged
+content. Every downloaded original archive matched its `Checksums-Sha256`
+record.
+
+Sixty-one of the paths are password dictionaries from `crack`, not CAD files.
+The three `libpj-java` files begin with a Java serialization header and are not
+AutoCAD DWGs. The remaining files came from `ezdxf`, `qgis`, `ruby-marcel`,
+`z88`, and `spe`. All three audited ezdxf source versions (`0.14.2`, `0.18.1`,
+and `1.4.3`) reduce to the same four `AC1027` documentation blobs and one
+`AC1015` test blob. All three ruby-marcel versions (`0.3.2`, `1.0.1`, and
+`1.2.1`) contain the same `AC1021` blob. QGIS `3.44.12`, `3.22.16`, `3.10.14`,
+and `2.18.28` contain the same `AC1027` blob; QGIS `2.14.11` predates that
+member and contains none. The historical-only additions are five `AC1015` and
+one `AC1018` file from z88 `13.0.0`, plus one `AC1018` file from spe `0.8.4.h`.
+This leaves 14 unique valid DWGs: six `AC1015`, two `AC1018`, one `AC1021`,
+and five `AC1027`. None has a generated-only or synthetic-only exact-version
+magic. Jessie and earlier Debian archive directories do not publish the same
+source-file contents index, so they remain outside this reproducible global
+file-path audit rather than being silently counted as searched.
+
+All 14 unique Debian-source DWGs pass strict blocking-versus-Stream reference
+parity with `full=0` and zero per-object decode errors. Together they cover
+4,835 objects: 3,147 entities and 1,688 non-entities. The source packages carry
+Debian `main` copyright records, but no binary was imported because these
+release-version files do not close any exact-version gap. They remain external
+audit evidence and avoid increasing the committed fixture set without changing
+the acceptance boundary.
+
 The 2010 Internet Archive item
 [`LibredwgTestSuite0.1`](https://archive.org/details/LibredwgTestSuite0.1)
 was also audited outside the repository. Its 0.1 archive contains 1,335 DWGs:
@@ -925,8 +964,9 @@ Pure stream routes with no valid exact-version fixture at all:
 none
 
 Known blocking-success/Stream-failure fixtures in the committed regression set,
-the audited licensed GitHub set, or the externally checked proprietary AC402b
-sample and Internet Archive R12-labelled set:
+the audited licensed GitHub and readable GitLab sets, the Debian-source set, or
+the externally checked proprietary AC402b sample and Internet Archive
+R12-labelled set:
 none
 
 Committed strict real-file counts for the expanded historical families:
@@ -1023,7 +1063,8 @@ fixture accepted by the blocking reader and the pure stream reader. Complete
 historical evidence coverage is not done: the generated, synthetic, and
 historical exact-version gaps above remain open. There is currently no known
 blocking-success/Stream-failure fixture in the committed set, the broader
-licensed GitHub audit, or the externally checked AC402b sample.
+licensed GitHub audit, the readable GitLab audit, the Debian-source audit, or
+the externally checked AC402b and Internet Archive samples.
 
 ## 9. C-side work items
 
