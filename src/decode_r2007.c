@@ -869,6 +869,12 @@ read_data_section_page (Bit_Chain *page_dat, Bit_Chain *dat,
       LOG_ERROR ("Invalid section page size");
       return DWG_ERR_VALUEOUTOFBOUNDS;
     }
+  if (page->offset >= dat->size)
+    {
+      LOG_ERROR ("Invalid page->offset %ld >= %ld", (long)page->offset,
+                 (long)dat->size);
+      return DWG_ERR_VALUEOUTOFBOUNDS;
+    }
 
   decomp = (BITCODE_RC *)calloc ((size_t)section_page->uncomp_size, 1);
   if (decomp == NULL)
@@ -2461,16 +2467,20 @@ read_r2007_meta_data (Bit_Chain *dat, Bit_Chain *hdl_dat,
       error |= DWG_ERR_SECTIONNOTFOUND;
       goto error;
     }
-  dat->byte = page->offset;
-  if ((size_t)file_header->sections_map_size_comp > dat->size - dat->byte)
+  if (page->offset >= dat->size
+      || (size_t)file_header->sections_map_size_comp
+             > dat->size - (size_t)page->offset)
     {
       LOG_ERROR ("%s Invalid comp_data_size %" PRId64 " > %" PRIuSIZE
                  " bytes left",
                  __FUNCTION__, file_header->sections_map_size_comp,
-                 dat->size - dat->byte);
+                 page->offset < dat->size
+                     ? dat->size - (size_t)page->offset
+                     : (size_t)0);
       error |= DWG_ERR_VALUEOUTOFBOUNDS;
       goto error;
     }
+  dat->byte = page->offset;
   sections_map = read_sections_map (dat, file_header->sections_map_size_comp,
                                     file_header->sections_map_size_uncomp,
                                     file_header->sections_map_correction);

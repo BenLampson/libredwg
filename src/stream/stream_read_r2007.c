@@ -515,12 +515,14 @@ dwg_stream_read_r2007 (Bit_Chain *dat, Bit_Chain *hdl_dat,
       error |= DWG_ERR_SECTIONNOTFOUND;
       goto error;
     }
-  dat->byte = page->offset;
-  if ((size_t)file_header->sections_map_size_comp > dat->size - dat->byte)
+  if (page->offset >= dat->size
+      || (size_t)file_header->sections_map_size_comp
+             > dat->size - (size_t)page->offset)
     {
       error |= DWG_ERR_VALUEOUTOFBOUNDS;
       goto error;
     }
+  dat->byte = page->offset;
   sections_map = read_sections_map (dat, file_header->sections_map_size_comp,
                                     file_header->sections_map_size_uncomp,
                                     file_header->sections_map_correction);

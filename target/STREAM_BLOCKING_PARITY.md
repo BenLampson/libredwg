@@ -94,6 +94,8 @@ object combination never represented by a test file.
 - `target/project-owned-dwg-corpus-audit.txt`: aggregate private corpus audit.
 - `target/LARGE_R2004_3F_00.md`: separate large-R2004 result, decompression-cap
   history, Stream evidence, and blocking-reader safety boundary.
+- `target/UPSTREAM_SYNC_STREAM_AUDIT_2026-07-17.md`: classification of the
+  upstream 0.14.8447 fixes by shared or Stream-specific execution path.
 - `target/modern-beta-source-audit.txt`: retained historical search and decision
   background; it is no longer a completion backlog.
 - `target/internet-archive-autocad-2000i-2002-audit.txt`: AC1015 product-family
