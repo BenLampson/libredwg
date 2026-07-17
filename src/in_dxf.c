@@ -678,6 +678,17 @@ dxf_read_string (Bit_Chain *dat, char **string)
                   dat->byte += 7;
                 }
             }
+          // reverse cquote(): embedded LF/CR are written as ^J / ^M
+          else if (s[0] == '^' && s[1] == 'J' && dat->byte + 1 < dat->size)
+            {
+              buf[i++] = '\n';
+              dat->byte++;
+            }
+          else if (s[0] == '^' && s[1] == 'M' && dat->byte + 1 < dat->size)
+            {
+              buf[i++] = '\r';
+              dat->byte++;
+            }
           else
             buf[i++] = *s;
         }
@@ -5584,6 +5595,38 @@ add_TABLESTYLE (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
               "%s.rowstyles[%d].borders[%d].color.index = %d [CMC %d]\n",
               obj->name, i, j, pair->value.i, pair->code);
           break;
+        // true-color (RGB) counterparts of the 62..69 index colors, DXF
+        // adds 358 to the index code (62->420, 63->421, 64..69->422..427)
+        case 420:
+          CHK_rowstyles;
+          o->rowstyles[i].text_color.rgb = pair->value.u;
+          o->rowstyles[i].text_color.method = pair->value.u >> 0x18;
+          LOG_TRACE ("%s.rowstyles[%d].text_color.rgb = %08X [CMC %d]\n",
+                     obj->name, i, pair->value.u, pair->code);
+          break;
+        case 421:
+          CHK_rowstyles;
+          o->rowstyles[i].fill_color.rgb = pair->value.u;
+          o->rowstyles[i].fill_color.method = pair->value.u >> 0x18;
+          LOG_TRACE ("%s.rowstyles[%d].fill_color.rgb = %08X [CMC %d]\n",
+                     obj->name, i, pair->value.u, pair->code);
+          break;
+        case 422:
+        case 423:
+        case 424:
+        case 425:
+        case 426:
+        case 427:
+          CHK_rowstyles;
+          j = pair->code - 422;
+          CHK_borders;
+          assert (j >= 0 && j <= 6);
+          o->rowstyles[i].borders[j].color.rgb = pair->value.u;
+          o->rowstyles[i].borders[j].color.method = pair->value.u >> 0x18;
+          LOG_TRACE (
+              "%s.rowstyles[%d].borders[%d].color.rgb = %08X [CMC %d]\n",
+              obj->name, i, j, pair->value.u, pair->code);
+          break;
         default:
           if (is_type_stable (obj->fixedtype))
             LOG_ERROR ("Unknown DXF code %d for %s", pair->code, "TABLESTYLE");
@@ -9361,8 +9404,16 @@ dxf_postprocess_SEQEND (Dwg_Object *restrict obj)
       num_owned = j + 1;
       if (dwg->header.from_version >= R_13b1)
         {
+          // Match the encoder's expected handle relation-code for the owned
+          // list, else it warns "Expected a CODE 4 handle, got a 3":
+          // INSERT/MINSERT.attribs[] and POLYLINE_PFACE/MESH.vertex[] are
+          // soft pointers (code 4); only POLYLINE_2D/3D.vertex[] is code 3.
+          BITCODE_RC hdlcode = (owner->fixedtype == DWG_TYPE_POLYLINE_2D
+                                || owner->fixedtype == DWG_TYPE_POLYLINE_3D)
+                                   ? 3
+                                   : 4;
           owned = (BITCODE_H *)realloc (owned, num_owned * sizeof (BITCODE_H));
-          owned[j] = dwg_add_handleref (dwg, 3, _o->handle.value, owner);
+          owned[j] = dwg_add_handleref (dwg, hdlcode, _o->handle.value, owner);
           LOG_TRACE ("%s.%s[%d] = " FORMAT_REF " [H* 0]\n", owner->name,
                      owhdls, j, ARGS_REF (owned[j]));
         }
@@ -9625,6 +9676,161 @@ get_numfield_value (void *restrict _obj, const Dwg_DYNAPI_field *restrict f)
   return 0;
 }
 #  undef GET_NUMFIELD
+
+/* MATERIAL has nested color and mapper subclasses whose DXF group codes are
+   position-dependent and partly collide with the trailing scalars (e.g. 270
+   is bumpmap.projection here, but luminance_mode in the tail). The generic
+   new_object field-by-code path cannot resolve them, so read them explicitly,
+   in the fixed order dwg2.spec emits. Entry: pair is the first color code
+   (70). Returns the first pair it does not consume (a handle code or 0), for
+   new_object to reprocess. The procedural-texture variants (source==2, the
+   277/300/301/... codes) are not written by out_dxf and stay unhandled. */
+static Dxf_Pair *
+add_MATERIAL (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
+              Dxf_Pair *restrict pair)
+{
+  Dwg_Object_MATERIAL *o = obj->tio.object->tio.MATERIAL;
+  // one transmatrix fill index per map, in DXF order
+  int ti_dif = 0, ti_spe = 0, ti_ref = 0, ti_opa = 0, ti_bmp = 0, ti_rfr = 0;
+
+#  define MAT_TM(mapfield, idxvar)                                            \
+    {                                                                         \
+      if (!o->mapfield.transmatrix)                                           \
+        o->mapfield.transmatrix                                               \
+            = (BITCODE_BD *)xcalloc (16, sizeof (BITCODE_BD));                \
+      if (o->mapfield.transmatrix && idxvar < 16)                            \
+        {                                                                     \
+          o->mapfield.transmatrix[idxvar] = pair->value.d;                    \
+          LOG_TRACE ("MATERIAL." #mapfield ".transmatrix[%d] = %f [BD %d]\n", \
+                     idxvar, pair->value.d, pair->code);                      \
+          idxvar++;                                                           \
+        }                                                                     \
+    }
+#  define MAT_RC(field, dxf)                                                  \
+    case dxf:                                                                 \
+      o->field = (BITCODE_RC)pair->value.i;                                   \
+      LOG_TRACE ("MATERIAL." #field " = %d [RC %d]\n", (int)o->field,         \
+                 pair->code);                                                 \
+      break;
+#  define MAT_BD(field, dxf)                                                  \
+    case dxf:                                                                 \
+      o->field = pair->value.d;                                               \
+      LOG_TRACE ("MATERIAL." #field " = %f [BD %d]\n", o->field, pair->code); \
+      break;
+#  define MAT_BL(field, dxf)                                                  \
+    case dxf:                                                                 \
+      o->field = (BITCODE_BL)pair->value.u;                                   \
+      LOG_TRACE ("MATERIAL." #field " = %u [BL %d]\n", (unsigned)o->field,    \
+                 pair->code);                                                 \
+      break;
+  // a map filename (source==1), kept as UTF-8 like all other imported strings
+#  define MAT_T(field, dxf)                                                   \
+    case dxf:                                                                 \
+      o->field = pair->value.s.ptr ? strdup (pair->value.s.ptr) : NULL;       \
+      LOG_TRACE ("MATERIAL." #field " = %s [T %d]\n",                         \
+                 pair->value.s.ptr ? pair->value.s.ptr : "", pair->code);     \
+      break;
+
+  while (pair != NULL && pair->code != 0)
+    {
+      switch (pair->code)
+        {
+          // colors: flag, factor, [rgb only if flag==1]
+          MAT_RC (ambient_color.flag, 70)
+          MAT_BD (ambient_color.factor, 40)
+          MAT_BL (ambient_color.rgb, 90)
+          MAT_RC (diffuse_color.flag, 71)
+          MAT_BD (diffuse_color.factor, 41)
+          MAT_BL (diffuse_color.rgb, 91)
+          MAT_RC (specular_color.flag, 76)
+          MAT_BD (specular_color.factor, 45)
+          MAT_BL (specular_color.rgb, 92)
+          // top-level scalars
+          MAT_BD (specular_gloss_factor, 44)
+          MAT_BD (opacity_percent, 140)
+          MAT_BD (refraction_index, 145)
+          // diffusemap: blend 42, proj 73, tiling 74, autotransform 75,
+          // transmatrix 43, source 72
+          MAT_BD (diffusemap.blendfactor, 42)
+          MAT_RC (diffusemap.projection, 73)
+          MAT_RC (diffusemap.tiling, 74)
+          MAT_RC (diffusemap.autotransform, 75)
+          MAT_RC (diffusemap.source, 72)
+          MAT_T (diffusemap.filename, 3)
+        case 43:
+          MAT_TM (diffusemap, ti_dif);
+          break;
+          // specularmap
+          MAT_BD (specularmap.blendfactor, 46)
+          MAT_RC (specularmap.projection, 78)
+          MAT_RC (specularmap.tiling, 79)
+          MAT_RC (specularmap.autotransform, 170)
+          MAT_RC (specularmap.source, 77)
+          MAT_T (specularmap.filename, 4)
+        case 47:
+          MAT_TM (specularmap, ti_spe);
+          break;
+          // reflectionmap
+          MAT_BD (reflectionmap.blendfactor, 48)
+          MAT_RC (reflectionmap.projection, 172)
+          MAT_RC (reflectionmap.tiling, 173)
+          MAT_RC (reflectionmap.autotransform, 174)
+          MAT_RC (reflectionmap.source, 171)
+          MAT_T (reflectionmap.filename, 6)
+        case 49:
+          MAT_TM (reflectionmap, ti_ref);
+          break;
+          // opacitymap
+          MAT_BD (opacitymap.blendfactor, 141)
+          MAT_RC (opacitymap.projection, 176)
+          MAT_RC (opacitymap.tiling, 177)
+          MAT_RC (opacitymap.autotransform, 178)
+          MAT_RC (opacitymap.source, 175)
+          MAT_T (opacitymap.filename, 7)
+        case 142:
+          MAT_TM (opacitymap, ti_opa);
+          break;
+          // bumpmap
+          MAT_BD (bumpmap.blendfactor, 143)
+          MAT_RC (bumpmap.projection, 270)
+          MAT_RC (bumpmap.tiling, 271)
+          MAT_RC (bumpmap.autotransform, 272)
+          MAT_RC (bumpmap.source, 179)
+          MAT_T (bumpmap.filename, 8)
+        case 144:
+          MAT_TM (bumpmap, ti_bmp);
+          break;
+          // refractionmap
+          MAT_BD (refractionmap.blendfactor, 146)
+          MAT_RC (refractionmap.projection, 274)
+          MAT_RC (refractionmap.tiling, 275)
+          MAT_RC (refractionmap.autotransform, 276)
+          MAT_RC (refractionmap.source, 273)
+          MAT_T (refractionmap.filename, 9)
+        case 147:
+          MAT_TM (refractionmap, ti_rfr);
+          break;
+          // r2007+ scalar tail
+          MAT_BD (translucence, 148)
+          MAT_BD (self_illumination, 149)
+          MAT_BD (reflectivity, 468)
+          MAT_BL (illumination_model, 93)
+          MAT_BL (channel_flags, 94)
+          MAT_BL (mode, 282)
+        default:
+          return pair; // hand back to new_object (handles, 0, procedural ...)
+        }
+      dxf_free_pair (pair);
+      pair = dxf_read_pair (dat);
+    }
+  return pair;
+
+#  undef MAT_TM
+#  undef MAT_T
+#  undef MAT_RC
+#  undef MAT_BD
+#  undef MAT_BL
+}
 
 /* For tables, entities and objects.
  */
@@ -10886,11 +11092,22 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
                                            &ver, is_tu);
               break;
             }
-          else if (pair->code == 70
-                   && obj->fixedtype == DWG_TYPE_DIMENSION_ANG2LN)
+          else if (pair->code == 70 && obj->fixedtype == DWG_TYPE_ARC_DIMENSION
+                   && strEQc (subclass, "AcDbArcDimension"))
             {
-              Dwg_Entity_DIMENSION_ANG2LN *o
-                  = obj->tio.entity->tio.DIMENSION_ANG2LN;
+              Dwg_Entity_ARC_DIMENSION *o = obj->tio.entity->tio.ARC_DIMENSION;
+              o->is_partial = pair->value.i ? 1 : 0;
+              LOG_TRACE ("ARC_DIMENSION.is_partial = %d [B 70]\n",
+                         o->is_partial);
+              break;
+            }
+          else if (pair->code == 70
+                   && (obj->fixedtype == DWG_TYPE_DIMENSION_ANG2LN
+                       || obj->fixedtype == DWG_TYPE_ARC_DIMENSION))
+            {
+              Dwg_DIMENSION_common *o
+                  = (Dwg_DIMENSION_common *)
+                        obj->tio.entity->tio.DIMENSION_ANG2LN;
               o->flag = o->flag1 = pair->value.i;
               LOG_TRACE ("DIMENSION.flag = %d [RC 70]\n", pair->value.i);
               o->flag1 &= 0xE0; /* clear the upper flag bits, and fix them: */
@@ -10903,7 +11120,8 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
               // subclasses is far better and more reliable), use it here to
               // upgrade the generic DIMENSION_ANG2LN (the biggest DIMENSION
               // struct, used as a placeholder until now) to its real subtype.
-              if (dat->version <= R_12)
+              if (dat->version <= R_12
+                  && obj->fixedtype == DWG_TYPE_DIMENSION_ANG2LN)
                 switch (o->flag & 31)
                   {
                   case 0: // rotated, horizontal or vertical
@@ -11123,6 +11341,26 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
               else
                 goto search_field;
             }
+          // 41 and 71 also exist as lspace_factor/attachment in the earlier
+          // AcDbDimension subclass, which the generic loop would match first.
+          else if (pair->code == 41 && obj->fixedtype == DWG_TYPE_ARC_DIMENSION
+                   && strEQc (subclass, "AcDbArcDimension"))
+            {
+              Dwg_Entity_ARC_DIMENSION *o = obj->tio.entity->tio.ARC_DIMENSION;
+              o->arc_end_param = pair->value.d;
+              LOG_TRACE ("ARC_DIMENSION.arc_end_param = %f [BD 41]\n",
+                         o->arc_end_param);
+              goto next_pair;
+            }
+          else if (pair->code == 71 && obj->fixedtype == DWG_TYPE_ARC_DIMENSION
+                   && strEQc (subclass, "AcDbArcDimension"))
+            {
+              Dwg_Entity_ARC_DIMENSION *o = obj->tio.entity->tio.ARC_DIMENSION;
+              o->has_leader = pair->value.i ? 1 : 0;
+              LOG_TRACE ("ARC_DIMENSION.has_leader = %d [B 71]\n",
+                         o->has_leader);
+              goto next_pair;
+            }
           else if (pair->code == 91
                    && obj->fixedtype == DWG_TYPE_EVALUATION_GRAPH)
             {
@@ -11295,6 +11533,18 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
                          ARGS_REF (hdl));
               goto next_pair;
             }
+          // PlotStyleNameType enum, when the plot style is not ById (no 390
+          // handle). 0 ByLayer, 1 ByBlock, 2 DictDefault, 3 ById. Maps 1:1
+          // to the DWG plotstyle_flags BB.
+          else if (pair->code == 380 && obj->supertype == DWG_SUPERTYPE_ENTITY
+                   && strEQc (subclass, "AcDbEntity"))
+            {
+              BITCODE_BB flags = (BITCODE_BB)(pair->value.i & 3);
+              dwg_dynapi_common_set_value (_obj, "plotstyle_flags", &flags, 0);
+              LOG_TRACE ("COMMON.plotstyle_flags = %u [BB 380]\n",
+                         (unsigned)flags);
+              goto next_pair;
+            }
           else if (pair->code == 347 && obj->supertype == DWG_SUPERTYPE_ENTITY
                    && strEQc (subclass, "AcDbEntity"))
             {
@@ -11449,6 +11699,23 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
                   if (!pair || pair->code == 0) // end or unknown
                     return pair;
                   goto search_field;
+                }
+              else
+                goto search_field;
+            }
+          else if (obj->fixedtype == DWG_TYPE_MATERIAL)
+            {
+              // colors/mappers start at the ambient_color.flag (70) or
+              // .factor (40); name/description (1/2) fall through to the
+              // generic field search.
+              if (pair->code == 70 || pair->code == 40)
+                {
+                  pair = add_MATERIAL (obj, dat, pair);
+                  if (!pair || pair->code == 0) // end or unknown
+                    return pair;
+                  // reprocess the unconsumed pair from the top, so trailing
+                  // xdata (>=1000) and handle codes are handled, not searched
+                  goto start_loop;
                 }
               else
                 goto search_field;
@@ -13603,7 +13870,8 @@ dxf_blocks_read (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
                     }
                 }
               pair = new_object (name, dxfname, dat, dwg, 0, &i);
-              dxfname = NULL; /* new_object may have freed dxfname via UPGRADE_ENTITY */
+              dxfname = NULL; /* new_object may have freed dxfname via
+                                 UPGRADE_ENTITY */
               obj = &dwg->object[idx];
               if (!pair)
                 {
@@ -13712,7 +13980,8 @@ dxf_blocks_read (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
                                       = bctrl->tio.object->tio.BLOCK_CONTROL;
                                   if (_bctrl->num_entries > 0)
                                     _bctrl->entries[_bctrl->num_entries - 1]
-                                        ->r11_idx = new_r11_idx;
+                                        ->r11_idx
+                                        = new_r11_idx;
                                 }
                               LOG_TRACE ("r11: created BLOCK_HEADER %s "
                                          "[r11_idx %d]\n",
@@ -13794,8 +14063,12 @@ dxf_blocks_read (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
                       && blkhdr->fixedtype == DWG_TYPE_BLOCK_HEADER
                       && (_hdr = blkhdr->tio.object->tio.BLOCK_HEADER))
                     {
+                      // BLOCK_HEADER.entities[] is a soft pointer (code 4)
+                      // list, per the encoder (HANDLE_VECTOR(entities, ...,
+                      // 4)). Using code 3 here made the encoder warn "Expected
+                      // a CODE 4 handle, got a 3" for every owned entity.
                       BITCODE_H ref = dwg_add_handleref (
-                          dwg, 3, obj->handle.value, NULL);
+                          dwg, 4, obj->handle.value, NULL);
                       PUSH_HV (_hdr, num_owned, entities, ref)
                     }
                   if (ent->ownerhandle

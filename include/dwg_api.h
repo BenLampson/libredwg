@@ -592,6 +592,7 @@ extern "C"
   typedef struct _dwg_entity_VIEWPORT		dwg_ent_viewport;
   /* untyped > 500 */
   typedef struct _dwg_entity_3DLINE		dwg_ent__3dline;
+  typedef struct _dwg_entity_ARC_DIMENSION		dwg_ent_arc_dimension;
   typedef struct _dwg_entity_CAMERA		dwg_ent_camera;
   typedef struct _dwg_entity_DGNUNDERLAY		dwg_ent_dgnunderlay;
   typedef struct _dwg_entity_DWFUNDERLAY		dwg_ent_dwfunderlay;
@@ -609,7 +610,6 @@ extern "C"
   typedef struct _dwg_entity_SECTIONOBJECT		dwg_ent_sectionobject;
   typedef struct _dwg_entity_WIPEOUT		dwg_ent_wipeout;
   /* unstable */
-  typedef struct _dwg_entity_ARC_DIMENSION		dwg_ent_arc_dimension;
   typedef struct _dwg_entity_HELIX		dwg_ent_helix;
   typedef struct _dwg_entity_LARGE_RADIAL_DIMENSION		dwg_ent_large_radial_dimension;
   typedef struct _dwg_entity_LAYOUTPRINTCONFIG		dwg_ent_layoutprintconfig;
@@ -709,6 +709,7 @@ extern "C"
   typedef struct _dwg_object_LAYERFILTER		dwg_obj_layerfilter;
   typedef struct _dwg_object_LAYER_INDEX		dwg_obj_layer_index;
   typedef struct _dwg_object_LAYOUT		dwg_obj_layout;
+  typedef struct _dwg_object_MLEADERSTYLE		dwg_obj_mleaderstyle;
   typedef struct _dwg_object_PLACEHOLDER		dwg_obj_placeholder;
   typedef struct _dwg_object_PLOTSETTINGS		dwg_obj_plotsettings;
   typedef struct _dwg_object_RASTERVARIABLES		dwg_obj_rastervariables;
@@ -796,7 +797,6 @@ extern "C"
   typedef struct _dwg_object_LIGHTLIST		dwg_obj_lightlist;
   typedef struct _dwg_object_MATERIAL		dwg_obj_material;
   typedef struct _dwg_object_MENTALRAYRENDERSETTINGS		dwg_obj_mentalrayrendersettings;
-  typedef struct _dwg_object_MLEADERSTYLE		dwg_obj_mleaderstyle;
   typedef struct _dwg_object_MTEXTOBJECTCONTEXTDATA		dwg_obj_mtextobjectcontextdata;
   typedef struct _dwg_object_OBJECT_PTR		dwg_obj_object_ptr;
   typedef struct _dwg_object_PARTIAL_VIEWING_INDEX		dwg_obj_partial_viewing_index;
@@ -1716,6 +1716,7 @@ extern "C"
   dwg_get_OBJECT_DECL (ent_viewport, VIEWPORT);
   /* untyped > 500 */
   dwg_get_OBJECT_DECL (ent__3dline, _3DLINE);
+  dwg_get_OBJECT_DECL (ent_arc_dimension, ARC_DIMENSION);
   dwg_get_OBJECT_DECL (ent_camera, CAMERA);
   dwg_get_OBJECT_DECL (ent_dgnunderlay, DGNUNDERLAY);
   dwg_get_OBJECT_DECL (ent_dwfunderlay, DWFUNDERLAY);
@@ -1733,7 +1734,6 @@ extern "C"
   dwg_get_OBJECT_DECL (ent_sectionobject, SECTIONOBJECT);
   dwg_get_OBJECT_DECL (ent_wipeout, WIPEOUT);
   /* unstable */
-  dwg_get_OBJECT_DECL (ent_arc_dimension, ARC_DIMENSION);
   dwg_get_OBJECT_DECL (ent_helix, HELIX);
   dwg_get_OBJECT_DECL (ent_large_radial_dimension, LARGE_RADIAL_DIMENSION);
   dwg_get_OBJECT_DECL (ent_layoutprintconfig, LAYOUTPRINTCONFIG);
@@ -1835,6 +1835,7 @@ extern "C"
   dwg_get_OBJECT_DECL (obj_layerfilter, LAYERFILTER);
   dwg_get_OBJECT_DECL (obj_layer_index, LAYER_INDEX);
   dwg_get_OBJECT_DECL (obj_layout, LAYOUT);
+  dwg_get_OBJECT_DECL (obj_mleaderstyle, MLEADERSTYLE);
   dwg_get_OBJECT_DECL (obj_placeholder, PLACEHOLDER);
   dwg_get_OBJECT_DECL (obj_plotsettings, PLOTSETTINGS);
   dwg_get_OBJECT_DECL (obj_rastervariables, RASTERVARIABLES);
@@ -1922,7 +1923,6 @@ extern "C"
   dwg_get_OBJECT_DECL (obj_lightlist, LIGHTLIST);
   dwg_get_OBJECT_DECL (obj_material, MATERIAL);
   dwg_get_OBJECT_DECL (obj_mentalrayrendersettings, MENTALRAYRENDERSETTINGS);
-  dwg_get_OBJECT_DECL (obj_mleaderstyle, MLEADERSTYLE);
   dwg_get_OBJECT_DECL (obj_mtextobjectcontextdata, MTEXTOBJECTCONTEXTDATA);
   dwg_get_OBJECT_DECL (obj_object_ptr, OBJECT_PTR);
   dwg_get_OBJECT_DECL (obj_partial_viewing_index, PARTIAL_VIEWING_INDEX);
@@ -2852,6 +2852,7 @@ extern "C"
   DWG_GETALL_ENTITY_DECL (XLINE);
   /* untyped > 500 */
   DWG_GETALL_ENTITY_DECL (_3DLINE);
+  DWG_GETALL_ENTITY_DECL (ARC_DIMENSION);
   DWG_GETALL_ENTITY_DECL (CAMERA);
   DWG_GETALL_ENTITY_DECL (DGNUNDERLAY);
   DWG_GETALL_ENTITY_DECL (DWFUNDERLAY);
@@ -2869,7 +2870,6 @@ extern "C"
   DWG_GETALL_ENTITY_DECL (SECTIONOBJECT);
   DWG_GETALL_ENTITY_DECL (WIPEOUT);
   /* unstable */
-  DWG_GETALL_ENTITY_DECL (ARC_DIMENSION);
   DWG_GETALL_ENTITY_DECL (HELIX);
   DWG_GETALL_ENTITY_DECL (LARGE_RADIAL_DIMENSION);
   DWG_GETALL_ENTITY_DECL (LAYOUTPRINTCONFIG);
@@ -2980,6 +2980,7 @@ extern "C"
   DWG_GETALL_OBJECT_DECL (LAYERFILTER);
   DWG_GETALL_OBJECT_DECL (LAYER_INDEX);
   DWG_GETALL_OBJECT_DECL (LAYOUT);
+  DWG_GETALL_OBJECT_DECL (MLEADERSTYLE);
   DWG_GETALL_OBJECT_DECL (PLACEHOLDER);
   DWG_GETALL_OBJECT_DECL (PLOTSETTINGS);
   DWG_GETALL_OBJECT_DECL (RASTERVARIABLES);
@@ -3067,7 +3068,6 @@ extern "C"
   DWG_GETALL_OBJECT_DECL (LIGHTLIST);
   DWG_GETALL_OBJECT_DECL (MATERIAL);
   DWG_GETALL_OBJECT_DECL (MENTALRAYRENDERSETTINGS);
-  DWG_GETALL_OBJECT_DECL (MLEADERSTYLE);
   DWG_GETALL_OBJECT_DECL (MTEXTOBJECTCONTEXTDATA);
   DWG_GETALL_OBJECT_DECL (OBJECT_PTR);
   DWG_GETALL_OBJECT_DECL (PARTIAL_VIEWING_INDEX);
@@ -4003,6 +4003,7 @@ extern "C"
   CAST_DWG_OBJECT_TO_ENTITY_DECL (XLINE);
   /* untyped > 500 */
   CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (_3DLINE);
+  CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (ARC_DIMENSION);
   CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (CAMERA);
   CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (DGNUNDERLAY);
   CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (DWFUNDERLAY);
@@ -4020,7 +4021,6 @@ extern "C"
   CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (SECTIONOBJECT);
   CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (WIPEOUT);
   /* unstable */
-  CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (ARC_DIMENSION);
   CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (HELIX);
   CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (LARGE_RADIAL_DIMENSION);
   CAST_DWG_OBJECT_TO_ENTITY_BYNAME_DECL (LAYOUTPRINTCONFIG);
@@ -4131,6 +4131,7 @@ extern "C"
   CAST_DWG_OBJECT_TO_OBJECT_DECL (LAYERFILTER);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (LAYER_INDEX);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (LAYOUT);
+  CAST_DWG_OBJECT_TO_OBJECT_DECL (MLEADERSTYLE);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (PLACEHOLDER);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (PLOTSETTINGS);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (RASTERVARIABLES);
@@ -4218,7 +4219,6 @@ extern "C"
   CAST_DWG_OBJECT_TO_OBJECT_DECL (LIGHTLIST);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (MATERIAL);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (MENTALRAYRENDERSETTINGS);
-  CAST_DWG_OBJECT_TO_OBJECT_DECL (MLEADERSTYLE);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (MTEXTOBJECTCONTEXTDATA);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (OBJECT_PTR);
   CAST_DWG_OBJECT_TO_OBJECT_DECL (PARTIAL_VIEWING_INDEX);
@@ -9827,9 +9827,9 @@ extern "C"
   EXPORT Dwg_Object_ACSH_CHAMFER_CLASS *dwg_add_ACSH_CHAMFER_CLASS (
       Dwg_Object_EVALUATION_GRAPH *restrict evalgraph,
       const dwg_point_3d *restrict origin_pt,
-      const dwg_point_3d *restrict normal, const int bl92,
+      const dwg_point_3d *restrict normal, const int method,
       const double base_dist, const double other_dist, const int num_edges,
-      const int32_t *edges, const int bl95) __nonnull_all;
+      const int32_t *edges, const int32_t base_face) __nonnull_all;
   EXPORT Dwg_Object_ACSH_CONE_CLASS *
   dwg_add_ACSH_CONE_CLASS (Dwg_Object_EVALUATION_GRAPH *restrict evalgraph,
                            const dwg_point_3d *restrict origin_pt,
@@ -9902,7 +9902,7 @@ extern "C"
   // dwg_add_CHAMFER (Dwg_Object_BLOCK_HEADER *restrict blkhdr,
   //                  const dwg_point_3d *restrict origin_pt,
   //                  const dwg_point_3d *restrict normal, /* maybe NULL */
-  //                  const int bl92, const double base_dist,
+  //                  const int method, const double base_dist,
   //                  const double other_dist, const int num_edges,
   //                  const int32_t* edges, const int bl95)  __nonnull ((1,2));
   // EXPORT Dwg_Entity_3DSOLID*

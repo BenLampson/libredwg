@@ -979,8 +979,8 @@ DWG_OBJECT (TABLESTYLE)
   }
   LATER_VERSIONS { // r2010+
 #ifdef IS_ENCODER
-    //if (dwg->header.from_version <= R_2007)
-    //  upconvert_TABLESTYLE (obj);
+    if (dwg->header.from_version <= R_2007)
+      upconvert_TABLESTYLE (obj);
 #endif
     FIELD_RCd (unknown_rc, 70);
     FIELD_T (name, 3);
@@ -999,7 +999,7 @@ DWG_OBJECT (TABLESTYLE)
         _obj->sty.cellstyle.property_override_flags & 0x10000;
     }
     FIELD_BL (numoverrides, 0);
-    // FIXME style overrides for 0-6
+    // style overrides for 0-5 (data=0, title=1, header=2, custom=3-5)
     if (FIELD_VALUE (numoverrides))
       {
         FIELD_BL (unknown_bl3, 0);
@@ -1009,7 +1009,6 @@ DWG_OBJECT (TABLESTYLE)
         FIELD_BL0 (ovr.type, 91);
         FIELD_T0 (ovr.name, 300);
         DXF { VALUE_TFF ("CELLSTYLE_END", 309) }
-        LOG_WARN ("TODO TABLESTYLE r2010+ missing fields");
       }
   }
 
@@ -2776,13 +2775,10 @@ DWG_OBJECT (MATERIAL)
   MAT_COLOR (diffuse_color, 71, 41, 91);
 
   MAT_MAP (diffusemap, 42, 72, 3, 73, 74, 75, 43);
-  DXF {
-    SINCE (R_2007a)
-      CALL_SUBCLASS (_obj, MATERIAL, Texture_diffusemap);
-    /* MAT_TEXTURE (diffusemap, 0) */
-    //DXF { VALUE_B (1, 292); } /* genproctableend  */
-    //DXF { VALUE_BS (value, 277); } /* ?? */
-  }
+  // diffusemap.source==2 emits its procedural texture inline via MAT_MAP,
+  // like every other map. Do NOT emit it again here unconditionally: for the
+  // common source!=2 case that produced a spurious 277/278/460/279/461 block
+  // (no procedural texture), which ODA rejects as a MATERIAL syntax error.
   MAT_COLOR (specular_color, 76, 45, 92);
   DXF { FIELD_BD (specular_gloss_factor, 44); }
   MAT_MAP (specularmap, 46, 77, 4, 78, 79, 170, 47);
@@ -2849,7 +2845,7 @@ DWG_ENTITY (ARC_DIMENSION)
 
   COMMON_ENTITY_HANDLE_DATA;
   FIELD_HANDLE (dimstyle, 5, 0);
-  FIELD_HANDLE (block, 5, 2);
+  FIELD_HANDLE (block, 5, 0);
 DWG_ENTITY_END
 
 // as ACAD_LAYERFILTERS in the NOD
@@ -3016,7 +3012,7 @@ DWG_OBJECT (ACSH_FILLET_CLASS)
   SUBCLASS (AcDbShFillet);
   FIELD_BL (major, 90); //33
   FIELD_BL (minor, 91); //1 or 29
-  FIELD_BL (bl92, 92);
+  FIELD_BL (method, 92);
   FIELD_BL (num_edges, 93);
   FIELD_VECTOR (edges, BL, num_edges, 94)
   FIELD_BL (num_radiuses, 95);
@@ -3029,18 +3025,17 @@ DWG_OBJECT (ACSH_FILLET_CLASS)
 DWG_OBJECT_END
 
 DWG_OBJECT (ACSH_CHAMFER_CLASS)
-  HANDLE_UNKNOWN_BITS;
   AcDbEvalExpr_fields; // lgtm[cpp/use-after-free] codeql[cpp/use-after-free]
   AcDbShHistoryNode_fields (history_node); // lgtm[cpp/use-after-free] codeql[cpp/use-after-free]
   SUBCLASS (AcDbShChamfer);
   FIELD_BL (major, 90); //33
   FIELD_BL (minor, 91); //1
-  FIELD_BL (bl92, 92);
+  FIELD_BL (method, 92);
   FIELD_BD (base_dist, 41);
   FIELD_BD (other_dist, 42);
   FIELD_BL (num_edges, 93);
   FIELD_VECTOR (edges, BL, num_edges, 94)
-  FIELD_BL (bl95, 95);
+  FIELD_BL (base_face, 95);
   START_OBJECT_HANDLE_STREAM;
 DWG_OBJECT_END
 
@@ -3057,7 +3052,6 @@ DWG_OBJECT (ACSH_TORUS_CLASS)
 DWG_OBJECT_END
 
 DWG_OBJECT (ACSH_BREP_CLASS)
-  HANDLE_UNKNOWN_BITS;
   AcDbEvalExpr_fields; // lgtm[cpp/use-after-free] codeql[cpp/use-after-free]
   AcDbShHistoryNode_fields (history_node); // lgtm[cpp/use-after-free] codeql[cpp/use-after-free]
   SUBCLASS (AcDbShPrimitive);
@@ -4219,7 +4213,7 @@ DWG_OBJECT (ACSH_SWEEP_CLASS)
   // sweep_options
   // sweep_entity
   // path_entity
-  FIELD_BL (bl92, 92); //77
+  FIELD_BL (method, 92); //77
 #ifndef IS_JSON
   FIELD_BL (shsw_text_size, 90); //744
 #endif
@@ -4266,7 +4260,7 @@ DWG_OBJECT (ACSH_EXTRUSION_CLASS)
   // sweep_options
   // sweep_entity
   // path_entity
-  FIELD_BL (bl92, 92); //77
+  FIELD_BL (method, 92); //77
 #ifndef IS_JSON
   FIELD_BL (shsw_text_size, 90); //744
 #endif

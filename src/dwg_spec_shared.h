@@ -81,6 +81,8 @@
           flag |= 4;                                                          \
         else if (obj->fixedtype == DWG_TYPE_DIMENSION_ANG3PT)                 \
           flag |= 5;                                                          \
+        else if (obj->fixedtype == DWG_TYPE_ARC_DIMENSION)                    \
+          flag |= 5;                                                          \
         else if (obj->fixedtype == DWG_TYPE_DIMENSION_ORDINATE)               \
           flag |= 6;                                                          \
         FIELD_VALUE (flag) = flag;                                            \
@@ -145,11 +147,7 @@
 #define WIRESTRUCT_fields(name)                       \
   SUB_FIELD_RC (name, type, 0);                       \
   SUB_FIELD_BLd (name, selection_marker, 0);          \
-  PRE (R_2004a) {                                     \
-    FIELD_CAST (name.color, BS, BL, 0);               \
-  } else {                                            \
-    SUB_FIELD_BL (name, color, 0);                    \
-  }                                                   \
+  FIELD_CAST (name.color, BS, BL, 0);                 \
   SUB_FIELD_BLd (name, acis_index, 0); /* TODO: align num_points to 255 */                 \
   SUB_FIELD_BL (name, num_points, 0);                 \
   FIELD_3DPOINT_VECTOR (name.points, name.num_points, 0); \
@@ -207,7 +205,9 @@ decode_3dsolid (Bit_Chain *dat, Bit_Chain *hdl_dat, Dwg_Object *restrict obj,
                 return DWG_ERR_OUTOFMEM;
               FIELD_BL (block_size[i], 0);
               if (FIELD_VALUE (block_size[i]) > 0
-                  && AVAIL_BITS (dat) > 8 * FIELD_VALUE (block_size[i]))
+                  && FIELD_VALUE (block_size[i]) < MAX_SIZE_TF
+                  && AVAIL_BITS (dat)
+                         > (int64_t)FIELD_VALUE (block_size[i]) * 8)
                 {
                   BITCODE_BL len = FIELD_VALUE (block_size[i]);
                   FIELD_TFv (encr_sat_data[i], len, 1);

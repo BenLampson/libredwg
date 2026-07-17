@@ -7151,10 +7151,10 @@ typedef struct _dwg_object_ACSH_SWEEP_CLASS
   Dwg_ACSH_HistoryNode history_node;
   // AcDbShPrimitive
   // AcDbShSweepBase
-  BITCODE_BL major;            /*!< DXF 90 */
-  BITCODE_BL minor;            /*!< DXF 91 */
+  BITCODE_BL major;           /*!< DXF 90 */
+  BITCODE_BL minor;           /*!< DXF 91 */
   BITCODE_3BD direction;      /*!< DXF 10 */
-  BITCODE_BL bl92;            /*!< DXF 92 */
+  BITCODE_BL method;          /*!< DXF 92 */
   BITCODE_BL shsw_text_size;  /*!< DXF 90 */
   BITCODE_TF shsw_text;       /*!< DXF 310 */
   BITCODE_BL shsw_bl93;       /*!< DXF 93 */
@@ -7190,10 +7190,10 @@ typedef struct _dwg_object_ACSH_EXTRUSION_CLASS
   Dwg_ACSH_HistoryNode history_node;
   // AcDbShPrimitive
   // AcDbShSweepBase
-  BITCODE_BL major;        /*!< DXF 90 */
-  BITCODE_BL minor;        /*!< DXF 91 */
-  BITCODE_3BD direction;  /*!< DXF 10 */
-  BITCODE_BL bl92;        /*!< DXF 92 */
+  BITCODE_BL major;           /*!< DXF 90 */
+  BITCODE_BL minor;           /*!< DXF 91 */
+  BITCODE_3BD direction;      /*!< DXF 10 */
+  BITCODE_BL method;          /*!< DXF 92 */
   BITCODE_BL shsw_text_size;  /*!< DXF 90 */
   BITCODE_TF shsw_text;       /*!< DXF 310 */
   BITCODE_BL shsw_bl93;       /*!< DXF 93 */
@@ -7245,7 +7245,7 @@ typedef struct _dwg_object_ACSH_FILLET_CLASS
   // AcDbShFillet
   BITCODE_BL major;       /*!< DXF 90 */
   BITCODE_BL minor;       /*!< DXF 91 */
-  BITCODE_BL bl92;	 /*!< DXF 92 */
+  BITCODE_BL method;	 /*!< DXF 92 */
   BITCODE_BL num_edges;	 /*!< DXF 93 */
   BITCODE_BL *edges;     /*!< DXF 94 */
   BITCODE_BL num_radiuses;	/*!< DXF 95 */
@@ -7266,12 +7266,12 @@ typedef struct _dwg_object_ACSH_CHAMFER_CLASS
   // AcDbShChamfer
   BITCODE_BL major;     /*!< DXF 90 */
   BITCODE_BL minor;     /*!< DXF 91 */
-  BITCODE_BL bl92;	/*!< DXF 92, flat or edge chamfer options? */
+  BITCODE_BL method;	/*!< DXF 92 */
   BITCODE_BD base_dist;	/*!< DXF 41 (left_range?) */
   BITCODE_BD other_dist;/*!< DXF 42 (right_range or -1)? */
   BITCODE_BL num_edges;	/*!< DXF 93 */
   BITCODE_BL *edges;    /*!< DXF 94 */
-  BITCODE_BL bl95;	/*!< DXF 95 probably our nodeid */
+  BITCODE_BL base_face;	/*!< DXF 95 guessed. the face next to the chamfered edge */
 } Dwg_Object_ACSH_CHAMFER_CLASS;
 
 typedef struct _dwg_object_ACSH_CYLINDER_CLASS
@@ -9521,6 +9521,7 @@ typedef struct _dwg_object_entity
     Dwg_Entity_XLINE *XLINE;
     /* untyped > 500 */
     Dwg_Entity__3DLINE *_3DLINE;
+    Dwg_Entity_ARC_DIMENSION *ARC_DIMENSION;
     Dwg_Entity_CAMERA *CAMERA;
     Dwg_Entity_DGNUNDERLAY *DGNUNDERLAY;
     Dwg_Entity_DWFUNDERLAY *DWFUNDERLAY;
@@ -9538,7 +9539,6 @@ typedef struct _dwg_object_entity
     Dwg_Entity_SECTIONOBJECT *SECTIONOBJECT;
     Dwg_Entity_WIPEOUT *WIPEOUT;
     /* unstable */
-    Dwg_Entity_ARC_DIMENSION *ARC_DIMENSION;
     Dwg_Entity_HELIX *HELIX;
     Dwg_Entity_LARGE_RADIAL_DIMENSION *LARGE_RADIAL_DIMENSION;
     Dwg_Entity_LAYOUTPRINTCONFIG *LAYOUTPRINTCONFIG;
@@ -9712,6 +9712,7 @@ typedef struct _dwg_object_object
     Dwg_Object_LAYERFILTER *LAYERFILTER;
     Dwg_Object_LAYER_INDEX *LAYER_INDEX;
     Dwg_Object_LAYOUT *LAYOUT;
+    Dwg_Object_MLEADERSTYLE *MLEADERSTYLE;
     Dwg_Object_PLACEHOLDER *PLACEHOLDER;
     Dwg_Object_PLOTSETTINGS *PLOTSETTINGS;
     Dwg_Object_RASTERVARIABLES *RASTERVARIABLES;
@@ -9799,7 +9800,6 @@ typedef struct _dwg_object_object
     Dwg_Object_LIGHTLIST *LIGHTLIST;
     Dwg_Object_MATERIAL *MATERIAL;
     Dwg_Object_MENTALRAYRENDERSETTINGS *MENTALRAYRENDERSETTINGS;
-    Dwg_Object_MLEADERSTYLE *MLEADERSTYLE;
     Dwg_Object_MTEXTOBJECTCONTEXTDATA *MTEXTOBJECTCONTEXTDATA;
     Dwg_Object_OBJECT_PTR *OBJECT_PTR;
     Dwg_Object_PARTIAL_VIEWING_INDEX *PARTIAL_VIEWING_INDEX;
@@ -11920,6 +11920,7 @@ EXPORT int dwg_setup_VX_CONTROL (Dwg_Object *obj);
 EXPORT int dwg_setup_VX_TABLE_RECORD (Dwg_Object *obj);
 /* untyped > 500 */
 EXPORT int dwg_setup__3DLINE (Dwg_Object *obj);
+EXPORT int dwg_setup_ARC_DIMENSION (Dwg_Object *obj);
 EXPORT int dwg_setup_CAMERA (Dwg_Object *obj);
 EXPORT int dwg_setup_DGNUNDERLAY (Dwg_Object *obj);
 EXPORT int dwg_setup_DWFUNDERLAY (Dwg_Object *obj);
@@ -11977,6 +11978,7 @@ EXPORT int dwg_setup_INDEX (Dwg_Object *obj);
 EXPORT int dwg_setup_LAYERFILTER (Dwg_Object *obj);
 EXPORT int dwg_setup_LAYER_INDEX (Dwg_Object *obj);
 EXPORT int dwg_setup_LAYOUT (Dwg_Object *obj);
+EXPORT int dwg_setup_MLEADERSTYLE (Dwg_Object *obj);
 EXPORT int dwg_setup_PLACEHOLDER (Dwg_Object *obj);
 EXPORT int dwg_setup_PLOTSETTINGS (Dwg_Object *obj);
 EXPORT int dwg_setup_RASTERVARIABLES (Dwg_Object *obj);
@@ -11996,7 +11998,6 @@ EXPORT int dwg_setup_PDFDEFINITION (Dwg_Object *obj);
 EXPORT int dwg_setup_DGNDEFINITION (Dwg_Object *obj);
 EXPORT int dwg_setup_DWFDEFINITION (Dwg_Object *obj);
 /* unstable */
-EXPORT int dwg_setup_ARC_DIMENSION (Dwg_Object *obj);
 EXPORT int dwg_setup_HELIX (Dwg_Object *obj);
 EXPORT int dwg_setup_LARGE_RADIAL_DIMENSION (Dwg_Object *obj);
 EXPORT int dwg_setup_LAYOUTPRINTCONFIG (Dwg_Object *obj);
@@ -12071,7 +12072,6 @@ EXPORT int dwg_setup_LEADEROBJECTCONTEXTDATA (Dwg_Object *obj);
 EXPORT int dwg_setup_LIGHTLIST (Dwg_Object *obj);
 EXPORT int dwg_setup_MATERIAL (Dwg_Object *obj);
 EXPORT int dwg_setup_MENTALRAYRENDERSETTINGS (Dwg_Object *obj);
-EXPORT int dwg_setup_MLEADERSTYLE (Dwg_Object *obj);
 EXPORT int dwg_setup_MTEXTOBJECTCONTEXTDATA (Dwg_Object *obj);
 EXPORT int dwg_setup_OBJECT_PTR (Dwg_Object *obj);
 EXPORT int dwg_setup_PARTIAL_VIEWING_INDEX (Dwg_Object *obj);

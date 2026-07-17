@@ -256,6 +256,7 @@ dwg_get_OBJECT (ent_viewport, VIEWPORT)
 // clang-format: off
 /* untyped > 500 */
 dwg_get_OBJECT (ent__3dline, _3DLINE)
+dwg_get_OBJECT (ent_arc_dimension, ARC_DIMENSION)
 dwg_get_OBJECT (ent_camera, CAMERA)
 dwg_get_OBJECT (ent_dgnunderlay, DGNUNDERLAY)
 dwg_get_OBJECT (ent_dwfunderlay, DWFUNDERLAY)
@@ -273,7 +274,6 @@ dwg_get_OBJECT (ent_repeat, REPEAT)
 dwg_get_OBJECT (ent_sectionobject, SECTIONOBJECT)
 dwg_get_OBJECT (ent_wipeout, WIPEOUT)
 /* unstable */
-dwg_get_OBJECT (ent_arc_dimension, ARC_DIMENSION)
 dwg_get_OBJECT (ent_helix, HELIX)
 dwg_get_OBJECT (ent_large_radial_dimension, LARGE_RADIAL_DIMENSION)
 dwg_get_OBJECT (ent_layoutprintconfig, LAYOUTPRINTCONFIG)
@@ -375,6 +375,7 @@ dwg_get_OBJECT (obj_index, INDEX)
 dwg_get_OBJECT (obj_layerfilter, LAYERFILTER)
 dwg_get_OBJECT (obj_layer_index, LAYER_INDEX)
 dwg_get_OBJECT (obj_layout, LAYOUT)
+dwg_get_OBJECT (obj_mleaderstyle, MLEADERSTYLE)
 dwg_get_OBJECT (obj_placeholder, PLACEHOLDER)
 dwg_get_OBJECT (obj_plotsettings, PLOTSETTINGS)
 dwg_get_OBJECT (obj_rastervariables, RASTERVARIABLES)
@@ -462,7 +463,6 @@ dwg_get_OBJECT (obj_leaderobjectcontextdata, LEADEROBJECTCONTEXTDATA)
 dwg_get_OBJECT (obj_lightlist, LIGHTLIST)
 dwg_get_OBJECT (obj_material, MATERIAL)
 dwg_get_OBJECT (obj_mentalrayrendersettings, MENTALRAYRENDERSETTINGS)
-dwg_get_OBJECT (obj_mleaderstyle, MLEADERSTYLE)
 dwg_get_OBJECT (obj_mtextobjectcontextdata, MTEXTOBJECTCONTEXTDATA)
 dwg_get_OBJECT (obj_object_ptr, OBJECT_PTR)
 dwg_get_OBJECT (obj_partial_viewing_index, PARTIAL_VIEWING_INDEX)
@@ -1361,6 +1361,7 @@ DWG_GETALL_ENTITY (_3DFACE)
 DWG_GETALL_ENTITY (_3DLINE)
 DWG_GETALL_ENTITY (_3DSOLID)
 DWG_GETALL_ENTITY (ARC)
+DWG_GETALL_ENTITY (ARC_DIMENSION)
 DWG_GETALL_ENTITY (ATTDEF)
 DWG_GETALL_ENTITY (ATTRIB)
 DWG_GETALL_ENTITY (BLOCK)
@@ -1423,7 +1424,6 @@ DWG_GETALL_ENTITY (VIEWPORT)
 DWG_GETALL_ENTITY (WIPEOUT)
 DWG_GETALL_ENTITY (XLINE)
 /* unstable */
-DWG_GETALL_ENTITY (ARC_DIMENSION)
 DWG_GETALL_ENTITY (HELIX)
 DWG_GETALL_ENTITY (LARGE_RADIAL_DIMENSION)
 DWG_GETALL_ENTITY (LAYOUTPRINTCONFIG)
@@ -1523,6 +1523,7 @@ DWG_GETALL_OBJECT (LAYOUT)
 DWG_GETALL_OBJECT (LONG_TRANSACTION)
 DWG_GETALL_OBJECT (LTYPE)
 DWG_GETALL_OBJECT (LTYPE_CONTROL)
+DWG_GETALL_OBJECT (MLEADERSTYLE)
 DWG_GETALL_OBJECT (MLINESTYLE)
 DWG_GETALL_OBJECT (PLACEHOLDER)
 DWG_GETALL_OBJECT (PLOTSETTINGS)
@@ -1622,7 +1623,6 @@ DWG_GETALL_OBJECT (LEADEROBJECTCONTEXTDATA)
 DWG_GETALL_OBJECT (LIGHTLIST)
 DWG_GETALL_OBJECT (MATERIAL)
 DWG_GETALL_OBJECT (MENTALRAYRENDERSETTINGS)
-DWG_GETALL_OBJECT (MLEADERSTYLE)
 DWG_GETALL_OBJECT (MTEXTOBJECTCONTEXTDATA)
 DWG_GETALL_OBJECT (OBJECT_PTR)
 DWG_GETALL_OBJECT (PARTIAL_VIEWING_INDEX)
@@ -2560,6 +2560,7 @@ CAST_DWG_OBJECT_TO_ENTITY (VIEWPORT)
 CAST_DWG_OBJECT_TO_ENTITY (XLINE)
 /* untyped > 500 */
 CAST_DWG_OBJECT_TO_ENTITY_BYNAME (_3DLINE)
+CAST_DWG_OBJECT_TO_ENTITY_BYNAME (ARC_DIMENSION)
 CAST_DWG_OBJECT_TO_ENTITY_BYNAME (CAMERA)
 CAST_DWG_OBJECT_TO_ENTITY_BYNAME (DGNUNDERLAY)
 CAST_DWG_OBJECT_TO_ENTITY_BYNAME (DWFUNDERLAY)
@@ -2577,7 +2578,6 @@ CAST_DWG_OBJECT_TO_ENTITY_BYNAME (REPEAT)
 CAST_DWG_OBJECT_TO_ENTITY_BYNAME (SECTIONOBJECT)
 CAST_DWG_OBJECT_TO_ENTITY_BYNAME (WIPEOUT)
 /* unstable */
-CAST_DWG_OBJECT_TO_ENTITY_BYNAME (ARC_DIMENSION)
 CAST_DWG_OBJECT_TO_ENTITY_BYNAME (HELIX)
 CAST_DWG_OBJECT_TO_ENTITY_BYNAME (LARGE_RADIAL_DIMENSION)
 CAST_DWG_OBJECT_TO_ENTITY_BYNAME (LAYOUTPRINTCONFIG)
@@ -2677,6 +2677,7 @@ CAST_DWG_OBJECT_TO_OBJECT (LAYOUT)
 CAST_DWG_OBJECT_TO_OBJECT (LONG_TRANSACTION)
 CAST_DWG_OBJECT_TO_OBJECT (LTYPE)
 CAST_DWG_OBJECT_TO_OBJECT (LTYPE_CONTROL)
+CAST_DWG_OBJECT_TO_OBJECT (MLEADERSTYLE)
 CAST_DWG_OBJECT_TO_OBJECT (MLINESTYLE)
 CAST_DWG_OBJECT_TO_OBJECT (PLACEHOLDER)
 CAST_DWG_OBJECT_TO_OBJECT (PLOTSETTINGS)
@@ -2776,7 +2777,6 @@ CAST_DWG_OBJECT_TO_OBJECT (LEADEROBJECTCONTEXTDATA)
 CAST_DWG_OBJECT_TO_OBJECT (LIGHTLIST)
 CAST_DWG_OBJECT_TO_OBJECT (MATERIAL)
 CAST_DWG_OBJECT_TO_OBJECT (MENTALRAYRENDERSETTINGS)
-CAST_DWG_OBJECT_TO_OBJECT (MLEADERSTYLE)
 CAST_DWG_OBJECT_TO_OBJECT (MTEXTOBJECTCONTEXTDATA)
 CAST_DWG_OBJECT_TO_OBJECT (OBJECT_PTR)
 CAST_DWG_OBJECT_TO_OBJECT (PARTIAL_VIEWING_INDEX)
@@ -29597,9 +29597,9 @@ EXPORT Dwg_Object_ACSH_CHAMFER_CLASS *
 dwg_add_ACSH_CHAMFER_CLASS (Dwg_Object_EVALUATION_GRAPH *restrict evalgraph,
                             const dwg_point_3d *restrict origin_pt,
                             const dwg_point_3d *restrict normal,
-                            const int bl92, const double base_dist,
+                            const int method, const double base_dist,
                             const double other_dist, const int num_edges,
-                            const int32_t *edges, const int bl95)
+                            const int32_t *edges, const int32_t base_face)
 {
   int err;
   Dwg_Object *hdr = dwg_obj_generic_to_object (evalgraph, &err);
@@ -29609,7 +29609,7 @@ dwg_add_ACSH_CHAMFER_CLASS (Dwg_Object_EVALUATION_GRAPH *restrict evalgraph,
   {
     API_ADD_OBJECT (ACSH_CHAMFER_CLASS);
     dwg_init_ACSH_CLASS (dwg, obj, _obj, evalgraph, origin_pt, normal);
-    _obj->bl92 = bl92;
+    _obj->method = method;
     _obj->base_dist = base_dist;
     _obj->other_dist = other_dist;
     _obj->num_edges = num_edges;
@@ -29618,7 +29618,7 @@ dwg_add_ACSH_CHAMFER_CLASS (Dwg_Object_EVALUATION_GRAPH *restrict evalgraph,
         _obj->edges = (BITCODE_BL *)calloc (num_edges, 4);
         memcpy (_obj->edges, edges, num_edges * 4);
       }
-    _obj->bl95 = bl95;
+    _obj->base_face = base_face;
     return _obj;
   }
 }
@@ -29627,9 +29627,9 @@ dwg_add_ACSH_CHAMFER_CLASS (Dwg_Object_EVALUATION_GRAPH *restrict evalgraph,
 EXPORT Dwg_Entity_3DSOLID*
 dwg_add_CHAMFER (Dwg_Object_BLOCK_HEADER *restrict blkhdr,
                  const dwg_point_3d *restrict origin_pt, const dwg_point_3d *restrict normal,
-                 const int bl92, const double base_dist,
+                 const int method, const double base_dist,
                  const double other_dist, const int num_edges,
-                 const int32_t* edges, const int bl95)
+                 const int32_t* edges, const int base_face)
 {
   int err;
   Dwg_Data *dwg;
@@ -29693,8 +29693,8 @@ dwg_add_CHAMFER (Dwg_Object_BLOCK_HEADER *restrict blkhdr,
 
     _obj = dwg_add_ACSH_CHAMFER_CLASS (
         (Dwg_Object_EVALUATION_GRAPH *)(void *)solid, origin_pt,
-        normal ? normal : &defnormal, bl92,
-        base_dist, other_dist, num_edges, edges, bl95);
+        normal ? normal : &defnormal, method,
+        base_dist, other_dist, num_edges, edges, base_face);
     ACSH_init_evalgraph (dwg, _obj, solid);
     return solid;
   }
