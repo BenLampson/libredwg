@@ -249,6 +249,106 @@ mutate_r2004_section_map_checksum (const char *path,
 }
 
 static int
+copy_file_prefix (const char *source_path, const char *output_path,
+                  size_t prefix_size)
+{
+  unsigned char buffer[8192];
+  FILE *source;
+  FILE *output;
+  size_t remaining = prefix_size;
+  int failed = 0;
+
+  source = fopen (source_path, "rb");
+  if (!source)
+    return 1;
+  output = fopen (output_path, "wb");
+  if (!output)
+    {
+      fclose (source);
+      return 1;
+    }
+  while (remaining)
+    {
+      const size_t chunk_size = MIN (remaining, sizeof (buffer));
+      if (fread (buffer, 1, chunk_size, source) != chunk_size
+          || fwrite (buffer, 1, chunk_size, output) != chunk_size)
+        {
+          failed = 1;
+          break;
+        }
+      remaining -= chunk_size;
+    }
+  if (fclose (output) != 0)
+    failed = 1;
+  fclose (source);
+  if (failed)
+    remove (output_path);
+  return failed;
+}
+
+static int
+test_r2004_truncated_section_map_rejected (void)
+{
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Stream_Stats stats = { 0 };
+  Dwg_Data blocking = { 0 };
+  char source_path[128];
+  char truncated_path[128];
+  size_t truncated_size;
+  int error;
+
+  error = write_generated_minsert_fixture (
+      R_2004b, "truncated section map", source_path, sizeof (source_path));
+  if (error)
+    return error;
+  error = dwg_read_file (source_path, &blocking);
+  if (error >= DWG_ERR_CRITICAL)
+    {
+      dwg_free (&blocking);
+      remove (source_path);
+      return 1;
+    }
+  truncated_size
+      = (size_t)blocking.fhdr.r2004_header.section_map_address + 0x80;
+  dwg_free (&blocking);
+  snprintf (truncated_path, sizeof (truncated_path),
+            "stream_r2004_truncated_map_%ld_%ld.dwg",
+            stream_test_process_id (), (long)time (NULL));
+  if (copy_file_prefix (source_path, truncated_path, truncated_size))
+    {
+      remove (source_path);
+      return 1;
+    }
+  remove (source_path);
+
+  memset (&blocking, 0, sizeof (blocking));
+  error = dwg_read_file (truncated_path, &blocking);
+  dwg_free (&blocking);
+  if (!(error & DWG_ERR_VALUEOUTOFBOUNDS))
+    {
+      printf ("truncated R2004 blocking read was not rejected: error=0x%x\n",
+              error);
+      remove (truncated_path);
+      return 1;
+    }
+
+  callbacks.object = stream_object_callback;
+  callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+  error = dwg_stream_file_ex (truncated_path, &callbacks, &stats);
+  remove (truncated_path);
+  if (!(error & DWG_ERR_VALUEOUTOFBOUNDS) || stats.num_objects
+      || stats.full_decode_objects)
+    {
+      printf ("truncated R2004 Stream read was not rejected: error=0x%x "
+              "objects=%lu full=%lu\n",
+              error, (unsigned long)stats.num_objects,
+              (unsigned long)stats.full_decode_objects);
+      return 1;
+    }
+  return 0;
+}
+
+static int
 test_callback_abort_preserves_error (void)
 {
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };

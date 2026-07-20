@@ -318,6 +318,9 @@ main (void)
   stream_trace_stage ("test_callback_abort_preserves_error");
   if (test_callback_abort_preserves_error ())
     return 1;
+  stream_trace_stage ("test_r2004_truncated_section_map_rejected");
+  if (test_r2004_truncated_section_map_rejected ())
+    return 1;
   stream_trace_stage ("test_pre_r13_minsert_opts_stream");
   if (test_pre_r13_minsert_opts_stream ())
     return 1;
