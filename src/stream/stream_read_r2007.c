@@ -482,8 +482,6 @@ dwg_stream_read_r2007 (Bit_Chain *dat, Bit_Chain *hdl_dat,
   char *probe;
 #endif
 
-  (void)hdl_dat;
-
   read_r2007_init (dwg);
 #ifdef USE_TRACING
   probe = getenv ("LIBREDWG_TRACE");
@@ -532,7 +530,10 @@ dwg_stream_read_r2007 (Bit_Chain *dat, Bit_Chain *hdl_dat,
       goto error;
     }
 
-  error = read_2007_section_classes (dat, dwg, sections_map, pages_map);
+  error
+      = read_2007_section_header (dat, hdl_dat, dwg, sections_map, pages_map);
+  if (error < DWG_ERR_CRITICAL)
+    error |= read_2007_section_classes (dat, dwg, sections_map, pages_map);
   if (error < DWG_ERR_CRITICAL)
     {
       stream_error = read_2007_section_handles_stream (

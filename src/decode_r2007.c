@@ -55,10 +55,6 @@ static unsigned int cur_ver = 0;
 int rs_decode_block (BITCODE_RC *blk, int fix);
 
 /* private */
-static int read_2007_section_header (Bit_Chain *dat, Bit_Chain *hdl_dat,
-                                     Dwg_Data *restrict dwg,
-                                     r2007_section *restrict sections_map,
-                                     r2007_page *restrict pages_map);
 static int read_2007_section_handles (Bit_Chain *dat, Bit_Chain *hdl_dat,
                                       Dwg_Data *restrict dwg,
                                       r2007_section *restrict sections_map,
@@ -1651,7 +1647,7 @@ read_2007_section_classes (Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
   return 0;
 }
 
-static int
+int
 read_2007_section_header (Bit_Chain *restrict dat, Bit_Chain *restrict hdl_dat,
                           Dwg_Data *restrict dwg,
                           r2007_section *restrict sections_map,

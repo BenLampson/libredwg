@@ -56,6 +56,10 @@ int read_data_section (Bit_Chain *section_dat, Bit_Chain *dat,
                        r2007_section *sections_map, r2007_page *pages_map,
                        Dwg_Section_Type section_type);
 int read_file_header (Bit_Chain *dat, Dwg_R2007_Header *file_header);
+int read_2007_section_header (Bit_Chain *dat, Bit_Chain *hdl_dat,
+                              Dwg_Data *dwg,
+                              r2007_section *sections_map,
+                              r2007_page *pages_map);
 int read_2007_section_classes (Bit_Chain *dat, Dwg_Data *dwg,
                                r2007_section *sections_map,
                                r2007_page *pages_map);

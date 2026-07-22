@@ -1,3 +1,23 @@
+typedef struct _stream_header_capture
+{
+  BITCODE_BS insunits;
+  BITCODE_BL calls;
+} Stream_Header_Capture;
+
+static int
+capture_stream_header (const Dwg_Stream_Object_Info *info,
+                       const Dwg_Object *object, void *user)
+{
+  Stream_Header_Capture *capture = (Stream_Header_Capture *)user;
+
+  (void)info;
+  if (!object || !object->parent)
+    return DWG_ERR_INTERNALERROR;
+  capture->insunits = object->parent->header_vars.INSUNITS;
+  capture->calls++;
+  return 0;
+}
+
 static int
 write_generated_minsert_fixture (Dwg_Version_Type version, const char *label,
                                  char *path, size_t path_size)
@@ -56,6 +76,7 @@ write_generated_minsert_fixture (Dwg_Version_Type version, const char *label,
     }
   if (version == R_2007)
     {
+      dwg->header_vars.INSUNITS = 6;
       for (i = 0; i < 2000; i++)
         {
           if (!dwg_add_LINE (hdr, &pt1, &pt2))
@@ -83,6 +104,8 @@ static int
 test_generated_minsert_stream_fixture (Dwg_Version_Type version,
                                        const char *label)
 {
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Stream_Header_Capture header = { 0 };
   Stream_Semantic_Coverage coverage = { 0 };
   Dwg_Data blocking = { 0 };
   char path[128];
@@ -116,7 +139,30 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
       remove (path);
       return 1;
     }
+  if (version == R_2007 && blocking.header_vars.INSUNITS != 6)
+    {
+      printf ("generated R2007 blocking INSUNITS=%u expected=6\n",
+              (unsigned)blocking.header_vars.INSUNITS);
+      dwg_free (&blocking);
+      remove (path);
+      return 1;
+    }
   dwg_free (&blocking);
+
+  if (version == R_2007)
+    {
+      callbacks.decoded_object = capture_stream_header;
+      error = dwg_stream_file_ex (path, &callbacks, &header);
+      if (error >= DWG_ERR_CRITICAL || !header.calls || header.insunits != 6)
+        {
+          printf ("generated R2007 Stream INSUNITS failed: error=0x%x "
+                  "calls=%lu value=%u expected=6\n",
+                  error, (unsigned long)header.calls,
+                  (unsigned)header.insunits);
+          remove (path);
+          return 1;
+        }
+    }
 
   error = test_stream_file_parity (path, 1, 0, label, 0, &coverage);
   remove (path);
