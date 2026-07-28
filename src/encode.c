@@ -2358,7 +2358,7 @@ encode_secondheader_private (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
   if (!dat->chain || !dat->size)
     return 1;
 
-    // clang-format off
+  // clang-format off
   #include "2ndheader.spec"
   // clang-format on
 
@@ -3492,7 +3492,7 @@ dwg_encode (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
     if (!_obj->num_sections || !_obj->sections)
       dwg_sections_init (dwg);
 
-      // clang-format off
+    // clang-format off
     #include "header.spec"
     // clang-format on
   }
@@ -4066,8 +4066,7 @@ dwg_encode (Dwg_Data *restrict dwg, Bit_Chain *restrict dat)
   }
   else
       /* End of the file */
-      dat->size
-      = dat->byte;
+      dat->size = dat->byte;
 
   SINCE (R_2004a)
   {
@@ -6411,7 +6410,10 @@ dwg_encode_get_class (Dwg_Data *dwg, Dwg_Object *obj)
                   // a static string, which cannot be free'd. important for
                   // indxf
                   if (dwg->opts & DWG_OPTS_IN)
-                    obj->dxfname = strdup ((char *)alias);
+                    {
+                      free (obj->dxfname);
+                      obj->dxfname = strdup ((char *)alias);
+                    }
                   else
                     obj->dxfname = (char *)alias;
                   obj->type = 500 + i;
@@ -6439,7 +6441,10 @@ dwg_encode_get_class (Dwg_Data *dwg, Dwg_Object *obj)
       if (!klass->dxfname)
         return NULL;
       if (dwg->opts & DWG_OPTS_IN)
-        obj->dxfname = strdup (klass->dxfname);
+        {
+          free (obj->dxfname);
+          obj->dxfname = strdup (klass->dxfname);
+        }
       else
         obj->dxfname = klass->dxfname;
     }
@@ -6683,7 +6688,9 @@ dwg_encode_add_object (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
           LOG_WARN ("\nObject %s unsupported", obj->name);
         }
     }
-  if (dat->byte + obj->size < dat->size)
+  // Grow when there is NOT already enough room; the condition was
+  // inverted before, leaving the buffer undersized on this path.
+  if (dat->byte + obj->size >= dat->size)
     bit_chain_alloc_size (dat, obj->size);
 
   // First write an approximate size here.
@@ -7127,6 +7134,9 @@ dwg_encode_add_object (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
           LOG_INFO ("was overlarge MS size %lu => %lu @%" PRIuSIZE "\n",
                     (unsigned long)old_size, (unsigned long)obj->size,
                     dat->byte);
+          if (dat->byte + obj->size + 5 > dat->size)
+            bit_chain_alloc_size (dat,
+                                  (dat->byte + obj->size + 5) - dat->size);
           memmove (&dat->chain[dat->byte], &dat->chain[dat->byte + 2],
                    obj->size + 3);
           // obj->size -= 2;
@@ -7725,7 +7735,7 @@ dwg_encode_common_entity_handle_data (Bit_Chain *dat, Bit_Chain *hdl_dat,
   if (dat->version >= R_2004 && _ent->color.flag & 0x40)
     FIELD_HANDLE (color.handle, 0, 430);
 
-    // clang-format off
+  // clang-format off
   #include "common_entity_handle_data.spec"
   // clang-format on
 
@@ -7987,7 +7997,7 @@ dwg_encode_header_variables (Bit_Chain *dat, Bit_Chain *hdl_dat,
   else
     _obj->HANDSEED->absolute_ref = 0x72E;
 
-    // clang-format off
+  // clang-format off
   #include "header_variables.spec"
   // clang-format on
 

@@ -1068,8 +1068,13 @@ DWG_ENTITY (_3DLINE)
     }
   }
   SINCE (R_10) {
-    FIELD_3RD (start, 10)
-    FIELD_3RD (end, 11)
+    if (!R11FLAG (FLAG_R11_HAS_ELEVATION)) {
+      FIELD_3RD (start, 10)
+      FIELD_3RD (end, 11)
+    } else {
+      FIELD_2RD (start, 10)
+      FIELD_2RD (end, 11)
+    }
 
     if (R11OPTS (1))
       FIELD_3RD (extrusion, 210);
@@ -2944,6 +2949,10 @@ DWG_ENTITY (MTEXT)
         FIELD_BD (extents_height, 43);
         // end redundant fields
 
+        // Partial decodes leave garbage here (256, 35141...); a 71 value
+        // > 2 crashes DXF readers (ezdxf ColumnType) — treat as "no columns"
+        if (FIELD_VALUE (column_type) > 2)
+          FIELD_VALUE (column_type) = 0;
         FIELD_BS (column_type, 71);
         if (FIELD_VALUE (column_type))
           {
@@ -4743,9 +4752,17 @@ DWG_ENTITY (HATCH)
                         {
 #define seg segx[rcount2]
                           SUB_FIELD_BL (seg, num_fitpts, 97);
-                          FIELD_2RD_VECTOR (seg.fitpts, seg.num_fitpts, 11);
-                          SUB_FIELD_2RD (seg, start_tangent, 12);
-                          SUB_FIELD_2RD (seg, end_tangent, 13);
+                          // AutoCAD writes the fit points and the two
+                          // tangents only when the spline edge was defined by
+                          // fit points (num_fitpts > 0). Reading the tangents
+                          // unconditionally overran the object and dropped the
+                          // remaining hatch edges/paths.
+                          if (FIELD_VALUE (seg.num_fitpts))
+                            {
+                              FIELD_2RD_VECTOR (seg.fitpts, seg.num_fitpts, 11);
+                              SUB_FIELD_2RD (seg, start_tangent, 12);
+                              SUB_FIELD_2RD (seg, end_tangent, 13);
+                            }
                         }
                       break;
                     default:
@@ -5525,7 +5542,7 @@ DWG_ENTITY (OLE2FRAME)
 #ifdef IS_DXF
   // via dwg_decode_ole2() from the first 0x80 bytes in data
   FIELD_BS (oleversion, 70); //  always 2
-  FIELD_TF (oleclient, strlen (_obj->oleclient), 3);
+  FIELD_TF (oleclient, strlen ((char *)_obj->oleclient), 3);
   FIELD_3BD (pt1, 10);  // upper left
   FIELD_3BD (pt2, 11);  // lower right
 #endif

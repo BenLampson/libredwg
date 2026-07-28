@@ -1,3 +1,4 @@
+
 /*****************************************************************************/
 /*  LibreDWG - free implementation of the DWG file format                    */
 /*                                                                           */
@@ -379,6 +380,39 @@ xcalloc (size_t n, size_t s)
 
 #ifndef DISABLE_DXF
 
+static void
+free_CellStyle_borders (Dwg_CellStyle *restrict cellstyle)
+{
+  if (!cellstyle)
+    return;
+
+  free (cellstyle->borders);
+  cellstyle->borders = NULL;
+  cellstyle->num_borders = 0;
+}
+
+static void
+free_GEODATA_geomesh_pts (Dwg_Object_GEODATA *restrict geodata)
+{
+  if (!geodata)
+    return;
+
+  free (geodata->geomesh_pts);
+  geodata->geomesh_pts = NULL;
+  geodata->num_geomesh_pts = 0;
+}
+
+static void
+free_GEODATA_geomesh_faces (Dwg_Object_GEODATA *restrict geodata)
+{
+  if (!geodata)
+    return;
+
+  free (geodata->geomesh_faces);
+  geodata->geomesh_faces = NULL;
+  geodata->num_geomesh_faces = 0;
+}
+
 /* With mips32 -O2 inline would fail. */
 static void
 dxf_skip_ws (Bit_Chain *dat)
@@ -658,7 +692,11 @@ dxf_read_string (Bit_Chain *dat, char **string)
            dat->byte++)
         {
           char *s = (char *)&dat->chain[dat->byte];
-          if (memBEGINc (s, "\\M+") && s[3] >= '1' && s[3] <= '5')
+          // Compare the 3 bytes directly: memBEGINc would strlen() the whole
+          // remaining multi-MB buffer for EVERY character of EVERY string,
+          // making DXF import quadratic in file size (a 19 MB DXF "hangs").
+          if (dat->byte + 3 < dat->size && s[0] == '\\' && s[1] == 'M'
+              && s[2] == '+' && s[3] >= '1' && s[3] <= '5')
             {
               const Dwg_Codepage mif_tbl[]
                   = { CP_UNDEFINED, CP_ANSI_932,  CP_ANSI_950,
@@ -2462,6 +2500,8 @@ add_MLINESTYLE_lines (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
   int num_lines = pair->value.i;
   Dwg_Object_MLINESTYLE *o = obj->tio.object->tio.MLINESTYLE;
   Dwg_Data *dwg = obj->parent;
+  free (o->lines);
+  o->lines = NULL;
   o->num_lines = num_lines;
   LOG_TRACE ("MLINESTYLE.num_lines = %d [RC 71]\n", num_lines);
   o->lines = (Dwg_MLINESTYLE_line *)xcalloc (num_lines,
@@ -2854,6 +2894,8 @@ add_MESH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
   if (pair->code == 91)
     {
       vector = pair->code;
+      free (o->subdiv_vertex);
+      o->subdiv_vertex = NULL;
       o->num_subdiv_vertex = pair->value.u;
       LOG_TRACE ("MESH.num_subdiv_vertex = %u [BL 91]\n", pair->value.u);
       if (pair->value.u)
@@ -2879,6 +2921,8 @@ add_MESH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
         {
           j = 0;
           vector = pair->code;
+          free (o->vertex);
+          o->vertex = NULL;
           o->num_vertex = pair->value.u;
           LOG_TRACE ("MESH.num_vertex = %u [BL 92]\n", pair->value.u);
           if (pair->value.u)
@@ -2896,6 +2940,8 @@ add_MESH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
         {
           j = 0;
           vector = pair->code;
+          free (o->faces);
+          o->faces = NULL;
           o->num_faces = pair->value.u;
           LOG_TRACE ("MESH.num_faces = %u [BL %d]\n", pair->value.u,
                      pair->code);
@@ -2914,6 +2960,8 @@ add_MESH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
         {
           j = 0;
           vector = pair->code;
+          free (o->edges);
+          o->edges = NULL;
           o->num_edges = pair->value.u;
           LOG_TRACE ("MESH.num_edges = %u [BL %d]\n", pair->value.u,
                      pair->code);
@@ -2932,6 +2980,8 @@ add_MESH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
         {
           j = 0;
           vector = pair->code;
+          free (o->crease);
+          o->crease = NULL;
           o->num_crease = pair->value.u;
           LOG_TRACE ("MESH.num_crease = %u [BL %d]\n", pair->value.u,
                      pair->code);
@@ -3027,6 +3077,8 @@ add_MESH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
             }
           else if (vector == 95)
             {
+              free (o->crease);
+              o->crease = NULL;
               o->num_crease = pair->value.u;
               LOG_TRACE ("MESH.num_crease = %u [BL %d]\n", pair->value.u,
                          pair->code);
@@ -3080,6 +3132,7 @@ add_HATCH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
   int j = -1;
   int k = -1;
   int l = -1;
+  int knots_left = 0; // spline knots pending; they precede rational weights
   int hdl_idx = -1;
   bool next_330_boundary_handles = false;
 
@@ -3156,7 +3209,11 @@ add_HATCH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
           o->paths[j].flag = pair->value.u;
           LOG_TRACE ("HATCH.paths[%d].flag = %u [BL 92]\n", j, pair->value.u);
           is_plpath = pair->value.u & 2;
-          o->has_derived = pair->value.u & 4;
+          // has_derived is the OR of every path flag's 0x4 bit (the decoder
+          // computes it that way); a plain '=' left it holding only the last
+          // path's bit, so the encoder skipped pixel_size while the reader
+          // expected it -> misaligned num_seeds and an unreadable HATCH.
+          o->has_derived |= (pair->value.u & 4) ? 1 : 0;
           LOG_TRACE ("HATCH.has_derived = %d [B 0]\n", o->has_derived);
         }
       else if (pair->code == 93)
@@ -3257,6 +3314,7 @@ add_HATCH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
           CHK_paths;
           CHK_segs;
           o->paths[j].segs[k].num_knots = pair->value.l;
+          knots_left = (int)pair->value.l;
           LOG_TRACE ("HATCH.paths[%d].segs[%d].num_knots = %ld [BL 95]\n", j,
                      k, pair->value.l);
           o->paths[j].segs[k].knots
@@ -3533,7 +3591,13 @@ add_HATCH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
                   j, k, pair->value.d);
               break;
             case 4: /* SPLINE */
-              if (l >= 0 && o->paths[j].segs[k].is_rational)
+              // A rational spline stores its knots (num_knots of them) BEFORE
+              // the per-control-point weights, and both use DXF code 40. While
+              // knots remain, code 40 is a knot even when is_rational is set;
+              // keying only on is_rational sent every knot after the first to
+              // the weight branch, corrupting the knots and overrunning the
+              // control-point array ("wrong l N control_points index").
+              if (knots_left <= 0 && l >= 0 && o->paths[j].segs[k].is_rational)
                 {
                   CHK_control_points;
                   o->paths[j].segs[k].control_points[l].weight = pair->value.d;
@@ -3559,6 +3623,7 @@ add_HATCH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
                   l++;
                   CHK_knots;
                   o->paths[j].segs[k].knots[l] = pair->value.d;
+                  knots_left--;
                   LOG_TRACE (
                       "HATCH.paths[%d].segs[%d].knots[%d] = %f [BD 40]\n", j,
                       k, l, pair->value.d);
@@ -3675,6 +3740,12 @@ add_HATCH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
               next_330_boundary_handles = true;
               o->paths[j].num_boundary_handles = pair->value.l;
               // o->num_boundary_handles += pair->value.l;
+              // each path carries its own handle list; without this reset
+              // the 330s of every path after the first were rejected,
+              // leaving num_boundary_handles set with a NULL array - which
+              // the encoder then turns into a short handle stream,
+              // corrupting the rest of the HATCH (pattern lost)
+              hdl_idx = -1;
               LOG_TRACE (
                   "HATCH.paths[%d].num_boundary_handles = %ld [BL 97]\n", j,
                   pair->value.l);
@@ -3708,6 +3779,7 @@ add_HATCH (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
           o->paths[j].num_boundary_handles = pair->value.l;
           next_330_boundary_handles = true;
           // o->num_boundary_handles += pair->value.l;
+          hdl_idx = -1; // see the non-polyline 97 handler above
           LOG_TRACE (
               "HATCH.paths[%d].num_boundary_handles = %ld [BL 97] (1)\n", j,
               pair->value.l);
@@ -4948,6 +5020,7 @@ add_GEODATA (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
         {
         case 93:
           i = -1;
+          free_GEODATA_geomesh_pts (o);
           o->num_geomesh_pts = pair->value.u;
           o->geomesh_pts = (Dwg_GEODATA_meshpt *)xcalloc (
               pair->value.u, sizeof (Dwg_GEODATA_meshpt));
@@ -4958,6 +5031,7 @@ add_GEODATA (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
           break;
         case 96:
           i = -1;
+          free_GEODATA_geomesh_faces (o);
           o->num_geomesh_faces = pair->value.u;
           o->geomesh_faces = (Dwg_GEODATA_meshface *)xcalloc (
               pair->value.u, sizeof (Dwg_GEODATA_meshface));
@@ -5076,6 +5150,8 @@ add_CellStyle (Dwg_Object *restrict obj, Dwg_CellStyle *o, const char *key,
         case 300:
           if (mode == CONTENTFORMAT)
             {
+              free (o->content_format.value_format_string);
+              o->content_format.value_format_string = NULL;
               if (obj->parent->header.version >= R_2007)
                 o->content_format.value_format_string
                     = (BITCODE_T)bit_utf8_to_TU (pair->value.s.ptr, 0);
@@ -5232,6 +5308,7 @@ add_CellStyle (Dwg_Object *restrict obj, Dwg_CellStyle *o, const char *key,
         case 94:
           if (mode == TABLEFORMAT)
             {
+              free_CellStyle_borders (o);
               o->num_borders = pair->value.u;
               j = 0;
               LOG_TRACE ("%s.%s.num_borders = " FORMAT_BL " [BL %d]\n",
@@ -5532,6 +5609,8 @@ add_TABLESTYLE (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
           break;
         case 1:
           CHK_rowstyles;
+          free (o->rowstyles[i].format_string);
+          o->rowstyles[i].format_string = NULL;
           o->rowstyles[i].format_string
               = bit_utf8_to_TU (pair->value.s.ptr, 0);
           LOG_TRACE ("%s.rowstyles[%d].format_string = %s [TU %d]\n",
@@ -6212,8 +6291,8 @@ add_EVAL_Edge (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
   while (pair != NULL && pair->code == 92)
     {
       i++;
-      o->edges = (Dwg_EVAL_Edge *)realloc (
-          o->edges, o->num_edges * sizeof (Dwg_EVAL_Edge));
+      o->edges = (Dwg_EVAL_Edge *)realloc (o->edges,
+                                           (i + 1) * sizeof (Dwg_EVAL_Edge));
       if (!o->edges)
         {
           o->num_edges = 0;
@@ -6318,19 +6397,20 @@ add_EVAL_Node (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
           o->nodes[i].id = pair->value.i;
           LOG_TRACE ("%s.nodes[%d].id = %d [BL %d]\n", obj->name, i,
                      pair->value.i, pair->code);
+          j = 0;
           break;
-        case 93: // must be 32
+        case 93:
           o->nodes[i].edge_flags = pair->value.i;
           LOG_TRACE ("%s.nodes[%d].edge_flags = %d [BL %d]\n", obj->name, i,
                      pair->value.i, pair->code);
           break;
         case 95:
-          o->nodes[i].edge_flags = pair->value.i;
+          o->nodes[i].nextid = pair->value.i;
           if (pair->value.i != 32)
-            LOG_WARN ("%s.nodes[%d].edge_flags = %d [BL %d] != 32", obj->name,
-                      i, pair->value.i, pair->code);
+            LOG_WARN ("%s.nodes[%d].nextid = %d [BL %d] != 32", obj->name, i,
+                      pair->value.i, pair->code);
           else
-            LOG_TRACE ("%s.nodes[%d].edge_flags = %d [BL %d]\n", obj->name, i,
+            LOG_TRACE ("%s.nodes[%d].nextid = %d [BL %d]\n", obj->name, i,
                        pair->value.i, pair->code);
           break;
         case 360:
@@ -6709,6 +6789,8 @@ add_PERSUBENTMGR (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
   FIELD_BL (numassocsteps, 90);
   FIELD_BL (numassocsubents, 90);
   FIELD_BL (num_steps, 90);
+  free (o->steps);
+  o->steps = NULL;
   if (o->num_steps > 0)
     {
       o->steps = (BITCODE_BL *)xcalloc (o->num_steps, sizeof (BITCODE_BL));
@@ -6729,6 +6811,8 @@ add_PERSUBENTMGR (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
         }
     }
   FIELD_BL (num_subents, 90);
+  free (o->subents);
+  o->subents = NULL;
   if (o->num_subents > 0)
     {
       o->subents = (BITCODE_BL *)xcalloc (o->num_subents, sizeof (BITCODE_BL));
@@ -7009,10 +7093,13 @@ add_FIELD (Dwg_Object *restrict obj, Bit_Chain *restrict dat)
           dxf_free_pair (pair);
         next_field:
           pair = dxf_read_pair (dat);
-          EXPECT_DXF (obj->name, childval[i].value.data_type, 90);
-          LOG_TRACE ("FIELD.childval[%u].value.data_type = %u [RL 90]\n", i,
-                     pair->value.u);
+          // AutoCAD uses group 93 for the data type here (some writers use
+          // 90); accept either, but do not abort on other codes.
+          if (!pair || (pair->code != 90 && pair->code != 93))
+            return pair;
           o->childval[i].value.data_type = pair->value.u;
+          LOG_TRACE ("FIELD.childval[%u].value.data_type = %u [BL %d]\n", i,
+                     o->childval[i].value.data_type, pair->code);
           dxf_free_pair (pair);
           /*
             90
@@ -8510,7 +8597,7 @@ add_AcDbBlockRotationAction (Dwg_Object *restrict obj, Bit_Chain *restrict dat)
 {
   Dwg_Data *dwg = obj->parent;
   Dxf_Pair *pair;
-  pair = add_BlockAction_ConnectionPts (obj, dat, 2, 1, 94, 303);
+  pair = add_BlockAction_ConnectionPts (obj, dat, 2, 1, 96, 305);
   if (pair)
     return pair;
   return NULL;
@@ -8649,9 +8736,12 @@ add_AcDbBlockStretchAction (Dwg_Object *restrict obj, Bit_Chain *restrict dat)
           LOG_TRACE ("%s.hdls[%d].num_indexes = %u [BS 74]\n", obj->name, i,
                      (unsigned)o->hdls[i].num_indexes);
           dxf_free_pair (pair);
-
           if (o->hdls[i].num_indexes)
             {
+              o->hdls[i].indexes = (BITCODE_BL *)xcalloc (
+                  o->hdls[i].num_indexes, sizeof (BITCODE_BL));
+              if (!o->hdls[i].indexes)
+                return NULL;
               for (unsigned j = 0; j < o->hdls[i].num_indexes; j++)
                 {
                   pair = dxf_read_pair (dat);
@@ -8690,15 +8780,18 @@ add_AcDbBlockStretchAction (Dwg_Object *restrict obj, Bit_Chain *restrict dat)
           LOG_TRACE ("%s.codes[%d].num_indexes = %d [BS 76]\n", obj->name, i,
                      o->codes[i].num_indexes);
           dxf_free_pair (pair);
-
           if (o->codes[i].num_indexes)
             {
-              for (unsigned j = 0; j < o->hdls[i].num_indexes; j++)
+              o->codes[i].indexes = (BITCODE_BL *)xcalloc (
+                  o->codes[i].num_indexes, sizeof (BITCODE_BL));
+              if (!o->codes[i].indexes)
+                return NULL;
+              for (unsigned j = 0; j < o->codes[i].num_indexes; j++)
                 {
                   pair = dxf_read_pair (dat);
                   EXPECT_DXF (obj->name, o->codes[i].indexes[j], 94);
                   o->codes[i].indexes[j] = pair->value.i;
-                  LOG_TRACE ("%s.codes[%d].indexes[%d] = %d [BL 94]\n",
+                  LOG_TRACE ("%s.codes[%d].indexes[%d] = %u [BL 94]\n",
                              obj->name, i, j, o->codes[i].indexes[j]);
                   dxf_free_pair (pair);
                 }
@@ -9194,6 +9287,9 @@ add_AcDbSectionViewStyle (Dwg_Object *restrict obj, Bit_Chain *restrict dat)
   FIELD_BLd (hatch_transparency, 90);
   FIELD_B (unknown_b1, 290);
   FIELD_B (unknown_b2, 290);
+  free (o->hatch_angles);
+  o->hatch_angles = NULL;
+  o->num_hatch_angles = 0;
   FIELD_BL (num_hatch_angles, 90);
   if (o->num_hatch_angles)
     {
@@ -9356,9 +9452,27 @@ dxf_postprocess_SEQEND (Dwg_Object *restrict obj)
 
   loglevel = dwg->opts & DWG_OPTS_LOGLEVEL;
   LOG_TRACE ("dxf_postprocess_SEQEND:\n");
+  // Validate that the 330 owner is a real SEQEND parent entity.
+  // Both ezdxf and AutoCAD DXF may point the 330 at the owning
+  // BLOCK_RECORD instead of the INSERT/POLYLINE parent entity.
+  if (owner)
+    {
+      if (owner->fixedtype != DWG_TYPE_INSERT
+          && owner->fixedtype != DWG_TYPE_MINSERT
+          && owner->fixedtype != DWG_TYPE_POLYLINE_2D
+          && owner->fixedtype != DWG_TYPE_POLYLINE_3D
+          && owner->fixedtype != DWG_TYPE_POLYLINE_PFACE
+          && owner->fixedtype != DWG_TYPE_POLYLINE_MESH)
+        {
+          LOG_TRACE ("SEQEND.owner " FORMAT_H
+                     " (%s) is not a valid parent, falling back to search\n",
+                     ARGS_H (owner->handle), owner->name);
+          owner = NULL;
+          obj->tio.entity->ownerhandle = NULL;
+        }
+    }
   // r12 and earlier: search for owner backwards
-  if (dwg->header.from_version < R_13b1 && !owner
-      && !obj->tio.entity->ownerhandle)
+  if (!owner && !obj->tio.entity->ownerhandle)
     {
       for (i = obj->index - 1; i > 0; i--)
         {
@@ -9726,6 +9840,8 @@ add_MATERIAL (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
   // a map filename (source==1), kept as UTF-8 like all other imported strings
 #  define MAT_T(field, dxf)                                                   \
     case dxf:                                                                 \
+      free (o->field);                                                        \
+      o->field = NULL;                                                        \
       o->field = pair->value.s.ptr ? strdup (pair->value.s.ptr) : NULL;       \
       LOG_TRACE ("MATERIAL." #field " = %s [T %d]\n",                         \
                  pair->value.s.ptr ? pair->value.s.ptr : "", pair->code);     \
@@ -10198,9 +10314,15 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
             if (strEQc (name, "VIEWPORT") && dwg->header.version < R_2004
                 && dwg->header.version > R_11 && pair->code == 5)
               {
+                // dwg_add_VX -> API_ADD_TABLE may add object(s) and realloc
+                // dwg->object[], invalidating obj. Re-fetch by index before
+                // dereferencing it again (GHSA-qcxp-m6vj-h5h8).
+                BITCODE_BL objidx = obj->index;
                 Dwg_Object_VX_TABLE_RECORD *vx = dwg_add_VX (dwg, "");
                 Dwg_Object *vxobj = dwg_obj_generic_to_object (vx, &error);
-                Dwg_Entity_VIEWPORT *_vobj = obj->tio.entity->tio.VIEWPORT;
+                Dwg_Entity_VIEWPORT *_vobj;
+                obj = &dwg->object[objidx];
+                _vobj = obj->tio.entity->tio.VIEWPORT;
                 // vx->is_on = 1;
                 vx->viewport = dwg_add_handleref (dwg, 4, pair->value.u, NULL);
                 LOG_TRACE ("VX_TABLE_RECORD.viewport = " FORMAT_REF " [H 4]\n",
@@ -10220,7 +10342,7 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
                 if (o->num_ents > 0 && !o->sort_ents[o->num_ents - 1])
                   {
                     BITCODE_H hdl
-                        = dwg_add_handleref (dwg, 0, pair->value.u, obj);
+                        = dwg_add_handleref (dwg, 0, pair->value.u, NULL);
                     o->sort_ents[o->num_ents - 1] = hdl;
                     LOG_TRACE ("SORTENTSTABLE.sort_ents[%d] = " FORMAT_REF
                                " [H 5]\n",
@@ -12345,14 +12467,16 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
                               dwg_dynapi_entity_set_value (_obj, obj->name,
                                                            f->name, &pts, 0);
                             }
-                          else if (j > 0 && j < size)
+                          else if (j >= 0 && j < size)
                             {
                               int _i = is2d ? j * 2 : j * 3;
                               dwg_dynapi_entity_value (_obj, obj->name,
                                                        f->name, &pts, NULL);
                               if (pair->code < 20 && pts != NULL)
                                 {
-                                  pts[_i] = pair->value.d;
+                                  // first point .x already set above, skip
+                                  if (j > 0)
+                                    pts[_i] = pair->value.d;
                                 }
                               else if (pair->code < 30 && pts != NULL)
                                 {
@@ -12362,6 +12486,12 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
                                         f->name, j, pts[_i], pair->value.d,
                                         f->type, pair->code);
                                   pts[_i + 1] = pair->value.d;
+                                  if (is2d)
+                                    {
+                                      j++;
+                                      if (j == size)
+                                        j = 0;
+                                    }
                                 }
                               else if (*f->type == '3' && pts)
                                 {
@@ -12370,7 +12500,8 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
                                       name, f->name, j, pts[_i], pts[_i + 1],
                                       pair->value.d, f->type, pair->code);
                                   pts[_i + 2] = pair->value.d;
-                                  if (j == size - 1)
+                                  j++;
+                                  if (j == size)
                                     j = 0; // restart
                                 }
                             }
@@ -12571,6 +12702,8 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
                           // pt.x = 0.0;
                           // if (pair->value.d == 0.0) // ignore defaults
                           //  goto next_pair;
+                          dwg_dynapi_entity_value (_obj, obj->name, f->name,
+                                                   &pt, NULL);
                           pt.x = pair->value.d;
                           dwg_dynapi_entity_set_value (_obj, obj->name,
                                                        f->name, &pt, 1);
@@ -13214,6 +13347,11 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
                        && (pair->code == 2 || pair->code == 210
                            || pair->code == 220 || pair->code == 230))
                 ; // ignore the POLYLINE elevation.x,y. DXF artifacts
+              else if (strEQc (name, "DIMENSION")
+                       && (pair->code == 16 || pair->code == 26
+                           || pair->code == 36))
+                ; // ignore arc definition point for subtypes without
+                  // xline2end_pt (e.g. ANG3PT)
               else if (strEQc (name, "HATCH")
                        && (pair->code == 10 || pair->code == 20))
                 ; // ignore the whole PLINE and VERTEX_PFACE_FACE 3BD 10
@@ -13468,6 +13606,43 @@ static __nonnull ((1, 2, 3, 4)) Dxf_Pair *new_object (
     dxf_postprocess_MLINESTYLE (obj); // FIXME. not triggered
   else if (obj->fixedtype == DWG_TYPE_PLOTSETTINGS)
     dxf_postprocess_PLOTSETTINGS (obj);
+  else if (obj->fixedtype == DWG_TYPE_SORTENTSTABLE)
+    {
+      Dwg_Object_SORTENTSTABLE *o = obj->tio.object->tio.SORTENTSTABLE;
+      /* When block_owner was not set by an explicit 330 code (empty table),
+         derive it from the ownership chain: ownerhandle -> DICTIONARY ->
+         BLOCK_HEADER.  */
+      if (!o->block_owner && obj->tio.object->ownerhandle)
+        {
+          Dwg_Object *owner
+              = dwg_ref_object (dwg, obj->tio.object->ownerhandle);
+          if (owner && owner->fixedtype == DWG_TYPE_DICTIONARY
+              && owner->tio.object->ownerhandle)
+            {
+              Dwg_Object *blk
+                  = dwg_ref_object (dwg, owner->tio.object->ownerhandle);
+              if (blk && blk->fixedtype == DWG_TYPE_BLOCK_HEADER)
+                {
+                  o->block_owner
+                      = dwg_add_handleref (dwg, 4, blk->handle.value, NULL);
+                  LOG_TRACE ("SORTENTSTABLE.block_owner = " FORMAT_REF
+                             " [H 330] (derived)\n",
+                             ARGS_REF (o->block_owner));
+                }
+            }
+        }
+    }
+  else if (obj->fixedtype == DWG_TYPE_BLOCK_HEADER)
+    {
+      Dwg_Object_BLOCK_HEADER *hdr = obj->tio.object->tio.BLOCK_HEADER;
+      /* A block with no xref path must not have the xref flag bit set,
+         or conformant readers render it as an unresolved Xref placeholder.  */
+      if (hdr->blkisxref && (!hdr->xref_pname || !*hdr->xref_pname))
+        {
+          hdr->blkisxref = 0;
+          LOG_TRACE ("BLOCK_HEADER.blkisxref = 0 (no xref path)\n");
+        }
+    }
   // set defaults not in dxf:
   else if (obj->type == DWG_TYPE__3DFACE && dwg->header.from_version >= R_2000)
     {
@@ -14011,7 +14186,7 @@ dxf_blocks_read (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
                            || bit_eq_T (dat, _obj->name, "*PAPER_SPACE"))
                     entmode = ent->entmode = 1;
                   else
-                    entmode = ent->entmode = 3; // regular block entities
+                    entmode = ent->entmode = 0; // regular block entities
                   if (!ent->isbylayerlt && !ent->ltype_flags && !ent->ltype)
                     ent->isbylayerlt = 1;
                 }

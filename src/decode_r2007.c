@@ -716,6 +716,7 @@ read_data_page (Bit_Chain *restrict dat, BITCODE_RC *restrict decomp,
 
   return error;
 }
+
 int
 read_data_section (Bit_Chain *sec_dat, Bit_Chain *dat,
                    r2007_section *restrict sections_map,
@@ -883,8 +884,7 @@ read_data_section_page (Bit_Chain *page_dat, Bit_Chain *dat,
   dat->byte = page->offset;
   if (section_page->comp_size != section_page->uncomp_size)
     {
-      error = read_data_page (dat, decomp, page->size,
-                              section_page->comp_size,
+      error = read_data_page (dat, decomp, page->size, section_page->comp_size,
                               section_page->uncomp_size, decomp_end);
       if (error)
         {
@@ -1820,8 +1820,6 @@ read_2007_section_handles (Bit_Chain *dat, Bit_Chain *hdl,
   return error;
 }
 
-
-
 /* VBAProject Section
  */
 static int
@@ -2470,9 +2468,8 @@ read_r2007_meta_data (Bit_Chain *dat, Bit_Chain *hdl_dat,
       LOG_ERROR ("%s Invalid comp_data_size %" PRId64 " > %" PRIuSIZE
                  " bytes left",
                  __FUNCTION__, file_header->sections_map_size_comp,
-                 page->offset < dat->size
-                     ? dat->size - (size_t)page->offset
-                     : (size_t)0);
+                 page->offset < dat->size ? dat->size - (size_t)page->offset
+                                          : (size_t)0);
       error |= DWG_ERR_VALUEOUTOFBOUNDS;
       goto error;
     }
@@ -2514,4 +2511,3 @@ error:
 
   return error;
 }
-

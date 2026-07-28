@@ -678,7 +678,19 @@ dxf_print_rd (Bit_Chain *dat, BITCODE_RD value, int dxf)
 #define FIELD_RLL(nam, dxf) FIELDG (nam, RLL, dxf)
 #define FIELD_MC(nam, dxf) FIELDG (nam, MC, dxf)
 #define FIELD_MS(nam, dxf) FIELDG (nam, MS, dxf)
-#define FIELD_TF(nam, len, dxf) VALUE_TV (_obj->nam, dxf)
+/* Group codes 310-319 hold binary chunks: hex-encode them. Writing them
+   through the string path (VALUE_TV) emits the raw bytes (and applies the
+   r2007+ codepage conversion to them), producing invalid DXF that readers
+   reject, e.g. PROXY_ENTITY.proxy_data. */
+#define FIELD_TF(nam, len, dxf)                                               \
+  {                                                                           \
+    if ((dxf) >= 310 && (dxf) <= 319)                                         \
+      {                                                                       \
+        VALUE_BINARY (_obj->nam, len, dxf)                                    \
+      }                                                                       \
+    else                                                                      \
+      VALUE_TV (_obj->nam, dxf)                                               \
+  }
 #define FIELD_TFF(nam, len, dxf) VALUE_TV (_obj->nam, dxf)
 #define FIELD_TV(nam, dxf)                                                    \
   if (dxf)                                                                    \
@@ -1116,7 +1128,11 @@ static int dwg_dxf_TABLECONTENT (Bit_Chain *restrict dat,
     if (obj->handle.value)                                                    \
       LOG_TRACE ("handle: " FORMAT_H "\n", ARGS_H (obj->handle));             \
     if (dat->version > R_11 || dwg->header_vars.HANDLING)                     \
-      fprintf (dat->fh, "%3i\r\n" FMT_H "\r\n", 5, obj->handle.value);        \
+      {                                                                       \
+        if (!obj->handle.value)                                               \
+          dxf_fixup_zero_handle (obj);                                        \
+        fprintf (dat->fh, "%3i\r\n" FMT_H "\r\n", 5, obj->handle.value);      \
+      }                                                                       \
     error |= dxf_common_entity_handle_data (dat, obj);                        \
     error |= dwg_dxf_##token##_private (dat, hdl_dat, str_dat, obj);          \
     error |= dxf_write_eed (dat, obj->tio.object);                            \
@@ -1174,6 +1190,8 @@ static int dwg_dxf_TABLECONTENT (Bit_Chain *restrict dat,
         {                                                                     \
           BITCODE_BL vcount;                                                  \
           const int dxf = obj->type == DWG_TYPE_DIMSTYLE ? 105 : 5;           \
+          if (!obj->handle.value)                                             \
+            dxf_fixup_zero_handle (obj);                                      \
           VALUE_H (obj->handle.value, dxf);                                   \
           _XDICOBJHANDLE (3);                                                 \
           _REACTORS (4);                                                      \
@@ -1322,15 +1340,16 @@ cquote (char *restrict dest, const size_t len, const char *restrict src)
   char *s = (char *)src;
   while ((s < send) && (c = *s++) && dest < dend)
     {
-      if (c == '\n' && dest + 1 < dend)
+      // Caret-encode every C0 control byte (< 0x20) except tab, which
+      // AutoCAD itself still writes literally. \n => ^J and \r => ^M are
+      // just two instances of the general rule ('^' + (c + 0x40));
+      // decoder over-reads can leave any other control byte (ETX, DC1,
+      // ...) embedded in a string, and even one raw byte < 0x20 desyncs
+      // the tag/value line stream for every DXF reader.
+      if ((unsigned char)c < 0x20 && c != '\t' && dest + 1 < dend)
         {
           *dest++ = '^';
-          *dest++ = 'J';
-        }
-      else if (c == '\r' && dest + 1 < dend)
-        {
-          *dest++ = '^';
-          *dest++ = 'M';
+          *dest++ = (char)(c + 0x40);
         }
       // Convert Asian MIF \M+nxxxx to \U+xxxx
       // 1: 932 ShiftJIS
@@ -1374,14 +1393,103 @@ cquote (char *restrict dest, const size_t len, const char *restrict src)
   return d;
 }
 
+// True if str has anything cquote() needs to rewrite: a raw C0 control
+// byte (tab excepted) that would desync the tag/value stream if written
+// as-is, or an old-style Asian MIF \M+nyyyy escape that needs conversion
+// to \U+xxxx.
+static bool
+dxf_needs_cquote (const char *restrict str)
+{
+  for (const unsigned char *s = (const unsigned char *)str; *s; s++)
+    {
+      if (*s < 0x20 && *s != '\t')
+        return true;
+      if (*s == '\\' && s[1] == 'M' && s[2] == '+')
+        return true;
+    }
+  return false;
+}
+
 /*
-   Splits overlong (len>250) lines into dxf 3 chunks ending with group dxf.
+   Splits overlong (len>250) values into dxf+2 continuation lines (e.g.
+   301 -> 303, matching AutoCAD's own GEODATA continuations) ending with
+   group dxf for the final chunk. A chunk boundary never lands inside a
+   trailing \U+XXXX escape.
    Only TFF sets opts=0, TV and TU to 1.
-   If opts 1:
-     quote \n => ^J
-     \M+xxxxx => \U+XXXX (shift-jis)
-   split by intermediate UCS-2, convert all unicode to \\U+
- */
+   If opts 1 and the string needs it (see dxf_needs_cquote): roundtrip
+   through UTF-16 first (expands \U+/\M+, flushes out whatever an
+   invalid UTF-8 over-read decodes to), then caret-quote the result:
+     ^X for every C0 control byte except tab, e.g. \n => ^J, \r => ^M
+     \M+xxxxx => \U+XXXX (shift-jis and friends)
+*/
+/* Objects can arrive from partial decodes with handle 0, which readers
+   reject outright ("Invalid handle 0"), killing the whole file. Assign a
+   fresh unique handle at write time instead. */
+static BITCODE_RLL
+dxf_fixup_zero_handle (const Dwg_Object *restrict obj)
+{
+  static BITCODE_RLL last = 0;
+  Dwg_Object *o = (Dwg_Object *)obj;
+  BITCODE_RLL next = dwg_next_handle (obj->parent);
+  if (next <= last)
+    next = last + 1;
+  last = next;
+  o->handle.value = next;
+  return next;
+}
+
+static void
+dxf_fputs_escaped (Bit_Chain *restrict dat, const char *restrict s,
+                   const size_t len)
+{
+  for (size_t i = 0; i < len; i++)
+    {
+      const unsigned char c = (unsigned char)s[i];
+      if (c < 0x20 && c != '\t')
+        {
+          fputc ('^', dat->fh);
+          fputc (c + 0x40, dat->fh);
+        }
+      else
+        fputc (c, dat->fh);
+    }
+  fputs ("\r\n", dat->fh);
+}
+
+/* Splits str (len bytes, no embedded NUL) into <=250-byte DXF value
+   lines: group dxf for the final chunk, dxf+2 for every earlier one.
+   Never cuts a chunk boundary through a trailing \U+XXXX escape: some
+   readers (e.g. ezdxf) parse escapes per chunk rather than after
+   reassembly, so a chunk ending in "...\U+" leaves them trying to parse
+   an empty hex number and crashing. Every chunk is routed through
+   dxf_fputs_escaped as the last line of defense against a raw control
+   byte reaching the file. */
+static void
+dxf_write_chunked (Bit_Chain *restrict dat, const char *restrict str,
+                   size_t len, const int dxf)
+{
+  while (len > 0)
+    {
+      size_t chunk = len > 250 ? 250 : len;
+      if (chunk < len) // more to come: don't split a trailing \U+XXXX
+        {
+          const size_t min = chunk > 6 ? chunk - 6 : 0;
+          for (size_t i = min; i < chunk; i++)
+            {
+              if (str[i] == '\\')
+                {
+                  chunk = i;
+                  break;
+                }
+            }
+        }
+      GROUP (chunk < len ? dxf + 2 : dxf);
+      dxf_fputs_escaped (dat, str, chunk);
+      str += chunk;
+      len -= chunk;
+    }
+}
+
 static void
 dxf_fixup_string (Bit_Chain *restrict dat, char *restrict str, const int opts,
                   const int dxf)
@@ -1390,55 +1498,46 @@ dxf_fixup_string (Bit_Chain *restrict dat, char *restrict str, const int opts,
     return;
   if (str && *str)
     {
-      if (opts
-          && (strchr (str, '\n') || strchr (str, '\r')
-              || strstr (str, "\\M+")))
+      if (opts && dxf_needs_cquote (str))
         {
-          static char *cstr, *ubuf;
-          const size_t origlen = strlen (str);
-          long len = (long)((2 * origlen) + 1);
+          char *cstr, *ubuf;
           BITCODE_TU wstr;
-          cstr = malloc (len);
-          if (!cstr)
+          size_t emblen, qlen;
+
+          // Roundtrip through UTF-16 first (this is where \U+ and \M+
+          // get expanded, and where an invalid UTF-8 byte sequence left
+          // by a decoder over-read gets flushed out into whatever code
+          // units it decodes to), and only THEN caret-quote the result.
+          // Quoting before this roundtrip is pointless: bit_embed_TU
+          // re-emits every code point < 0x100 -- control bytes included
+          // -- as a single raw byte, silently undoing any quoting done
+          // beforehand.
+          wstr = bit_utf8_to_TU (str, 0);
+          ubuf = bit_embed_TU (wstr);
+          free (wstr);
+          if (!ubuf)
             {
               LOG_ERROR ("Out of memory");
               return;
             }
-          len = (long)strlen (cquote (cstr, len, str));
-          if (len < 0)
+
+          emblen = strlen (ubuf);
+          cstr = malloc ((2 * emblen) + 1);
+          if (!cstr)
             {
-              LOG_ERROR ("Overlong DXF string");
+              LOG_ERROR ("Out of memory");
+              free (ubuf);
               return;
             }
-          if (len > 250)
-            {
-              LOG_TRACE ("Split overlong string");
-            }
-          wstr = bit_utf8_to_TU (cstr, 0);
-          free (cstr);
-          cstr = ubuf = bit_embed_TU (wstr);
-          free (wstr);
-          len = (long)strlen (ubuf);
-          while (len > 0)
-            {
-              fprintf (dat->fh, "%3d\r\n", len < 250 ? dxf : 3);
-              fprintf (dat->fh, "%.*s\r\n", len > 250 ? 250 : (int)len, ubuf);
-              len -= 250;
-              ubuf += 250;
-            }
+          qlen = strlen (cquote (cstr, (2 * emblen) + 1, ubuf));
+          free (ubuf);
+          if (qlen > 250)
+            LOG_TRACE ("Split overlong string");
+          dxf_write_chunked (dat, cstr, qlen, dxf);
           free (cstr);
         }
-      else // TFF
-        {
-          long len = (long)strlen (str);
-          while (len > 0)
-            {
-              fprintf (dat->fh, "%3d\r\n", len < 250 ? dxf : 3);
-              fprintf (dat->fh, "%.*s\r\n", len > 250 ? 250 : (int)len, str);
-              len -= 250;
-              str += 250;
-            }
-        }
+      else // TFF, or an opts=1 string clean enough to need no quoting
+        dxf_write_chunked (dat, str, strlen (str), dxf);
     }
   else
     fprintf (dat->fh, "%3d\r\n\r\n", dxf);
@@ -3732,6 +3831,9 @@ dxf_ENDBLK_empty (Bit_Chain *restrict dat, const Dwg_Object *restrict hdr)
   // Dwg_Entity_ENDBLK *_obj;
   obj->parent = dwg;
   obj->index = dwg->num_objects;
+  // a real handle: readers reject the 0 that calloc leaves ("Invalid
+  // handle 0"), killing the whole file for the sake of a filler ENDBLK
+  obj->handle.value = dwg_next_handle (dwg);
   dwg_setup_ENDBLK (obj);
   obj->tio.entity->ownerhandle
       = (BITCODE_H)calloc (1, sizeof (Dwg_Object_Ref));

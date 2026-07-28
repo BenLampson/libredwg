@@ -20,6 +20,10 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
+#ifndef _WIN32
+#  include <setjmp.h>
+#  include <signal.h>
+#endif
 
 // extern unsigned int loglevel;
 static int tracelevel;
@@ -37,6 +41,10 @@ static int cnt = 0;
 #include "classes.h"
 #include "bits.h"
 #include "out_dxf.h"
+#ifndef DISABLE_DXF
+#  include "decode.h"
+#  include "in_dxf.h"
+#endif
 
 enum _temp_complex_types
 { // and test-cases
@@ -1027,6 +1035,88 @@ test_add (const Dwg_Object_Type type, const char *restrict file,
   return n_failed;
 }
 
+#if !defined(_WIN32) && !defined(DISABLE_DXF)
+static sigjmp_buf mlinestyle_angle_timeout_jmp;
+
+ATTRIBUTE_NORETURN static void
+mlinestyle_angle_timeout_handler (int sig)
+{
+  (void)sig;
+  siglongjmp (mlinestyle_angle_timeout_jmp, 1);
+}
+
+/* GHSA-46mp-4x39-p444: converting a crafted DWG with a non-finite
+ * MLINESTYLE start_angle/end_angle hung dwg2dxf. The DXF writer
+ * normalized the angle with an unbounded "while (angle > 91.0) angle -=
+ * 90.0;" loop; for +-Infinity the subtraction never changes the value,
+ * so the loop condition never flips and the process hangs forever. Force
+ * start_angle=INFINITY, end_angle=NAN on a real MLINESTYLE object and
+ * confirm dwg_write_dxf() returns within a bounded wall-clock time
+ * instead of hanging, via a SIGALRM + siglongjmp escape hatch so a
+ * regression fails the test instead of hanging the whole suite. */
+static int
+test_mlinestyle_nonfinite_angle (void)
+{
+  Dwg_Data *dwg;
+  Dwg_Object_MLINESTYLE *mlstyle;
+  Bit_Chain dat = { 0 };
+  int error;
+  struct sigaction sa, old_sa;
+
+  failed = 0;
+  dwg = dwg_new_Document (R_2000, 0, tracelevel);
+  mlstyle = dwg_add_MLINESTYLE (dwg, "nonfinite-angle");
+  if (!mlstyle)
+    {
+      fail ("mlinestyle_nonfinite_angle: dwg_add_MLINESTYLE failed");
+      dwg_free (dwg);
+      free (dwg);
+      return numfailed ();
+    }
+  mlstyle->start_angle = (double)INFINITY;
+  mlstyle->end_angle = (double)NAN;
+
+  dat.version = dwg->header.version;
+  dat.from_version = dwg->header.from_version;
+  dat.opts = dwg->opts;
+  dat.fh = fopen ("/dev/null", "wb");
+  if (!dat.fh)
+    {
+      fail ("mlinestyle_nonfinite_angle: fopen /dev/null failed");
+      dwg_free (dwg);
+      free (dwg);
+      return numfailed ();
+    }
+
+  memset (&sa, 0, sizeof (sa));
+  sa.sa_handler = mlinestyle_angle_timeout_handler;
+  sigaction (SIGALRM, &sa, &old_sa);
+
+  if (sigsetjmp (mlinestyle_angle_timeout_jmp, 1) != 0)
+    {
+      fail ("mlinestyle_nonfinite_angle: dwg_write_dxf hung with "
+            "non-finite angles (infinite-loop regression)");
+    }
+  else
+    {
+      alarm (5);
+      error = dwg_write_dxf (&dat, dwg);
+      alarm (0);
+      if (error >= DWG_ERR_CRITICAL)
+        fail ("mlinestyle_nonfinite_angle: dwg_write_dxf failed: 0x%x", error);
+      else
+        ok ("mlinestyle_nonfinite_angle: DXF writer terminates with "
+            "non-finite MLINESTYLE angles");
+    }
+  sigaction (SIGALRM, &old_sa, NULL);
+
+  fclose (dat.fh);
+  dwg_free (dwg);
+  free (dwg);
+  return numfailed ();
+}
+#endif
+
 static int
 test_names (void)
 {
@@ -1247,6 +1337,116 @@ test_api_version (void)
   return numfailed ();
 }
 
+// GHSA-q4c2-xfww-pp93: dwg_add_MLINESTYLE() kept a stale Dwg_Object *obj
+// pointer across the nested dwg_add_DICTIONARY() call it makes when
+// ACAD_MLINESTYLE is missing. dwg_add_DICTIONARY() may grow and realloc
+// dwg->object[], so obj must be re-fetched by index afterwards. Reproduce
+// the exact object-pool growth boundary from the advisory's PoC on a bare
+// (dictionary-less) Dwg_Data, so ASan/valgrind catch any regression.
+static int
+test_mlinestyle_obj_realloc (void)
+{
+  Dwg_Data dwg;
+  Dwg_Object_MLINESTYLE *mlstyle;
+  int i;
+
+  failed = 0;
+  memset (&dwg, 0, sizeof (dwg));
+  dwg.header.version = R_2000;
+  dwg.header.from_version = R_2000;
+
+  for (i = 0; i < 1023; i++)
+    {
+      if (dwg_add_object (&dwg) < 0)
+        {
+          fail ("mlinestyle_obj_realloc: unexpected realloc filling slot %d",
+                i);
+          dwg_free (&dwg);
+          return numfailed ();
+        }
+    }
+  if (dwg.num_objects != 1023 || dwg.num_alloced_objects != 1024)
+    {
+      fail ("mlinestyle_obj_realloc: unexpected pool state num_objects=%u "
+            "num_alloced_objects=%u",
+            (unsigned)dwg.num_objects, (unsigned)dwg.num_alloced_objects);
+      dwg_free (&dwg);
+      return numfailed ();
+    }
+
+  // ACAD_MLINESTYLE is absent, so dwg_add_MLINESTYLE() creates it via
+  // dwg_add_DICTIONARY(), crossing the 1024-object growth boundary.
+  mlstyle = dwg_add_MLINESTYLE (&dwg, "asan-mlstyle");
+  if (!mlstyle)
+    fail ("mlinestyle_obj_realloc: dwg_add_MLINESTYLE failed at the "
+          "growth boundary");
+  else
+    {
+      int error;
+      Dwg_Object *obj = dwg_obj_generic_to_object (mlstyle, &error);
+      if (error || !obj || !obj->tio.object->ownerhandle)
+        fail ("mlinestyle_obj_realloc: MLINESTYLE has no ownerhandle after "
+              "dwg->object[] growth");
+      else
+        ok ("mlinestyle_obj_realloc: MLINESTYLE survives dwg->object[] "
+            "growth at the dictionary-creation boundary");
+    }
+  dwg_free (&dwg);
+  return numfailed ();
+}
+
+#ifndef DISABLE_DXF
+// GHSA-qcxp-m6vj-h5h8: importing a pre-R2004 DXF VIEWPORT entity makes
+// new_object() call dwg_add_VX() to create its VX_TABLE_RECORD. That may
+// grow and realloc dwg->object[], but new_object() kept dereferencing (and
+// writing through) its local, now-stale Dwg_Object *obj afterwards -- a
+// heap-use-after-free. Reproduce the advisory's exact boundary: 1022
+// preceding POINT entities fill the 1024-slot initial object pool exactly,
+// so the VIEWPORT's dwg_add_VX() call crosses the growth boundary.
+static int
+test_viewport_vx_realloc (void)
+{
+  Dwg_Data dwg;
+  Bit_Chain dat;
+  char *buf, *p;
+  const size_t cap = 4096 + ((size_t)1022 * 48);
+  int i, error;
+
+  failed = 0;
+  buf = (char *)malloc (cap);
+  if (!buf)
+    {
+      fail ("viewport_vx_realloc: out of memory");
+      return numfailed ();
+    }
+  p = buf;
+  p += sprintf (p, "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1014\n"
+                   "  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n");
+  for (i = 1; i <= 1022; i++)
+    p += sprintf (
+        p, "  0\nPOINT\n  5\n%X\n  8\n0\n 10\n0.0\n 20\n0.0\n 30\n0.0\n",
+        0x100 + i);
+  p += sprintf (p, "  0\nVIEWPORT\n  5\n5000\n  8\n0\n 10\n0.0\n 20\n0.0\n"
+                   "  30\n0.0\n 40\n1.0\n 41\n1.0\n 68\n1\n 69\n1\n"
+                   "  0\nENDSEC\n  0\nEOF\n");
+
+  memset (&dwg, 0, sizeof (dwg));
+  memset (&dat, 0, sizeof (dat));
+  dat.chain = (unsigned char *)buf;
+  dat.size = (size_t)(p - buf);
+
+  error = dwg_read_dxf (&dat, &dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    fail ("viewport_vx_realloc: dwg_read_dxf failed with 0x%x", error);
+  else
+    ok ("viewport_vx_realloc: DXF VIEWPORT survives dwg->object[] growth "
+        "at the VX_TABLE_RECORD-creation boundary");
+  dwg_free (&dwg);
+  free (buf);
+  return numfailed ();
+}
+#endif
+
 int
 main (int argc, char *argv[])
 {
@@ -1265,7 +1465,17 @@ main (int argc, char *argv[])
   else
     debug = 0;
 
-  error = test_names ();
+#if !defined(_WIN32) && !defined(DISABLE_DXF)
+  error = test_viewport_vx_realloc ();
+  error += test_mlinestyle_obj_realloc ();
+  error += test_mlinestyle_nonfinite_angle ();
+#elif !defined(DISABLE_DXF)
+  error = test_viewport_vx_realloc ();
+  error += test_mlinestyle_obj_realloc ();
+#else
+  error = test_mlinestyle_obj_realloc ();
+#endif
+  error += test_names ();
   error += test_api_version ();
 
 #ifndef DISABLE_DXF
