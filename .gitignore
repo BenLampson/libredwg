@@ -237,3 +237,4 @@ compile_commands.json
 /minisign.pub
 # temp patches
 /*.p
+/target
