@@ -403,6 +403,7 @@ read_2007_section_handles_stream (
           if (callbacks->decoded_object)
             {
               Bit_Chain object_dat = { 0 };
+              bool owns_object_dat = false;
               size_t prefix_size;
               size_t object_size;
               int decoded_error;
@@ -419,17 +420,36 @@ read_2007_section_handles_stream (
                   goto done;
                 }
               object_size = prefix_size + info.size;
-              decoded_error = copy_data_section_window (
-                  &object_dat, dat, objects_section, pages_map, &object_page,
-                  last_offset, object_size);
-              if (decoded_error)
+              if (object_page.page.chain
+                  && last_offset >= object_page.section_offset)
                 {
-                  error = decoded_error;
-                  goto done;
+                  const size_t page_offset
+                      = last_offset - object_page.section_offset;
+                  if (page_offset <= object_page.page.size
+                      && object_size <= object_page.page.size - page_offset)
+                    {
+                      object_dat = object_page.page;
+                      object_dat.byte = page_offset;
+                      object_dat.bit = 0;
+                      bit_reset_chain (&object_dat);
+                      object_dat.size = object_size;
+                    }
+                }
+              if (!object_dat.chain)
+                {
+                  decoded_error = copy_data_section_window (
+                      &object_dat, dat, objects_section, pages_map,
+                      &object_page, last_offset, object_size);
+                  if (decoded_error)
+                    {
+                      error = decoded_error;
+                      goto done;
+                    }
+                  owns_object_dat = true;
                 }
               decoded_error = dwg_stream_emit_decoded_object_ex (
                   dwg, &object_dat, &info, callbacks, user, callback_error);
-              if (object_dat.chain)
+              if (owns_object_dat && object_dat.chain)
                 free (object_dat.chain);
               if (decoded_error)
                 {

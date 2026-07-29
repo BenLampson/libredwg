@@ -17,6 +17,8 @@ dwg_stream_emit_decoded_object_ex (
 {
   Dwg_Data stream_dwg;
   Dwg_Object stream_object;
+  dwg_inthash stream_object_map;
+  struct _hashbucket stream_object_buckets[32];
   int error;
   int emitted_error = 0;
   BITCODE_BL i;
@@ -27,17 +29,29 @@ dwg_stream_emit_decoded_object_ex (
     return 0;
 
   memset (&stream_object, 0, sizeof (stream_object));
-  stream_dwg = *dwg;
+  memset (&stream_dwg, 0, sizeof (stream_dwg));
+  stream_dwg.header = dwg->header;
+  stream_dwg.num_classes = dwg->num_classes;
+  stream_dwg.dwg_class = dwg->dwg_class;
+  stream_dwg.opts = dwg->opts | DWG_OPTS_STREAM_DECODE;
+  stream_dwg.header_vars = dwg->header_vars;
+  stream_dwg.layout_type = dwg->layout_type;
+  stream_dwg.num_acis_sab_hdl = dwg->num_acis_sab_hdl;
+  stream_dwg.acis_sab_hdl = dwg->acis_sab_hdl;
   stream_dwg.num_objects = 0;
   stream_dwg.num_object_refs = 0;
   stream_dwg.num_alloced_objects = 1;
   stream_dwg.object_ref = NULL;
   stream_dwg.object = &stream_object;
-  stream_dwg.object_map = hash_new (1024);
+  memset (stream_object_buckets, 0, sizeof (stream_object_buckets));
+  stream_object_map.array = stream_object_buckets;
+  stream_object_map.size
+      = sizeof (stream_object_buckets) / sizeof (stream_object_buckets[0]);
+  stream_object_map.elems = 0;
+  stream_dwg.object_map = &stream_object_map;
   stream_dwg.header_vars.HANDSEED = NULL;
   stream_dwg.dirty_refs = 0;
-  if (!stream_dwg.object_map)
-    return DWG_ERR_OUTOFMEM;
+  stream_dwg.num_object_ordered_refs = (BITCODE_BL)-1;
 
   object_dat->byte = 0;
   object_dat->bit = 0;
@@ -68,7 +82,6 @@ done:
       stream_dwg.object_ref[i] = NULL;
     }
   free (stream_dwg.object_ref);
-  hash_free (stream_dwg.object_map);
   if (emitted_error)
     {
       if (callback_error)
