@@ -56,6 +56,168 @@ typedef struct _r2004_stream_handle_entry
   BITCODE_RLL handle;
 } R2004_Stream_Handle_Entry;
 
+typedef struct _r2004_stream_acds
+{
+  Bit_Chain dat;
+  size_t next_offset;
+  const BITCODE_RC *current_data;
+  size_t current_size;
+} R2004_Stream_AcDs;
+
+typedef struct _r2004_stream_decoded_context
+{
+  const Dwg_Stream_Callbacks_Ex *callbacks;
+  void *user;
+  R2004_Stream_AcDs *acds;
+} R2004_Stream_Decoded_Context;
+
+static int
+r2004_stream_acds_find_next (R2004_Stream_AcDs *restrict acds)
+{
+  const char start[] = "ACIS BinaryFile";
+  const char end[] = "\016\003End\016\002of\016\003ASM\r\004data";
+  const char *s;
+  const char *e;
+
+  acds->current_data = NULL;
+  acds->current_size = 0;
+  while (acds->dat.chain && acds->next_offset < acds->dat.size)
+    {
+      size_t offset;
+      size_t size;
+
+      s = (const char *)memmem (&acds->dat.chain[acds->next_offset],
+                                acds->dat.size - acds->next_offset, start,
+                                strlen (start));
+      if (!s)
+        return 0;
+      offset = (size_t)(s - (const char *)acds->dat.chain);
+      e = (const char *)memmem (s, acds->dat.size - offset, end,
+                                strlen (end));
+      if (!e)
+        {
+          acds->next_offset = offset + 20;
+          continue;
+        }
+
+      size = (size_t)(e - s) + strlen (end);
+      acds->current_data = &acds->dat.chain[offset];
+      acds->current_size = size;
+      acds->next_offset = offset + size;
+      return 1;
+    }
+  return 0;
+}
+
+static int
+r2004_stream_acds_init (Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
+                        R2004_Stream_AcDs *restrict acds)
+{
+  int error;
+
+  memset (acds, 0, sizeof (*acds));
+  if (dwg->header.from_version < R_2013)
+    return 0;
+
+  acds->dat.opts = dwg->opts & DWG_OPTS_LOGLEVEL;
+  error = read_2004_compressed_section (dat, dwg, &acds->dat, SECTION_ACDS);
+  if (error >= DWG_ERR_CRITICAL || !acds->dat.chain)
+    {
+      if (acds->dat.chain)
+        free (acds->dat.chain);
+      memset (acds, 0, sizeof (*acds));
+      return 0;
+    }
+
+  r2004_stream_acds_find_next (acds);
+  return 0;
+}
+
+static void
+r2004_stream_acds_free (R2004_Stream_AcDs *restrict acds)
+{
+  if (acds->dat.chain)
+    free (acds->dat.chain);
+  memset (acds, 0, sizeof (*acds));
+}
+
+static int
+r2004_stream_attach_acds (R2004_Stream_AcDs *restrict acds,
+                          Dwg_Object *restrict obj)
+{
+  Dwg_Entity_3DSOLID *solid;
+  BITCODE_RC *acis_data;
+
+  if (!acds->current_data || !acds->current_size
+      || obj->supertype != DWG_SUPERTYPE_ENTITY || !obj->tio.entity
+      || !obj->tio.entity->has_ds_data || !dwg_obj_is_3dsolid (obj))
+    return 0;
+  if (acds->current_size > UINT32_MAX)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+
+  /* The blocking decoder queues has_ds_data objects in decode order and
+     consumes the SAB records in section order.  Preserve that pairing, but
+     attach the record before the Stream callback observes the object. */
+  acis_data = (BITCODE_RC *)malloc (acds->current_size);
+  if (!acis_data)
+    return DWG_ERR_OUTOFMEM;
+  memcpy (acis_data, acds->current_data, acds->current_size);
+
+  solid = obj->tio.entity->tio._3DSOLID;
+  solid->acis_data = acis_data;
+  solid->sab_size = (BITCODE_BL)acds->current_size;
+  solid->version = 2;
+  solid->acis_empty = 0;
+  r2004_stream_acds_find_next (acds);
+  return 0;
+}
+
+static int
+r2004_stream_decoded_object (const Dwg_Stream_Object_Info *restrict info,
+                             const Dwg_Object *restrict obj,
+                             void *restrict user)
+{
+  R2004_Stream_Decoded_Context *context
+      = (R2004_Stream_Decoded_Context *)user;
+  int error;
+
+  error = r2004_stream_attach_acds (context->acds, (Dwg_Object *)obj);
+  if (error)
+    return error;
+  return context->callbacks->decoded_object (info, obj, context->user);
+}
+
+static int
+r2004_stream_decode_error (const Dwg_Stream_Object_Info *restrict info,
+                           int error, void *restrict user)
+{
+  R2004_Stream_Decoded_Context *context
+      = (R2004_Stream_Decoded_Context *)user;
+
+  return context->callbacks->decode_error (info, error, context->user);
+}
+
+static int
+r2004_stream_emit_decoded_object (
+    Dwg_Data *restrict dwg, Bit_Chain *restrict object_dat,
+    const Dwg_Stream_Object_Info *restrict info,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks, void *restrict user,
+    R2004_Stream_AcDs *restrict acds, int *restrict callback_error)
+{
+  Dwg_Stream_Callbacks_Ex wrapped_callbacks = *callbacks;
+  R2004_Stream_Decoded_Context context;
+
+  context.callbacks = callbacks;
+  context.user = user;
+  context.acds = acds;
+  wrapped_callbacks.object = NULL;
+  wrapped_callbacks.decoded_object = r2004_stream_decoded_object;
+  if (callbacks->decode_error)
+    wrapped_callbacks.decode_error = r2004_stream_decode_error;
+  return dwg_stream_emit_decoded_object_ex (
+      dwg, object_dat, info, &wrapped_callbacks, &context, callback_error);
+}
+
 static int
 compare_r2004_stream_handle_entries (const void *a, const void *b)
 {
@@ -466,6 +628,7 @@ read_2004_section_handles_buffered_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     const Dwg_Stream_Input_Mode input_mode, void *restrict user,
+    R2004_Stream_AcDs *restrict acds,
     int *restrict callback_error)
 {
   Bit_Chain obj_dat = { 0 }, hdl_dat = { 0 };
@@ -579,8 +742,9 @@ read_2004_section_handles_buffered_stream (
               object_dat.byte = 0;
               object_dat.bit = 0;
               object_dat.size = object_size;
-              emitted_error = dwg_stream_emit_decoded_object_ex (
-                  dwg, &object_dat, &info, callbacks, user, callback_error);
+              emitted_error = r2004_stream_emit_decoded_object (
+                  dwg, &object_dat, &info, callbacks, user, acds,
+                  callback_error);
               if (emitted_error)
                 {
                   error = emitted_error;
@@ -622,6 +786,7 @@ read_2004_section_handles_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
     const Dwg_Stream_Input_Mode input_mode, void *restrict user,
+    R2004_Stream_AcDs *restrict acds,
     int *restrict callback_error)
 {
   Bit_Chain hdl_dat = { 0 };
@@ -645,7 +810,7 @@ read_2004_section_handles_stream (
       && obj_info->num_sections
              <= (BITCODE_RL)(0x2f000000U / obj_info->max_decomp_size))
     return read_2004_section_handles_buffered_stream (
-        dat, dwg, callbacks, input_mode, user, callback_error);
+        dat, dwg, callbacks, input_mode, user, acds, callback_error);
 
   error = r2004_object_stream_init (&obj_stream, dat, obj_info);
   if (error)
@@ -818,8 +983,8 @@ read_2004_section_handles_stream (
           object_dat.byte = 0;
           object_dat.bit = 0;
           object_dat.size = object_size;
-          emitted_error = dwg_stream_emit_decoded_object_ex (
-              dwg, &object_dat, &info, callbacks, user, callback_error);
+          emitted_error = r2004_stream_emit_decoded_object (
+              dwg, &object_dat, &info, callbacks, user, acds, callback_error);
           free (object_bytes);
           if (emitted_error)
             {
@@ -849,6 +1014,9 @@ dwg_stream_read_r2004_to_r2006_and_r2010_to_r2022 (
   int callback_error = 0;
   int stream_error;
   Dwg_Section *section;
+  R2004_Stream_AcDs acds;
+
+  memset (&acds, 0, sizeof (acds));
 
   error |= decode_R2004_header (dat, dwg);
   if (error > DWG_ERR_CRITICAL)
@@ -888,13 +1056,19 @@ dwg_stream_read_r2004_to_r2006_and_r2010_to_r2022 (
   error |= read_2004_section_header (dat, dwg);
   if (error < DWG_ERR_CRITICAL)
     error |= read_2004_section_classes (dat, dwg);
+  if (error < DWG_ERR_CRITICAL && callbacks->decoded_object)
+    error |= r2004_stream_acds_init (dat, dwg, &acds);
   if (error < DWG_ERR_CRITICAL)
     {
       stream_error = read_2004_section_handles_stream (
-          dat, dwg, callbacks, input_mode, user, &callback_error);
+          dat, dwg, callbacks, input_mode, user, &acds, &callback_error);
       if (callback_error)
-        return callback_error;
+        {
+          r2004_stream_acds_free (&acds);
+          return callback_error;
+        }
       error |= stream_error;
     }
+  r2004_stream_acds_free (&acds);
   return error;
 }

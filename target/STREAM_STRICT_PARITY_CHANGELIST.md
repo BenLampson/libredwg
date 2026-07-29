@@ -22,7 +22,7 @@ continue from the first failing strict fixture without repeating the audit.
 
 ## 2026-07-30: strict object comparator
 
-Status: red test, implementation pending.
+Status: green on the generated and repository fixture suites.
 
 Changes:
 
@@ -42,10 +42,27 @@ TDD evidence:
   374 (`REGION`): blocking has `acis_empty=0` and populated SAB/ACIS data;
   Stream has `acis_empty=1`.
 
-Next repair:
+Repair:
 
-1. Read the R2013+ `AcDb:AcDsPrototype_1b` section in the Stream path without
-   calling `dwg_read_file`.
-2. Associate each SAB record with its entity handle before that entity's
-   decoded callback is emitted.
-3. Re-run the strict fixture set and record the next mismatch, if any.
+- The R2004/R2010+ Stream reader now decompresses the optional R2013+
+  `AcDb:AcDsPrototype_1b` section without materializing the full object graph.
+- It follows the blocking decoder's pairing rule: entities marked
+  `has_ds_data` are encountered in object-decode order and consume SAB records
+  in section order.
+- The matching SAB bytes, size, ACIS version, and `acis_empty` state are
+  attached before the decoded-object callback.  Callback order is unchanged.
+
+Green evidence:
+
+- `test/test-data/example_2013.dwg` passes with reference checks enabled:
+  all 481 blocking objects have one byte-identical canonical Stream object.
+- The complete default `stream_test` run passes all generated variants and all
+  repository fixtures, including the R2013 regression.
+- The changed reader compiles with `-Werror
+  -Wdeclaration-after-statement`.
+
+Next work:
+
+- No strict object mismatch is currently known in the exercised fixture set.
+- Any newly discovered mismatch should be added here with its file, handle,
+  object type, first differing canonical field, and the red/green command.
