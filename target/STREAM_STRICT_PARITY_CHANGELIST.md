@@ -66,3 +66,56 @@ Next work:
 - No strict object mismatch is currently known in the exercised fixture set.
 - Any newly discovered mismatch should be added here with its file, handle,
   object type, first differing canonical field, and the red/green command.
+
+## 2026-07-30: isolated Stream allocation policy
+
+Status: green on strict C object parity and the downstream AC1021 rendering
+fixture.  This iteration changes only isolated Stream decoding; the blocking
+reader keeps its original allocation policy.
+
+Root cause:
+
+- `dwg_stream_emit_decoded_object_ex` inherited the full-graph
+  `REFS_PER_REALLOC` quantum and allocated 16,384 reference slots for each
+  transient object.
+- Every isolated object also allocated a heap handle map.
+- The R2007 reader copied object records already contained in its active
+  decompressed page.
+
+Changes:
+
+- Added `DWG_OPTS_STREAM_DECODE` and a 16-reference growth quantum used only by
+  the isolated Stream host.
+- Kept the blocking reader on the existing 16,384-reference quantum.
+- Replaced the per-object heap handle map with a bounded stack map and copied
+  only the `Dwg_Data` state required by object decoding and callbacks.
+- Borrowed R2007 cached-page storage for records contained in one page while
+  retaining the owned copying path for cross-page records.
+
+Iteration artifacts:
+
+- Branch: `codex/libredwg-c-stream`.
+- Code commit: `24f809ab`.
+- Release build:
+  `cmake --build build-cad-yolo-release --target redwg`.
+- Test build:
+  `cmake --build build-codex-stream-tdd --target stream_test`.
+- Default `stream_test.exe`: passed all generated and repository fixtures.
+- `LIBREDWG_STREAM_TEST_REFS=1 stream_test.exe`: exit 0, ten repository
+  fixtures passed, no full decode, and no decode errors.
+- The Stream path continued to report `full=0`; it did not call
+  `dwg_read_file`.
+- The AC1021 product fixture retained 659,049 rendered lines, 3,698 texts,
+  910 fills, 77 wipeouts, and the accepted exact color/geometry fingerprints.
+
+Five-run interleaved product benchmark:
+
+- Before: Stream native median 2,682.60 ms; private memory 66.82 MiB.
+- After: Stream native median 2,455.61 ms; private memory 65.75 MiB.
+- Blocking-reader median after the change: 405.24 ms; its allocation path was
+  unchanged.
+
+The Stream improvement is 8.46%, but Stream remains slower than the blocking
+reader.  This result is not evidence that allocation tuning alone can close
+the architectural gap; downstream spool and publication costs remain separate
+work items.
