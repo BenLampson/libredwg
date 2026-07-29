@@ -14,6 +14,7 @@
 #include "dwg.h"
 #include "dwg_api.h"
 #include "decode.h"
+#include "out_json.h"
 
 #define STREAM_DECODE_ERROR_BUCKETS 16
 
@@ -105,6 +106,10 @@ typedef struct _stream_stats
   BITCODE_BL decoded_ref_mismatches;
   BITCODE_BL decoded_ref_missing;
   BITCODE_BL decoded_ref_checked;
+  const Dwg_Data *baseline_dwg;
+  unsigned char *baseline_objects_matched;
+  BITCODE_BL canonical_objects_checked;
+  BITCODE_BL canonical_object_mismatches;
   BITCODE_BL decode_error_objects;
   BITCODE_BL decode_error_entities;
   BITCODE_BL decode_error_non_entities;

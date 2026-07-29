@@ -1984,6 +1984,29 @@ json_header_write (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
   return error;
 }
 
+/* Write one decoded object in the same canonical representation used by the
+   OBJECTS section.  This is useful for readers which expose one object at a
+   time and cannot materialize a complete Dwg_Data object graph. */
+EXPORT int
+dwg_write_json_object (Bit_Chain *restrict dat, Dwg_Object *restrict obj)
+{
+  int error;
+
+  if (!dat || !dat->fh || !obj || !obj->parent)
+    return DWG_ERR_INTERNALERROR;
+  if (!dat->version)
+    dat->version = obj->parent->header.version;
+  if (!dat->from_version)
+    dat->from_version = obj->parent->header.from_version;
+  if (!dat->codepage)
+    dat->codepage = obj->parent->header.codepage;
+
+  HASH
+  error = dwg_json_object (dat, obj);
+  ENDHASH
+  return error;
+}
+
 static int
 json_classes_write (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
 {

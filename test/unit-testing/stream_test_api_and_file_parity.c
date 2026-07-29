@@ -570,6 +570,27 @@ stream_test_source_path (char *path, size_t size, const char *relative)
 }
 
 static int
+stream_parity_baseline_alloc (Dwg_Data *dwg, Stream_Stats *streamed)
+{
+  if (!dwg->num_objects)
+    return 1;
+  streamed->baseline_objects_matched
+      = (unsigned char *)calloc (dwg->num_objects, 1);
+  return streamed->baseline_objects_matched != NULL;
+}
+
+static void
+stream_parity_baseline_free (Dwg_Data *dwg, Stream_Stats *baseline,
+                             Stream_Stats *streamed)
+{
+  dwg_free (dwg);
+  free (baseline->baseline_refs);
+  baseline->baseline_refs = NULL;
+  free (streamed->baseline_objects_matched);
+  streamed->baseline_objects_matched = NULL;
+}
+
+static int
 test_stream_file_parity (const char *path, int compare_refs,
                          int test_abort_callbacks, const char *label,
                          int skip_missing, Stream_Semantic_Coverage *coverage)
@@ -620,9 +641,14 @@ test_stream_file_parity (const char *path, int compare_refs,
   if (baseline.baseline_refs)
     qsort (baseline.baseline_refs, baseline.baseline_ref_count,
            sizeof (baseline.baseline_refs[0]), compare_ref_snapshot_key);
+  streamed.baseline_dwg = &dwg;
   streamed.baseline_refs = baseline.baseline_refs;
   streamed.baseline_ref_count = baseline.baseline_ref_count;
-  dwg_free (&dwg);
+  if (!stream_parity_baseline_alloc (&dwg, &streamed))
+    {
+      stream_parity_baseline_free (&dwg, &baseline, &streamed);
+      return 1;
+    }
 
   stream_trace_stage ("combined dwg_stream_file_ex");
   callbacks.object = stream_object_callback;
@@ -634,7 +660,7 @@ test_stream_file_parity (const char *path, int compare_refs,
     {
       printf ("dwg_stream_file_ex failed: %s error=0x%x\n", path, error);
       print_stats ("streamed partial", &streamed);
-      free (baseline.baseline_refs);
+      stream_parity_baseline_free (&dwg, &baseline, &streamed);
       return 1;
     }
 
@@ -642,35 +668,27 @@ test_stream_file_parity (const char *path, int compare_refs,
     {
       print_stats ("baseline", &baseline);
       print_stats ("streamed", &streamed);
-      free (baseline.baseline_refs);
+      stream_parity_baseline_free (&dwg, &baseline, &streamed);
       return 1;
     }
   if (streamed.lightweight_objects != streamed.num_objects
       || streamed.full_decode_objects)
     {
       print_stats ("streamed did not use the lightweight path", &streamed);
-      free (baseline.baseline_refs);
+      stream_parity_baseline_free (&dwg, &baseline, &streamed);
       return 1;
     }
-  if (streamed.r13_object_map_objects == streamed.num_objects)
-    {
-      if (!streamed.decoded_objects || !streamed.decoded_entities
-          || streamed.decode_error_objects)
-        {
-          print_stats ("streamed decoded object mismatch", &streamed);
-          free (baseline.baseline_refs);
-          return 1;
-        }
-    }
-  else if (streamed.decoded_objects != streamed.num_objects
-           || streamed.decoded_entities != streamed.num_entities
-           || streamed.decoded_non_entities != streamed.num_non_entities
-           || streamed.decoded_handle_mix != baseline.handle_mix
-           || streamed.decode_error_objects)
+  if (streamed.decoded_objects != streamed.num_objects
+      || streamed.decoded_entities != streamed.num_entities
+      || streamed.decoded_non_entities != streamed.num_non_entities
+      || streamed.decoded_handle_mix != baseline.handle_mix
+      || streamed.decode_error_objects
+      || streamed.canonical_objects_checked != baseline.num_objects
+      || streamed.canonical_object_mismatches)
     {
       print_stats ("baseline", &baseline);
       print_stats ("streamed decoded object mismatch", &streamed);
-      free (baseline.baseline_refs);
+      stream_parity_baseline_free (&dwg, &baseline, &streamed);
       return 1;
     }
   if (compare_refs
@@ -681,14 +699,14 @@ test_stream_file_parity (const char *path, int compare_refs,
               (unsigned long)streamed.decoded_ref_checked,
               (unsigned long)streamed.decoded_ref_missing,
               (unsigned long)streamed.decoded_ref_mismatches);
-      free (baseline.baseline_refs);
+      stream_parity_baseline_free (&dwg, &baseline, &streamed);
       return 1;
     }
   if (!semantic_coverage_equal (&baseline.semantic, &streamed.semantic))
     {
       print_semantic_coverage ("baseline semantic", &baseline.semantic);
       print_semantic_coverage ("streamed semantic", &streamed.semantic);
-      free (baseline.baseline_refs);
+      stream_parity_baseline_free (&dwg, &baseline, &streamed);
       return 1;
     }
 
@@ -697,6 +715,10 @@ test_stream_file_parity (const char *path, int compare_refs,
       stream_trace_stage ("decoded-only dwg_stream_file_ex");
       decoded_only.baseline_refs = baseline.baseline_refs;
       decoded_only.baseline_ref_count = baseline.baseline_ref_count;
+      decoded_only.baseline_dwg = &dwg;
+      memset (streamed.baseline_objects_matched, 0, dwg.num_objects);
+      decoded_only.baseline_objects_matched
+          = streamed.baseline_objects_matched;
       callbacks.object = NULL;
       callbacks.decoded_object = stream_decoded_object_callback;
       callbacks.decode_error = stream_decode_error_callback;
@@ -706,6 +728,8 @@ test_stream_file_parity (const char *path, int compare_refs,
           || decoded_only.decoded_entities != baseline.num_entities
           || decoded_only.decoded_non_entities != baseline.num_non_entities
           || decoded_only.decode_error_objects
+          || decoded_only.canonical_objects_checked != baseline.num_objects
+          || decoded_only.canonical_object_mismatches
           || (compare_refs
               && (decoded_only.decoded_ref_missing
                   || decoded_only.decoded_ref_mismatches)))
@@ -724,7 +748,7 @@ test_stream_file_parity (const char *path, int compare_refs,
                   (unsigned long)decoded_only.decode_error_objects,
                   (unsigned long)decoded_only.decoded_ref_missing,
                   (unsigned long)decoded_only.decoded_ref_mismatches);
-          free (baseline.baseline_refs);
+          stream_parity_baseline_free (&dwg, &baseline, &streamed);
           return 1;
         }
       if (!semantic_coverage_equal (&baseline.semantic,
@@ -733,7 +757,7 @@ test_stream_file_parity (const char *path, int compare_refs,
           print_semantic_coverage ("baseline semantic", &baseline.semantic);
           print_semantic_coverage ("decoded-only semantic",
                                    &decoded_only.semantic);
-          free (baseline.baseline_refs);
+          stream_parity_baseline_free (&dwg, &baseline, &streamed);
           return 1;
         }
 
@@ -750,7 +774,7 @@ test_stream_file_parity (const char *path, int compare_refs,
                   "expected_calls=%lu\n",
                   error, aborted.error, (unsigned long)aborted.calls,
                   (unsigned long)aborted.limit);
-          free (baseline.baseline_refs);
+          stream_parity_baseline_free (&dwg, &baseline, &streamed);
           return 1;
         }
 
@@ -768,7 +792,7 @@ test_stream_file_parity (const char *path, int compare_refs,
                   "expected=0x%x calls=%lu expected_calls=%lu\n",
                   error, aborted.error, (unsigned long)aborted.calls,
                   (unsigned long)aborted.limit);
-          free (baseline.baseline_refs);
+          stream_parity_baseline_free (&dwg, &baseline, &streamed);
           return 1;
         }
 
@@ -787,14 +811,14 @@ test_stream_file_parity (const char *path, int compare_refs,
                   "expected=0x%x/%lu\n",
                   error, (unsigned long)aborted.calls, aborted.error,
                   (unsigned long)aborted.limit);
-          free (baseline.baseline_refs);
+          stream_parity_baseline_free (&dwg, &baseline, &streamed);
           return 1;
         }
     }
 
   semantic_coverage_add (coverage, &baseline.semantic);
   print_stats (label ? label : "stream parity ok", &streamed);
-  free (baseline.baseline_refs);
+  stream_parity_baseline_free (&dwg, &baseline, &streamed);
   return 0;
 }
 

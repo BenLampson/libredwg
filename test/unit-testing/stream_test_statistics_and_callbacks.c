@@ -1417,6 +1417,127 @@ ref_snapshots_equal (const Stream_Ref_Snapshot *a,
 }
 
 static int
+canonical_objects_equal (const Dwg_Object *baseline,
+                         const Dwg_Object *streamed)
+{
+  Dwg_Object normalized_streamed;
+  Bit_Chain baseline_dat = { 0 };
+  Bit_Chain streamed_dat = { 0 };
+  unsigned char baseline_buf[4096];
+  unsigned char streamed_buf[4096];
+  size_t baseline_size;
+  size_t streamed_size;
+  size_t offset = 0;
+  int equal = 1;
+  int baseline_error;
+  int streamed_error;
+
+  normalized_streamed = *streamed;
+  normalized_streamed.index = baseline->index;
+  baseline_dat.fh = tmpfile ();
+  streamed_dat.fh = tmpfile ();
+  if (!baseline_dat.fh || !streamed_dat.fh)
+    {
+      if (baseline_dat.fh)
+        fclose (baseline_dat.fh);
+      if (streamed_dat.fh)
+        fclose (streamed_dat.fh);
+      return -1;
+    }
+  baseline_dat.opts = DWG_OPTS_MINIMAL;
+  streamed_dat.opts = DWG_OPTS_MINIMAL;
+  baseline_error
+      = dwg_write_json_object (&baseline_dat, (Dwg_Object *)baseline);
+  streamed_error
+      = dwg_write_json_object (&streamed_dat, &normalized_streamed);
+  if (baseline_error >= DWG_ERR_CRITICAL
+      || streamed_error >= DWG_ERR_CRITICAL
+      || fflush (baseline_dat.fh) != 0 || fflush (streamed_dat.fh) != 0
+      || fseek (baseline_dat.fh, 0, SEEK_SET) != 0
+      || fseek (streamed_dat.fh, 0, SEEK_SET) != 0)
+    equal = -1;
+
+  while (equal > 0)
+    {
+      baseline_size
+          = fread (baseline_buf, 1, sizeof (baseline_buf), baseline_dat.fh);
+      streamed_size
+          = fread (streamed_buf, 1, sizeof (streamed_buf), streamed_dat.fh);
+      if (baseline_size != streamed_size
+          || (baseline_size
+              && memcmp (baseline_buf, streamed_buf, baseline_size) != 0))
+        {
+          size_t shown_baseline
+              = baseline_size < 512 ? baseline_size : (size_t)512;
+          size_t shown_streamed
+              = streamed_size < 512 ? streamed_size : (size_t)512;
+
+          printf ("canonical bytes differ at chunk offset=%zu "
+                  "baseline_size=%zu streamed_size=%zu\nbaseline: ",
+                  offset, baseline_size, streamed_size);
+          fwrite (baseline_buf, 1, shown_baseline, stdout);
+          printf ("\nstreamed: ");
+          fwrite (streamed_buf, 1, shown_streamed, stdout);
+          printf ("\n");
+          equal = 0;
+          break;
+        }
+      if (!baseline_size)
+        break;
+      offset += baseline_size;
+    }
+  if (ferror (baseline_dat.fh) || ferror (streamed_dat.fh))
+    equal = -1;
+  fclose (baseline_dat.fh);
+  fclose (streamed_dat.fh);
+  return equal;
+}
+
+static const Dwg_Object *
+find_unmatched_baseline_object (Stream_Stats *stats,
+                                const Dwg_Stream_Object_Info *info,
+                                const Dwg_Object *streamed)
+{
+  const Dwg_Object *baseline;
+  BITCODE_BL i;
+
+  if (!stats || !stats->baseline_dwg || !stats->baseline_objects_matched
+      || !info || !streamed)
+    return NULL;
+  if (streamed->handle.value)
+    {
+      baseline = dwg_resolve_handle_silent (
+          stats->baseline_dwg, streamed->handle.value);
+      if (!baseline || baseline->index >= stats->baseline_dwg->num_objects
+          || stats->baseline_objects_matched[baseline->index]
+          || baseline->type != streamed->type
+          || baseline->fixedtype != streamed->fixedtype
+          || baseline->supertype != streamed->supertype
+          || baseline->size != info->size
+          || baseline->address != info->address)
+        return NULL;
+      stats->baseline_objects_matched[baseline->index] = 1;
+      return baseline;
+    }
+  for (i = 0; i < stats->baseline_dwg->num_objects; i++)
+    {
+      baseline = &stats->baseline_dwg->object[i];
+
+      if (stats->baseline_objects_matched[i]
+          || baseline->type != streamed->type
+          || baseline->fixedtype != streamed->fixedtype
+          || baseline->supertype != streamed->supertype
+          || baseline->size != info->size
+          || baseline->address != info->address
+          || baseline->handle.value)
+        continue;
+      stats->baseline_objects_matched[i] = 1;
+      return baseline;
+    }
+  return NULL;
+}
+
+static int
 stream_object_callback (const Dwg_Stream_Object_Info *info, void *user)
 {
   stats_add_object ((Stream_Stats *)user, info);
@@ -1456,8 +1577,10 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
   Stream_Stats *stats = (Stream_Stats *)user;
   const Stream_Ref_Snapshot *baseline_ref;
   Stream_Ref_Snapshot decoded_ref;
+  const Dwg_Object *baseline_object;
   BITCODE_BL host_entities = 0;
   BITCODE_BL i;
+  int canonical_equal;
 
   if (!object)
     return DWG_ERR_INTERNALERROR;
@@ -1499,6 +1622,36 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
               (unsigned long long)object->handle.value, (unsigned)object->type,
               (unsigned)object->supertype);
       return DWG_ERR_INTERNALERROR;
+    }
+  if (stats->baseline_dwg)
+    {
+      baseline_object = find_unmatched_baseline_object (stats, info, object);
+      if (!baseline_object)
+        {
+          stats->canonical_object_mismatches++;
+          printf ("decoded object has no unmatched blocking peer: "
+                  "index=%lu handle=%llu type=%u fixedtype=%u address=%zu "
+                  "size=%lu\n",
+                  (unsigned long)object->index,
+                  (unsigned long long)object->handle.value,
+                  (unsigned)object->type, (unsigned)object->fixedtype,
+                  object->address, (unsigned long)object->size);
+          return DWG_ERR_INTERNALERROR;
+        }
+      canonical_equal = canonical_objects_equal (baseline_object, object);
+      stats->canonical_objects_checked++;
+      if (canonical_equal != 1)
+        {
+          stats->canonical_object_mismatches++;
+          printf ("canonical object mismatch blocking_index=%lu "
+                  "stream_index=%lu handle=%llu type=%u serialization=%s\n",
+                  (unsigned long)baseline_object->index,
+                  (unsigned long)object->index,
+                  (unsigned long long)object->handle.value,
+                  (unsigned)object->fixedtype,
+                  canonical_equal < 0 ? "failed" : "different");
+          return DWG_ERR_INTERNALERROR;
+        }
     }
   if (stats->baseline_refs && object->handle.value)
     {

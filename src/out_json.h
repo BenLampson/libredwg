@@ -26,6 +26,8 @@
 #endif
 
 EXPORT int dwg_write_json (Bit_Chain *restrict dat, Dwg_Data *restrict dwg);
+EXPORT int dwg_write_json_object (Bit_Chain *restrict dat,
+                                  Dwg_Object *restrict obj);
 EXPORT int dwg_write_geojson (Bit_Chain *restrict dat, Dwg_Data *restrict dwg);
 
 // converts a TV to a UTF-8 string (with codepage conversion) and quoting
