@@ -8,7 +8,8 @@
 
 - 官方上游：`upstream`，地址 `https://github.com/LibreDWG/libredwg.git`。
 - 当前派生仓库：`origin`，地址 `https://github.com/BenLampson/libredwg.git`。
-- 开发分支：`codex/libredwg-c-stream`。
+- 开发分支：执行同步时承载最新 C Stream 能力的当前工作分支；不得为了匹配旧
+  分支名而切换到缺少后续 Stream 优化的分支。
 - 正式同步基线：`upstream/master`。
 - 当前开发与验证目标是 C 实现，不修改或依赖 `ProtocolVNext`。
 - DWG Stream 不允许回退到 `dwg_read_file`；测试必须使用
@@ -26,7 +27,8 @@ git remote -v
 git branch --show-current
 ```
 
-预期当前分支为 `codex/libredwg-c-stream`，且同时存在 `origin` 和 `upstream`。
+预期当前分支为实际 C Stream 开发分支，且同时存在 `origin` 和 `upstream`。
+应在审计记录中写明分支名和同步前 `HEAD`。
 
 ## 2. 获取并列出上游变化
 
@@ -185,10 +187,11 @@ git diff
 合并 commit 与本分支的 Stream 补齐/测试 commit 应尽量分开，便于以后追踪来源。
 
 ```powershell
+$branch = git branch --show-current
 git add -- <本次修改文件>
 git commit
-git push origin codex/libredwg-c-stream
-git rev-list --left-right --count HEAD...origin/codex/libredwg-c-stream
+git push origin $branch
+git rev-list --left-right --count "HEAD...origin/$branch"
 ```
 
 最终必须满足：工作树干净，本地与远端差异为 `0 0`。汇报时明确列出上游修复、
