@@ -17,20 +17,163 @@
 #define DWG_LOGLEVEL loglevel
 #include "logging.h"
 
-typedef struct _r2007_stream_page_cache
+/* Normal R2007 object pages are small.  Keep nearby pages without allowing
+   irregular files to turn the Stream cache into an unbounded section copy. */
+#define R2007_STREAM_PAGE_CACHE_SLOTS 16
+#define R2007_STREAM_PAGE_CACHE_MAX_BYTES (1024U * 1024U)
+
+typedef struct _r2007_stream_page_cache_entry
 {
   Bit_Chain page;
   int64_t page_index;
   size_t section_offset;
+  uint64_t last_used;
+} R2007_Stream_Page_Cache_Entry;
+
+typedef struct _r2007_stream_page_cache
+{
+  R2007_Stream_Page_Cache_Entry entries[R2007_STREAM_PAGE_CACHE_SLOTS];
+  R2007_Stream_Page_Cache_Entry *active;
+  size_t cached_bytes;
+  uint64_t clock;
+  bool ordered_pages;
 } R2007_Stream_Page_Cache;
+
+static void
+r2007_stream_page_cache_init (R2007_Stream_Page_Cache *restrict cache)
+{
+  size_t i;
+
+  memset (cache, 0, sizeof (*cache));
+  for (i = 0; i < R2007_STREAM_PAGE_CACHE_SLOTS; i++)
+    cache->entries[i].page_index = -1;
+}
+
+static void
+r2007_stream_page_cache_evict (R2007_Stream_Page_Cache *cache,
+                               R2007_Stream_Page_Cache_Entry *entry)
+{
+  if (!entry || !entry->page.chain)
+    return;
+
+  if (cache->active == entry)
+    cache->active = NULL;
+  if (entry->page.size <= cache->cached_bytes)
+    cache->cached_bytes -= entry->page.size;
+  else
+    cache->cached_bytes = 0;
+  free (entry->page.chain);
+  memset (entry, 0, sizeof (*entry));
+  entry->page_index = -1;
+}
 
 static void
 r2007_stream_page_cache_free (R2007_Stream_Page_Cache *restrict cache)
 {
-  if (cache->page.chain)
-    free (cache->page.chain);
-  memset (cache, 0, sizeof (*cache));
-  cache->page_index = -1;
+  size_t i;
+
+  for (i = 0; i < R2007_STREAM_PAGE_CACHE_SLOTS; i++)
+    r2007_stream_page_cache_evict (cache, &cache->entries[i]);
+  cache->active = NULL;
+}
+
+static bool
+r2007_stream_section_pages_are_ordered (const r2007_section *restrict section)
+{
+  size_t previous_end = 0;
+  bool have_previous = false;
+  int64_t i;
+
+  if (!section || !section->pages || section->num_pages <= 0)
+    return false;
+
+  for (i = 0; i < section->num_pages; i++)
+    {
+      const r2007_section_page *section_page = section->pages[i];
+      size_t start, size;
+
+      if (!section_page
+          || section_page->offset != (uint64_t)(size_t)section_page->offset
+          || section_page->uncomp_size
+                 != (uint64_t)(size_t)section_page->uncomp_size)
+        return false;
+      start = (size_t)section_page->offset;
+      size = (size_t)section_page->uncomp_size;
+      if (size > (size_t)-1 - start || (have_previous && start < previous_end))
+        return false;
+      previous_end = start + size;
+      have_previous = true;
+    }
+  return true;
+}
+
+static bool
+r2007_stream_page_contains (
+    const R2007_Stream_Page_Cache_Entry *restrict entry, const size_t address)
+{
+  return entry->page.chain && address >= entry->section_offset
+         && address - entry->section_offset < entry->page.size;
+}
+
+static R2007_Stream_Page_Cache_Entry *
+r2007_stream_page_cache_find_index (R2007_Stream_Page_Cache *restrict cache,
+                                    const int64_t page_index)
+{
+  size_t i;
+
+  for (i = 0; i < R2007_STREAM_PAGE_CACHE_SLOTS; i++)
+    if (cache->entries[i].page.chain
+        && cache->entries[i].page_index == page_index)
+      return &cache->entries[i];
+  return NULL;
+}
+
+static R2007_Stream_Page_Cache_Entry *
+r2007_stream_page_cache_find_address (R2007_Stream_Page_Cache *restrict cache,
+                                      const size_t address)
+{
+  size_t i;
+
+  if (cache->active && r2007_stream_page_contains (cache->active, address))
+    {
+      cache->active->last_used = ++cache->clock;
+      return cache->active;
+    }
+  for (i = 0; i < R2007_STREAM_PAGE_CACHE_SLOTS; i++)
+    if (&cache->entries[i] != cache->active
+        && r2007_stream_page_contains (&cache->entries[i], address))
+      {
+        cache->entries[i].last_used = ++cache->clock;
+        return &cache->entries[i];
+      }
+  return NULL;
+}
+
+static R2007_Stream_Page_Cache_Entry *
+r2007_stream_page_cache_empty (R2007_Stream_Page_Cache *restrict cache)
+{
+  size_t i;
+
+  for (i = 0; i < R2007_STREAM_PAGE_CACHE_SLOTS; i++)
+    if (!cache->entries[i].page.chain)
+      return &cache->entries[i];
+  return NULL;
+}
+
+static R2007_Stream_Page_Cache_Entry *
+r2007_stream_page_cache_lru (R2007_Stream_Page_Cache *restrict cache)
+{
+  R2007_Stream_Page_Cache_Entry *entry = NULL;
+  size_t i;
+
+  for (i = 0; i < R2007_STREAM_PAGE_CACHE_SLOTS; i++)
+    {
+      if (!cache->entries[i].page.chain)
+        continue;
+      if (!entry || cache->entries[i].last_used < entry->last_used)
+        entry = &cache->entries[i];
+    }
+  return entry;
 }
 
 static int
@@ -60,23 +203,49 @@ r2007_stream_add_handle_offset (size_t *restrict last_offset,
 
 static int64_t
 find_data_section_page_index (const r2007_section *restrict section,
-                              const size_t address)
+                              const size_t address,
+                              R2007_Stream_Page_Cache *restrict cache)
 {
+  R2007_Stream_Page_Cache_Entry *entry;
   int64_t i;
 
   if (!section)
     return -1;
 
+  if (cache && cache->ordered_pages)
+    {
+      int64_t low = 0;
+      int64_t high = section->num_pages;
+
+      entry = r2007_stream_page_cache_find_address (cache, address);
+      if (entry)
+        return entry->page_index;
+      while (low < high)
+        {
+          const int64_t mid = low + (high - low) / 2;
+          const r2007_section_page *section_page = section->pages[mid];
+          const size_t start = (size_t)section_page->offset;
+          const size_t size = (size_t)section_page->uncomp_size;
+
+          if (address < start)
+            high = mid;
+          else if (address - start < size)
+            return mid;
+          else
+            low = mid + 1;
+        }
+      return -1;
+    }
   for (i = 0; i < section->num_pages; i++)
     {
       const r2007_section_page *section_page = section->pages[i];
-      size_t start, end;
+      size_t start, size;
 
       if (!section_page)
         continue;
       start = (size_t)section_page->offset;
-      end = start + (size_t)section_page->uncomp_size;
-      if (address >= start && address < end)
+      size = (size_t)section_page->uncomp_size;
+      if (address >= start && address - start < size)
         return i;
     }
   return -1;
@@ -89,21 +258,61 @@ load_stream_data_page (R2007_Stream_Page_Cache *restrict cache,
                        r2007_page *restrict pages_map,
                        const int64_t page_index)
 {
+  r2007_section_page *section_page;
+  R2007_Stream_Page_Cache_Entry *entry;
+  Bit_Chain page = { 0 };
+  size_t expected_size;
   int error;
 
-  if (cache->page_index == page_index && cache->page.chain)
-    return 0;
+  entry = r2007_stream_page_cache_find_index (cache, page_index);
+  if (entry)
+    {
+      entry->last_used = ++cache->clock;
+      cache->active = entry;
+      return 0;
+    }
   if (page_index < 0 || page_index >= section->num_pages)
     return DWG_ERR_PAGENOTFOUND;
 
-  r2007_stream_page_cache_free (cache);
-  error = read_data_section_page (&cache->page, dat, pages_map,
-                                  section->pages[page_index]);
-  if (error >= DWG_ERR_CRITICAL)
-    return error;
+  section_page = section->pages[page_index];
+  if (!section_page
+      || section_page->uncomp_size
+             != (uint64_t)(size_t)section_page->uncomp_size)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  expected_size = (size_t)section_page->uncomp_size;
+  while (cache->cached_bytes
+         > R2007_STREAM_PAGE_CACHE_MAX_BYTES
+               - MIN (expected_size, R2007_STREAM_PAGE_CACHE_MAX_BYTES))
+    {
+      entry = r2007_stream_page_cache_lru (cache);
+      if (!entry || !entry->page.chain)
+        break;
+      r2007_stream_page_cache_evict (cache, entry);
+    }
+  entry = r2007_stream_page_cache_empty (cache);
+  if (!entry)
+    {
+      entry = r2007_stream_page_cache_lru (cache);
+      r2007_stream_page_cache_evict (cache, entry);
+    }
+  if (!entry)
+    {
+      return DWG_ERR_INTERNALERROR;
+    }
 
-  cache->page_index = page_index;
-  cache->section_offset = (size_t)section->pages[page_index]->offset;
+  error = read_data_section_page (&page, dat, pages_map, section_page);
+  if (error >= DWG_ERR_CRITICAL || !page.chain)
+    {
+      if (page.chain)
+        free (page.chain);
+      return error ? error : DWG_ERR_INTERNALERROR;
+    }
+  entry->page = page;
+  entry->page_index = page_index;
+  entry->section_offset = (size_t)section_page->offset;
+  entry->last_used = ++cache->clock;
+  cache->cached_bytes += page.size;
+  cache->active = entry;
   return 0;
 }
 
@@ -133,7 +342,8 @@ copy_data_section_window (Bit_Chain *restrict window, Bit_Chain *restrict dat,
   while (copied < size)
     {
       const size_t pos = address + copied;
-      const int64_t page_index = find_data_section_page_index (section, pos);
+      const int64_t page_index
+          = find_data_section_page_index (section, pos, cache);
       r2007_section_page *section_page;
       size_t page_start, page_offset, available, take;
       Bit_Chain page = { 0 };
@@ -153,8 +363,18 @@ copy_data_section_window (Bit_Chain *restrict window, Bit_Chain *restrict dat,
       available = (size_t)section_page->uncomp_size - page_offset;
       take = MIN (available, size - copied);
 
-      if (cache && cache->page_index == page_index && cache->page.chain)
-        source = &cache->page;
+      if (cache)
+        {
+          error = load_stream_data_page (cache, dat, section, pages_map,
+                                         page_index);
+          if (error)
+            {
+              free (window->chain);
+              memset (window, 0, sizeof (*window));
+              return error;
+            }
+          source = &cache->active->page;
+        }
       else
         {
           error = read_data_section_page (&page, dat, pages_map, section_page);
@@ -230,63 +450,72 @@ read_2007_stream_object_info (Dwg_Data *restrict dwg,
                               Dwg_Stream_Object_Info *restrict info)
 {
   Bit_Chain size_dat, body = { 0 };
+  R2007_Stream_Page_Cache_Entry *entry;
   int64_t page_index;
   size_t page_offset;
   size_t size_base;
   int error;
 
   memset (info, 0, sizeof (*info));
-  page_index = find_data_section_page_index (objects_section, address);
+  page_index = find_data_section_page_index (objects_section, address, cache);
   if (page_index < 0)
     return DWG_ERR_PAGENOTFOUND;
 
   error = load_stream_data_page (cache, dat, objects_section, pages_map,
                                  page_index);
-  if (error >= DWG_ERR_CRITICAL)
+  if (error)
     return error;
 
-  page_offset = address - cache->section_offset;
-  if (page_offset >= cache->page.size)
+  entry = cache->active;
+  page_offset = address - entry->section_offset;
+  if (page_offset >= entry->page.size)
     return DWG_ERR_VALUEOUTOFBOUNDS;
 
-  if (cache->page.size - page_offset >= 4)
+  if (entry->page.size - page_offset >= 4)
     {
-      size_dat = cache->page;
+      size_dat = entry->page;
       size_dat.byte = page_offset;
-      size_base = cache->section_offset;
+      size_base = entry->section_offset;
     }
   else
     {
       error = copy_data_section_window (&size_dat, dat, objects_section,
                                         pages_map, cache, address, 4);
-      if (error >= DWG_ERR_CRITICAL)
+      if (error)
         return error;
       size_base = address;
     }
   size_dat.bit = 0;
   info->size = bit_read_MS (&size_dat);
   info->address = size_base + size_dat.byte;
-  if (size_dat.chain != cache->page.chain && size_dat.chain)
+  if (size_dat.chain != entry->page.chain && size_dat.chain)
     free (size_dat.chain);
 
   if (info->size > (size_t)objects_section->data_size
       || info->address > (size_t)objects_section->data_size - info->size)
     return DWG_ERR_VALUEOUTOFBOUNDS;
 
-  if (info->address >= cache->section_offset
-      && info->address + info->size <= cache->section_offset + cache->page.size)
+  entry = cache->ordered_pages
+              ? r2007_stream_page_cache_find_address (cache, info->address)
+              : NULL;
+  if (entry && info->address >= entry->section_offset)
     {
-      body = cache->page;
-      body.byte = info->address - cache->section_offset;
-      body.bit = 0;
-      bit_reset_chain (&body);
-      body.size = info->size;
-      return read_2007_stream_object_body (dwg, &body, input_mode, info);
+      page_offset = info->address - entry->section_offset;
+      if (page_offset <= entry->page.size
+          && info->size <= entry->page.size - page_offset)
+        {
+          body = entry->page;
+          body.byte = page_offset;
+          body.bit = 0;
+          bit_reset_chain (&body);
+          body.size = info->size;
+          return read_2007_stream_object_body (dwg, &body, input_mode, info);
+        }
     }
 
   error = copy_data_section_window (&body, dat, objects_section, pages_map,
                                     cache, info->address, info->size);
-  if (error < DWG_ERR_CRITICAL)
+  if (!error)
     error = read_2007_stream_object_body (dwg, &body, input_mode, info);
   if (body.chain)
     free (body.chain);
@@ -310,13 +539,15 @@ read_2007_section_handles_stream (
   BITCODE_RS section_size = 0;
   BITCODE_BL index = 0;
 
-  object_page.page_index = -1;
+  r2007_stream_page_cache_init (&object_page);
   objects_section = get_section (sections_map, SECTION_OBJECTS);
   if (!objects_section)
     {
       LOG_ERROR ("Failed to find objects section");
       return DWG_ERR_SECTIONNOTFOUND;
     }
+  object_page.ordered_pages
+      = r2007_stream_section_pages_are_ordered (objects_section);
   handles_section = get_section (sections_map, SECTION_HANDLES);
   if (!handles_section)
     {
@@ -403,6 +634,7 @@ read_2007_section_handles_stream (
           if (callbacks->decoded_object)
             {
               Bit_Chain object_dat = { 0 };
+              R2007_Stream_Page_Cache_Entry *entry;
               bool owns_object_dat = false;
               size_t prefix_size;
               size_t object_size;
@@ -420,15 +652,18 @@ read_2007_section_handles_stream (
                   goto done;
                 }
               object_size = prefix_size + info.size;
-              if (object_page.page.chain
-                  && last_offset >= object_page.section_offset)
+              entry = object_page.ordered_pages
+                          ? r2007_stream_page_cache_find_address (&object_page,
+                                                                  last_offset)
+                          : NULL;
+              if (entry && last_offset >= entry->section_offset)
                 {
                   const size_t page_offset
-                      = last_offset - object_page.section_offset;
-                  if (page_offset <= object_page.page.size
-                      && object_size <= object_page.page.size - page_offset)
+                      = last_offset - entry->section_offset;
+                  if (page_offset <= entry->page.size
+                      && object_size <= entry->page.size - page_offset)
                     {
-                      object_dat = object_page.page;
+                      object_dat = entry->page;
                       object_dat.byte = page_offset;
                       object_dat.bit = 0;
                       bit_reset_chain (&object_dat);
@@ -487,10 +722,10 @@ done:
 
 int
 dwg_stream_read_r2007 (Bit_Chain *dat, Bit_Chain *hdl_dat,
-                             Dwg_Data *restrict dwg,
-                             const Dwg_Stream_Callbacks_Ex *restrict callbacks,
-                             Dwg_Stream_Input_Mode input_mode,
-                             void *restrict user)
+                       Dwg_Data *restrict dwg,
+                       const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+                       Dwg_Stream_Input_Mode input_mode,
+                       void *restrict user)
 {
   Dwg_R2007_Header *file_header;
   r2007_page *restrict pages_map = NULL, *restrict page;

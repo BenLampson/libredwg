@@ -79,8 +79,8 @@ static bool env_var_checked_p;
 static bool max_decomp_size_checked_p;
 static uint32_t max_r2004_decomp_size = DEFAULT_MAX_R2004_DECOMP_SIZE;
 
-static uint32_t
-get_max_r2004_decomp_size (void)
+uint32_t
+dwg_get_max_r2004_decomp_size (void)
 {
   if (!max_decomp_size_checked_p)
     {
@@ -1733,7 +1733,8 @@ read_R2004_section_info (Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
   Bit_Chain dec = { 0 };
   BITCODE_BL i, j;
   int error;
-  const uint32_t configured_max_decomp_size = get_max_r2004_decomp_size ();
+  const uint32_t configured_max_decomp_size
+      = dwg_get_max_r2004_decomp_size ();
 
   if (decomp_data_size > configured_max_decomp_size
       && (decomp_data_size > 8 * comp_data_size || comp_data_size > dat->size))
@@ -2090,7 +2091,7 @@ read_2004_compressed_section (Bit_Chain *dat, Dwg_Data *restrict dwg,
     uint64_t max_decomp_size64
         = (uint64_t)info->num_sections * (uint64_t)info->max_decomp_size;
     if (max_decomp_size64 == 0
-        || max_decomp_size64 > get_max_r2004_decomp_size ())
+        || max_decomp_size64 > dwg_get_max_r2004_decomp_size ())
       {
         LOG_ERROR ("Invalid section %s count or max decompression size. "
                    "Sections: " FORMAT_RL ", Max size: " FORMAT_RL,

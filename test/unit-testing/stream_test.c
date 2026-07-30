@@ -164,6 +164,50 @@ typedef struct _emit_capacity_stats
   const Dwg_Stream_Object_Info *info;
 } Emit_Capacity_Stats;
 
+typedef enum _stream_callback_event_kind
+{
+  STREAM_CALLBACK_EVENT_OBJECT = 1,
+  STREAM_CALLBACK_EVENT_DECODED = 2,
+  STREAM_CALLBACK_EVENT_ERROR = 3
+} Stream_Callback_Event_Kind;
+
+typedef struct _stream_callback_event
+{
+  Stream_Callback_Event_Kind kind;
+  BITCODE_BL index;
+  size_t address;
+  BITCODE_RL size;
+  BITCODE_RLL info_handle;
+  BITCODE_RC info_handle_code;
+  BITCODE_RC info_handle_size;
+  BITCODE_BS type;
+  Dwg_Object_Type fixedtype;
+  Dwg_Object_Supertype supertype;
+  Dwg_Version_Type version;
+  Dwg_Stream_Decode_Mode decode_mode;
+  Dwg_Stream_Input_Mode input_mode;
+  BITCODE_BL object_index;
+  size_t object_address;
+  BITCODE_RL object_size;
+  BITCODE_RLL object_handle;
+  BITCODE_BS object_type;
+  Dwg_Object_Type object_fixedtype;
+  Dwg_Object_Supertype object_supertype;
+  size_t acds_offset;
+  size_t acds_size;
+  int error;
+} Stream_Callback_Event;
+
+typedef struct _stream_callback_trace
+{
+  Stream_Callback_Event *events;
+  size_t num_events;
+  size_t events_capacity;
+  BITCODE_RC *acds;
+  size_t acds_size;
+  size_t acds_capacity;
+} Stream_Callback_Trace;
+
 typedef struct _r11_minsert_opts_stats
 {
   Stream_Stats stats;
@@ -179,6 +223,7 @@ static int stream_test_source_path (char *path, size_t size,
 static int test_stream_api_invalid_args (void);
 static int test_repository_stream_fixtures (void);
 static int test_repository_stream_sweep (int compare_refs);
+static int test_r2004_page_cache_backend_parity (void);
 static int test_invalid_version_stream_file_ex_rejects (void);
 static int test_invalid_versions_reject (void);
 static int test_generated_minsert_stream_fixture (Dwg_Version_Type version,
@@ -256,6 +301,9 @@ main (void)
   Stream_Semantic_Coverage coverage = { 0 };
   int error;
 
+  if (getenv ("LIBREDWG_STREAM_TEST_LARGE_ONLY"))
+    return test_large_stream_fixture ();
+
   stream_trace_stage ("test_no_full_fallback");
   if (test_no_full_fallback ())
     return 1;
@@ -325,6 +373,9 @@ main (void)
     return 1;
   stream_trace_stage ("test_r2004_truncated_section_map_rejected");
   if (test_r2004_truncated_section_map_rejected ())
+    return 1;
+  stream_trace_stage ("test_r2004_page_cache_backend_parity");
+  if (test_r2004_page_cache_backend_parity ())
     return 1;
   stream_trace_stage ("test_pre_r13_minsert_opts_stream");
   if (test_pre_r13_minsert_opts_stream ())

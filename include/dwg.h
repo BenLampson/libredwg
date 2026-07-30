@@ -11558,6 +11558,10 @@ typedef enum DWG_STREAM_FLAGS
      full decoder; unsupported stream versions return DWG_ERR_NOTYETSUPPORTED
      with or without this flag. */
   DWG_STREAM_F_NO_FULL_FALLBACK = 1u << 0,
+  /* Prefer bounded page caches to whole-section buffering where both Stream
+     backends are available. This lowers peak memory and may trade throughput
+     on densely populated, weakly compressed files. */
+  DWG_STREAM_F_LOW_MEMORY = 1u << 1,
 } Dwg_Stream_Flags;
 
 typedef struct _dwg_stream_callbacks

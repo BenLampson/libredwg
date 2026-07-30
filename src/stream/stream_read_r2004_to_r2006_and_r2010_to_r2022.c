@@ -39,6 +39,9 @@ find_2004_section_info (Dwg_Data *restrict dwg, Dwg_Section_Type type)
 
 #define R2004_STREAM_HISTORY_SIZE 65536U
 #define R2004_STREAM_OBJECT_PREFIX_SIZE 32U
+#define R2004_STREAM_PAGE_CACHE_SLOTS 16U
+#define R2004_STREAM_BUFFERED_MAX_BYTES (64U * 1024U * 1024U)
+#define R2004_STREAM_INVALID_PAGE ((BITCODE_BL)-1)
 
 typedef struct _r2004_object_stream
 {
@@ -49,6 +52,34 @@ typedef struct _r2004_object_stream
   size_t output_pos;
   int initialized;
 } R2004_Object_Stream;
+
+typedef struct _r2004_stream_page_descriptor
+{
+  size_t logical_start;
+  size_t logical_size;
+  size_t payload_offset;
+  uint32_t data_size;
+  BITCODE_BL cache_slot;
+} R2004_Stream_Page_Descriptor;
+
+typedef struct _r2004_stream_page_cache_entry
+{
+  Bit_Chain page;
+  BITCODE_BL descriptor_index;
+  uint64_t last_used;
+} R2004_Stream_Page_Cache_Entry;
+
+typedef struct _r2004_stream_page_cache
+{
+  Bit_Chain *dat;
+  Dwg_Section_Info *info;
+  R2004_Stream_Page_Descriptor *descriptors;
+  BITCODE_BL num_descriptors;
+  BITCODE_BL num_cache_entries;
+  R2004_Stream_Page_Cache_Entry entries[R2004_STREAM_PAGE_CACHE_SLOTS];
+  R2004_Stream_Page_Cache_Entry *active;
+  uint64_t clock;
+} R2004_Stream_Page_Cache;
 
 typedef struct _r2004_stream_handle_entry
 {
@@ -233,6 +264,525 @@ compare_r2004_stream_handle_entries (const void *a, const void *b)
     return -1;
   if (left->handle > right->handle)
     return 1;
+  return 0;
+}
+
+static int
+r2004_stream_scan_extended_length (const BITCODE_RC *restrict data,
+                                   const size_t data_size,
+                                   size_t *restrict position,
+                                   const unsigned char opcode,
+                                   const unsigned int mask, const size_t extra,
+                                   size_t *restrict length)
+{
+  size_t value = opcode & mask;
+  BITCODE_RC lastbyte;
+
+  if (!value)
+    {
+      lastbyte = 0;
+      while (*position < data_size && data[*position] == 0)
+        {
+          if (value > SIZE_MAX - 0xffU)
+            return DWG_ERR_VALUEOUTOFBOUNDS;
+          value += 0xffU;
+          (*position)++;
+        }
+      if (*position >= data_size)
+        return DWG_ERR_VALUEOUTOFBOUNDS;
+      lastbyte = data[(*position)++];
+      if (value > SIZE_MAX - (size_t)lastbyte - extra)
+        return DWG_ERR_VALUEOUTOFBOUNDS;
+      value += (size_t)lastbyte + extra;
+    }
+  if (value > SIZE_MAX - 2U)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  *length = value + 2U;
+  return 0;
+}
+
+static int
+r2004_stream_scan_literal_length (const BITCODE_RC *restrict data,
+                                  const size_t data_size,
+                                  size_t *restrict position,
+                                  const unsigned char opcode,
+                                  size_t *restrict length)
+{
+  size_t encoded;
+  int error;
+
+  error = r2004_stream_scan_extended_length (data, data_size, position, opcode,
+                                             0xfU, 0xfU, &encoded);
+  if (error)
+    return error;
+  if (encoded > SIZE_MAX - 1U)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  *length = encoded + 1U;
+  return 0;
+}
+
+/* Validate one compressed page without materializing it.  The R2004 LZ
+   offsets are page-local for valid data pages; rejecting an offset before the
+   beginning of this page lets the random-access backend fall back before the
+   first user callback. */
+static int
+r2004_stream_preflight_compressed_page (const BITCODE_RC *restrict data,
+                                        const size_t data_size,
+                                        const size_t output_limit)
+{
+  size_t position = 0;
+  size_t produced = 0;
+  size_t literal_length;
+  unsigned char opcode;
+  int error;
+
+  if (!data || !data_size || !output_limit)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+
+  opcode = data[position++];
+  if ((opcode & 0xf0U) == 0)
+    {
+      error = r2004_stream_scan_literal_length (data, data_size, &position,
+                                                opcode, &literal_length);
+      if (error || literal_length > output_limit
+          || literal_length >= data_size - position)
+        return DWG_ERR_VALUEOUTOFBOUNDS;
+      produced = literal_length;
+      position += literal_length;
+      opcode = data[position++];
+    }
+
+  while (position < data_size && produced < output_limit && opcode != 0x11U)
+    {
+      size_t compressed_bytes;
+      size_t compressed_offset;
+      size_t first_byte;
+      size_t second_byte;
+
+      compressed_bytes = 0;
+      compressed_offset = 0;
+      if (opcode >= 0x40U)
+        {
+          if (position >= data_size)
+            return DWG_ERR_VALUEOUTOFBOUNDS;
+          compressed_bytes = (opcode >> 4) - 1U;
+          compressed_offset
+              = (((opcode >> 2) & 3U) | ((size_t)data[position++] << 2)) + 1U;
+        }
+      else if (opcode >= 0x10U && opcode < 0x20U)
+        {
+          error = r2004_stream_scan_extended_length (
+              data, data_size, &position, opcode, 7U, 7U, &compressed_bytes);
+          if (error || data_size - position < 2U)
+            return DWG_ERR_VALUEOUTOFBOUNDS;
+          first_byte = data[position++];
+          second_byte = data[position++];
+          compressed_offset = ((size_t)(opcode & 8U) << 11) + (first_byte >> 2)
+                              + (second_byte << 6) + 0x4000U;
+          opcode = (unsigned char)first_byte;
+        }
+      else if (opcode >= 0x20U)
+        {
+          error = r2004_stream_scan_extended_length (data, data_size,
+                                                     &position, opcode, 0x1fU,
+                                                     0x1fU, &compressed_bytes);
+          if (error || data_size - position < 2U)
+            return DWG_ERR_VALUEOUTOFBOUNDS;
+          first_byte = data[position++];
+          second_byte = data[position++];
+          compressed_offset = (first_byte >> 2) + (second_byte << 6) + 1U;
+          opcode = (unsigned char)first_byte;
+        }
+      else
+        return DWG_ERR_VALUEOUTOFBOUNDS;
+
+      if (!compressed_bytes || !compressed_offset
+          || compressed_offset > produced
+          || compressed_bytes > output_limit - produced)
+        return DWG_ERR_VALUEOUTOFBOUNDS;
+      produced += compressed_bytes;
+
+      literal_length = opcode & 3U;
+      if (!literal_length)
+        {
+          if (position >= data_size)
+            return 0;
+          opcode = data[position++];
+          if ((opcode & 0xf0U) == 0)
+            {
+              error = r2004_stream_scan_literal_length (
+                  data, data_size, &position, opcode, &literal_length);
+              if (error)
+                return error;
+            }
+        }
+      if (literal_length)
+        {
+          if (literal_length > output_limit - produced
+              || literal_length >= data_size - position)
+            return DWG_ERR_VALUEOUTOFBOUNDS;
+          produced += literal_length;
+          position += literal_length;
+          opcode = data[position++];
+        }
+    }
+  return 0;
+}
+
+static void
+r2004_stream_page_cache_free (R2004_Stream_Page_Cache *restrict cache)
+{
+  size_t i;
+
+  for (i = 0; i < cache->num_cache_entries; i++)
+    free (cache->entries[i].page.chain);
+  free (cache->descriptors);
+  memset (cache, 0, sizeof (*cache));
+}
+
+static int
+r2004_stream_page_cache_init (R2004_Stream_Page_Cache *restrict cache,
+                              Bit_Chain *restrict dat,
+                              Dwg_Section_Info *restrict info)
+{
+  uint64_t max_decomp_size;
+  size_t total_size;
+  size_t previous_end = 0;
+  size_t allocation_size;
+  BITCODE_BL i;
+
+  memset (cache, 0, sizeof (*cache));
+  if (!dat || !info || !info->sections || !info->num_sections
+      || !info->max_decomp_size || info->size <= 0
+      || (uint64_t)info->size != (uint64_t)(size_t)info->size)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  max_decomp_size
+      = (uint64_t)info->num_sections * (uint64_t)info->max_decomp_size;
+  if (!max_decomp_size || max_decomp_size > dwg_get_max_r2004_decomp_size ()
+      || (uint64_t)info->size > max_decomp_size)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  total_size = (size_t)info->size;
+  allocation_size = (size_t)info->num_sections * sizeof (*cache->descriptors);
+  if (allocation_size / (size_t)info->num_sections
+      != sizeof (*cache->descriptors))
+    return DWG_ERR_OUTOFMEM;
+  cache->descriptors
+      = (R2004_Stream_Page_Descriptor *)calloc (1, allocation_size);
+  if (!cache->descriptors)
+    return DWG_ERR_OUTOFMEM;
+  cache->dat = dat;
+  cache->info = info;
+
+  for (i = 0; i < info->num_sections; i++)
+    {
+      Dwg_Section *section = info->sections[i];
+      encrypted_section_header es;
+      R2004_Stream_Page_Descriptor *descriptor;
+      size_t physical_address;
+      size_t payload_offset;
+      size_t remaining;
+      size_t logical_size;
+      uint32_t sec_mask;
+      int error;
+
+      if (!section)
+        {
+          if (i == info->num_sections - 1)
+            {
+              r2004_stream_page_cache_free (cache);
+              return DWG_ERR_SECTIONNOTFOUND;
+            }
+          continue;
+        }
+      if (section->address != (BITCODE_RLL)(size_t)section->address
+          || section->address > UINT32_MAX)
+        {
+          r2004_stream_page_cache_free (cache);
+          return DWG_ERR_VALUEOUTOFBOUNDS;
+        }
+      physical_address = (size_t)section->address;
+      if (physical_address > dat->size
+          || dat->size - physical_address < sizeof (es))
+        {
+          r2004_stream_page_cache_free (cache);
+          return DWG_ERR_VALUEOUTOFBOUNDS;
+        }
+      payload_offset = physical_address + sizeof (es);
+      memcpy (es.long_data, &dat->chain[physical_address], sizeof (es));
+      sec_mask = htole32 (0x4164536bU ^ (uint32_t)physical_address);
+      for (int k = 0; k < 8; k++)
+        es.long_data[k] = le32toh (es.long_data[k] ^ sec_mask);
+
+      if (es.fields.page_type != 0x4163043bU || es.fields.address >= total_size
+          || (info->compressed != 2
+              && (!es.fields.page_size
+                  || es.fields.page_size > info->max_decomp_size))
+          || (size_t)es.fields.data_size > dat->size - payload_offset)
+        {
+          r2004_stream_page_cache_free (cache);
+          return DWG_ERR_VALUEOUTOFBOUNDS;
+        }
+      remaining = total_size - es.fields.address;
+      logical_size = info->compressed == 2
+                         ? MIN ((size_t)info->max_decomp_size, remaining)
+                         : MIN ((size_t)es.fields.page_size, remaining);
+      if (!logical_size || es.fields.address < previous_end)
+        {
+          r2004_stream_page_cache_free (cache);
+          return DWG_ERR_VALUEOUTOFBOUNDS;
+        }
+      if (info->compressed == 2)
+        {
+          error = r2004_stream_preflight_compressed_page (
+              &dat->chain[payload_offset], es.fields.data_size,
+              info->max_decomp_size);
+          if (error)
+            {
+              r2004_stream_page_cache_free (cache);
+              return error;
+            }
+        }
+      else if (logical_size > dat->size - payload_offset)
+        {
+          r2004_stream_page_cache_free (cache);
+          return DWG_ERR_VALUEOUTOFBOUNDS;
+        }
+
+      descriptor = &cache->descriptors[cache->num_descriptors++];
+      descriptor->logical_start = es.fields.address;
+      descriptor->logical_size = logical_size;
+      descriptor->payload_offset = payload_offset;
+      descriptor->data_size = es.fields.data_size;
+      descriptor->cache_slot = R2004_STREAM_INVALID_PAGE;
+      previous_end = descriptor->logical_start + descriptor->logical_size;
+    }
+  if (!cache->num_descriptors)
+    {
+      r2004_stream_page_cache_free (cache);
+      return DWG_ERR_VALUEOUTOFBOUNDS;
+    }
+
+  cache->num_cache_entries
+      = MIN (cache->num_descriptors, R2004_STREAM_PAGE_CACHE_SLOTS);
+  for (i = 0; i < cache->num_cache_entries; i++)
+    {
+      R2004_Stream_Page_Cache_Entry *entry = &cache->entries[i];
+
+      entry->page.chain = (BITCODE_RC *)calloc (info->max_decomp_size, 1);
+      if (!entry->page.chain)
+        {
+          r2004_stream_page_cache_free (cache);
+          return DWG_ERR_OUTOFMEM;
+        }
+      entry->page.version = dat->version;
+      entry->page.from_version = dat->from_version;
+      entry->page.opts = dat->opts;
+      entry->page.codepage = dat->codepage;
+      entry->descriptor_index = R2004_STREAM_INVALID_PAGE;
+    }
+  return 0;
+}
+
+static BITCODE_BL
+r2004_stream_page_cache_find_descriptor (
+    const R2004_Stream_Page_Cache *restrict cache, const size_t address,
+    size_t *restrict next_start)
+{
+  BITCODE_BL low = 0;
+  BITCODE_BL high = cache->num_descriptors;
+
+  if (cache->active
+      && cache->active->descriptor_index < cache->num_descriptors)
+    {
+      const R2004_Stream_Page_Descriptor *active_descriptor
+          = &cache->descriptors[cache->active->descriptor_index];
+
+      if (address >= active_descriptor->logical_start
+          && address - active_descriptor->logical_start
+                 < active_descriptor->logical_size)
+        return cache->active->descriptor_index;
+    }
+  while (low < high)
+    {
+      BITCODE_BL middle = low + (high - low) / 2;
+
+      if (cache->descriptors[middle].logical_start <= address)
+        low = middle + 1;
+      else
+        high = middle;
+    }
+  if (low)
+    {
+      const R2004_Stream_Page_Descriptor *descriptor
+          = &cache->descriptors[low - 1];
+
+      if (address - descriptor->logical_start < descriptor->logical_size)
+        return low - 1;
+    }
+  if (next_start)
+    *next_start = low < cache->num_descriptors
+                      ? cache->descriptors[low].logical_start
+                      : (size_t)cache->info->size;
+  return R2004_STREAM_INVALID_PAGE;
+}
+
+static int
+r2004_stream_page_cache_load (R2004_Stream_Page_Cache *restrict cache,
+                              const BITCODE_BL descriptor_index)
+{
+  R2004_Stream_Page_Cache_Entry *entry = NULL;
+  R2004_Stream_Page_Descriptor *descriptor;
+  size_t i;
+
+  if (descriptor_index >= cache->num_descriptors)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  descriptor = &cache->descriptors[descriptor_index];
+  if (descriptor->cache_slot < cache->num_cache_entries)
+    {
+      entry = &cache->entries[descriptor->cache_slot];
+      if (entry->descriptor_index != descriptor_index)
+        return DWG_ERR_INTERNALERROR;
+      entry->last_used = ++cache->clock;
+      cache->active = entry;
+      return 0;
+    }
+  for (i = 0; i < cache->num_cache_entries; i++)
+    {
+      R2004_Stream_Page_Cache_Entry *candidate = &cache->entries[i];
+
+      if (candidate->descriptor_index == R2004_STREAM_INVALID_PAGE)
+        entry = candidate;
+      else if (!entry || candidate->last_used < entry->last_used)
+        entry = candidate;
+    }
+  if (!entry)
+    return DWG_ERR_INTERNALERROR;
+
+  if (entry->descriptor_index < cache->num_descriptors)
+    cache->descriptors[entry->descriptor_index].cache_slot
+        = R2004_STREAM_INVALID_PAGE;
+  if (cache->active == entry)
+    cache->active = NULL;
+  entry->descriptor_index = R2004_STREAM_INVALID_PAGE;
+  memset (entry->page.chain, 0, cache->info->max_decomp_size);
+  entry->page.byte = 0;
+  entry->page.bit = 0;
+  entry->page.size = cache->info->max_decomp_size;
+  if (cache->info->compressed == 2)
+    {
+      Bit_Chain src = *cache->dat;
+      BITCODE_RC *page_chain = entry->page.chain;
+      int error;
+
+      src.byte = descriptor->payload_offset;
+      src.bit = 0;
+      src.size = src.byte + descriptor->data_size;
+      error = decompress_R2004_section (&src, &entry->page);
+      if (error)
+        return error;
+      if (entry->page.chain != page_chain
+          || entry->page.size != cache->info->max_decomp_size)
+        {
+          LOG_WARN ("R2004 page cache decompressor grew page %u: %" PRIuSIZE
+                    " -> %" PRIuSIZE,
+                    descriptor_index, (size_t)cache->info->max_decomp_size,
+                    entry->page.size);
+          return DWG_ERR_VALUEOUTOFBOUNDS;
+        }
+    }
+  else
+    memcpy (entry->page.chain, &cache->dat->chain[descriptor->payload_offset],
+            descriptor->logical_size);
+
+  entry->page.byte = 0;
+  entry->page.bit = 0;
+  entry->page.size = descriptor->logical_size;
+  entry->descriptor_index = descriptor_index;
+  descriptor->cache_slot = (BITCODE_BL)(entry - cache->entries);
+  entry->last_used = ++cache->clock;
+  cache->active = entry;
+  return 0;
+}
+
+static int
+r2004_stream_page_cache_read (R2004_Stream_Page_Cache *restrict cache,
+                              const size_t address,
+                              BITCODE_RC *restrict buffer, const size_t size)
+{
+  size_t copied = 0;
+
+  if (!buffer || !size || size > (size_t)cache->info->size
+      || address > (size_t)cache->info->size - size)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  memset (buffer, 0, size);
+
+  while (copied < size)
+    {
+      size_t position = address + copied;
+      size_t next_start = (size_t)cache->info->size;
+      BITCODE_BL descriptor_index = r2004_stream_page_cache_find_descriptor (
+          cache, position, &next_start);
+
+      if (descriptor_index == R2004_STREAM_INVALID_PAGE)
+        {
+          size_t gap = MIN (next_start - position, size - copied);
+
+          if (!gap)
+            return DWG_ERR_VALUEOUTOFBOUNDS;
+          copied += gap;
+        }
+      else
+        {
+          const R2004_Stream_Page_Descriptor *descriptor
+              = &cache->descriptors[descriptor_index];
+          size_t page_offset = position - descriptor->logical_start;
+          size_t available = descriptor->logical_size - page_offset;
+          size_t take = MIN (available, size - copied);
+          int error = r2004_stream_page_cache_load (cache, descriptor_index);
+
+          if (error)
+            return error;
+          memcpy (&buffer[copied], &cache->active->page.chain[page_offset],
+                  take);
+          copied += take;
+        }
+    }
+  return 0;
+}
+
+static int
+r2004_stream_page_cache_borrow (R2004_Stream_Page_Cache *restrict cache,
+                                const size_t address, const size_t size,
+                                Bit_Chain *restrict window,
+                                bool *restrict borrowed)
+{
+  BITCODE_BL descriptor_index;
+  const R2004_Stream_Page_Descriptor *descriptor;
+  size_t page_offset;
+  int error;
+
+  *borrowed = false;
+  if (!size || size > (size_t)cache->info->size
+      || address > (size_t)cache->info->size - size)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  descriptor_index
+      = r2004_stream_page_cache_find_descriptor (cache, address, NULL);
+  if (descriptor_index == R2004_STREAM_INVALID_PAGE)
+    return 0;
+  descriptor = &cache->descriptors[descriptor_index];
+  page_offset = address - descriptor->logical_start;
+  if (size > descriptor->logical_size - page_offset)
+    return 0;
+
+  error = r2004_stream_page_cache_load (cache, descriptor_index);
+  if (error)
+    return error;
+  *window = cache->active->page;
+  window->chain = &cache->active->page.chain[page_offset];
+  window->byte = 0;
+  window->bit = 0;
+  window->size = size;
+  *borrowed = true;
   return 0;
 }
 
@@ -440,7 +990,8 @@ r2004_object_stream_read (R2004_Object_Stream *restrict stream,
       Dwg_Section *section;
       encrypted_section_header es;
       Bit_Chain src;
-      uint32_t address, sec_mask;
+      size_t address, payload_offset;
+      uint32_t sec_mask;
       int error = 0;
 
       if (stream->next_section >= stream->info->num_sections)
@@ -449,18 +1000,21 @@ r2004_object_stream_read (R2004_Object_Stream *restrict stream,
       if (!section)
         continue;
 
-      address = section->address;
-      if (address + 32 > stream->dat->size)
+      if (section->address != (BITCODE_RLL)(size_t)section->address)
         return DWG_ERR_VALUEOUTOFBOUNDS;
+      address = (size_t)section->address;
+      if (address > stream->dat->size || stream->dat->size - address < 32)
+        return DWG_ERR_VALUEOUTOFBOUNDS;
+      payload_offset = address + 32;
 
       memcpy (es.long_data, &stream->dat->chain[address], 32);
-      sec_mask = htole32 (0x4164536b ^ address);
+      sec_mask = htole32 (0x4164536bU ^ (uint32_t)address);
       for (int k = 0; k < 8; ++k)
         es.long_data[k] = le32toh (es.long_data[k] ^ sec_mask);
 
       if (es.fields.page_type != 0x4163043b
-          || es.fields.address > (uint32_t)stream->info->size
-          || address + 32 + es.fields.data_size > stream->dat->size)
+          || (uint64_t)es.fields.address > (uint64_t)stream->info->size
+          || (size_t)es.fields.data_size > stream->dat->size - payload_offset)
         return DWG_ERR_VALUEOUTOFBOUNDS;
 
       while (stream->output_pos < es.fields.address)
@@ -474,7 +1028,7 @@ r2004_object_stream_read (R2004_Object_Stream *restrict stream,
         return DWG_ERR_VALUEOUTOFBOUNDS;
 
       src = *stream->dat;
-      src.byte = address + 32;
+      src.byte = payload_offset;
       src.bit = 0;
       src.size = src.byte + es.fields.data_size;
 
@@ -483,16 +1037,18 @@ r2004_object_stream_read (R2004_Object_Stream *restrict stream,
                                               buffer_size);
       else
         {
-          uint32_t size
-              = MIN ((BITCODE_RL)(stream->info->size - es.fields.address),
-                     es.fields.page_size);
-          if (address + 32 + size > stream->dat->size)
+          uint64_t remaining
+              = (uint64_t)stream->info->size - es.fields.address;
+          uint32_t size = remaining < es.fields.page_size
+                              ? (uint32_t)remaining
+                              : es.fields.page_size;
+          if ((size_t)size > stream->dat->size - payload_offset)
             return DWG_ERR_VALUEOUTOFBOUNDS;
           for (uint32_t i = 0; i < size; i++)
             {
               error = r2004_stream_put_byte (
-                  stream, stream->dat->chain[address + 32 + i], target, buffer,
-                  buffer_size);
+                  stream, stream->dat->chain[payload_offset + i], target,
+                  buffer, buffer_size);
               if (error)
                 return error;
             }
@@ -560,6 +1116,105 @@ read_2004_stream_object_info (Dwg_Data *restrict dwg,
                             ? DWG_SUPERTYPE_ENTITY
                             : DWG_SUPERTYPE_OBJECT;
     }
+  info->fixedtype = fixedtype;
+  info->handle.value = handle_value;
+  info->version = dwg->header.from_version;
+  info->decode_mode = DWG_STREAM_DECODE_R2004_OBJECT_MAP;
+  info->input_mode = input_mode;
+  return 0;
+}
+
+static int
+read_2004_page_cached_object_info (Dwg_Data *restrict dwg,
+                                   R2004_Stream_Page_Cache *restrict cache,
+                                   const Dwg_Stream_Input_Mode input_mode,
+                                   const size_t address,
+                                   const BITCODE_RLL handle_value,
+                                   Dwg_Stream_Object_Info *restrict info)
+{
+  BITCODE_RC prefix[R2004_STREAM_OBJECT_PREFIX_SIZE];
+  Bit_Chain body = { 0 };
+  Dwg_Object_Type fixedtype;
+  size_t prefix_size;
+  bool borrowed = false;
+  int error;
+
+  memset (info, 0, sizeof (*info));
+  if (address >= (uint64_t)cache->info->size)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+  memset (prefix, 0, sizeof (prefix));
+  prefix_size = MIN (sizeof (prefix), (size_t)cache->info->size - address);
+  if (prefix_size == sizeof (prefix))
+    {
+      if (cache->active
+          && cache->active->descriptor_index < cache->num_descriptors)
+        {
+          const R2004_Stream_Page_Descriptor *descriptor
+              = &cache->descriptors[cache->active->descriptor_index];
+
+          if (descriptor->logical_size >= sizeof (prefix)
+              && address >= descriptor->logical_start
+              && address - descriptor->logical_start
+                     <= descriptor->logical_size - sizeof (prefix))
+            {
+              size_t page_offset = address - descriptor->logical_start;
+
+              body = cache->active->page;
+              body.chain = &cache->active->page.chain[page_offset];
+              body.byte = 0;
+              body.bit = 0;
+              body.size = sizeof (prefix);
+              cache->active->last_used = ++cache->clock;
+              borrowed = true;
+            }
+        }
+      if (!borrowed)
+        {
+          error = r2004_stream_page_cache_borrow (
+              cache, address, sizeof (prefix), &body, &borrowed);
+          if (error)
+            return error;
+        }
+    }
+  if (!borrowed)
+    {
+      error
+          = r2004_stream_page_cache_read (cache, address, prefix, prefix_size);
+      if (error)
+        return error;
+      body.chain = prefix;
+      body.size = sizeof (prefix);
+      body.version = cache->dat->version;
+      body.from_version = cache->dat->from_version;
+    }
+  info->size = bit_read_MS (&body);
+  if (body.from_version >= R_2010b)
+    (void)bit_read_UMC (&body);
+  info->address = address + body.byte;
+  if (info->size > (uint64_t)cache->info->size
+      || info->address > (uint64_t)cache->info->size - info->size)
+    return DWG_ERR_VALUEOUTOFBOUNDS;
+
+  bit_reset_chain (&body);
+  if (body.from_version >= R_2010b)
+    info->type = bit_read_BOT (&body);
+  else
+    info->type = bit_read_BS (&body);
+  fixedtype = (Dwg_Object_Type)info->type;
+  if (info->type >= 500 && (BITCODE_BL)(info->type - 500) < dwg->num_classes)
+    {
+      const Dwg_Class *klass = &dwg->dwg_class[info->type - 500];
+
+      info->supertype = dwg_class_is_entity (klass) ? DWG_SUPERTYPE_ENTITY
+                                                    : DWG_SUPERTYPE_OBJECT;
+      info->name = klass->dxfname;
+      info->dxfname = klass->dxfname;
+      fixedtype = (Dwg_Object_Type)info->type;
+    }
+  else
+    info->supertype = dwg_stream_fixed_type_is_entity (fixedtype)
+                          ? DWG_SUPERTYPE_ENTITY
+                          : DWG_SUPERTYPE_OBJECT;
   info->fixedtype = fixedtype;
   info->handle.value = handle_value;
   info->version = dwg->header.from_version;
@@ -668,8 +1323,18 @@ read_2004_section_handles_buffered_stream (
       size_t max_handles = hdl_dat.size * 2;
       uint16_t crc1, crc2;
 
+      if (startpos > endpos || endpos - startpos < 2)
+        {
+          error = DWG_ERR_VALUEOUTOFBOUNDS;
+          goto done;
+        }
       section_size = bit_read_RS_BE (&hdl_dat);
       if (section_size > 2040)
+        {
+          error = DWG_ERR_VALUEOUTOFBOUNDS;
+          goto done;
+        }
+      if ((size_t)section_size + 2 > endpos - startpos)
         {
           error = DWG_ERR_VALUEOUTOFBOUNDS;
           goto done;
@@ -685,7 +1350,9 @@ read_2004_section_handles_buffered_stream (
           oldpos = hdl_dat.byte;
           handleoff = bit_read_UMC (&hdl_dat);
           offset = bit_read_MC (&hdl_dat);
-          if (!handleoff || handleoff > max_handles - last_handle
+          if (!handleoff
+              || (last_handle <= max_handles
+                  && handleoff > max_handles - last_handle)
               || (offset > -4 && offset < prevsize))
             LOG_WARN ("Ignore invalid handleoff (@%" PRIuSIZE ")", oldpos);
           object_error = dwg_stream_add_handle_value (
@@ -782,6 +1449,200 @@ done:
 }
 
 static int
+read_2004_section_handles_page_cached_stream (
+    Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
+    R2004_Stream_Page_Cache *restrict cache,
+    const Dwg_Stream_Callbacks_Ex *restrict callbacks,
+    const Dwg_Stream_Input_Mode input_mode, void *restrict user,
+    R2004_Stream_AcDs *restrict acds, int *restrict callback_error)
+{
+  Bit_Chain hdl_dat = { 0 };
+  BITCODE_RC *object_bytes = NULL;
+  BITCODE_RS section_size = 0;
+  BITCODE_RLL last_handle = 0;
+  BITCODE_MC prevsize = 0;
+  BITCODE_BL index = 0;
+  size_t object_capacity = 0;
+  size_t endpos;
+  int error;
+
+  hdl_dat.opts = dwg->opts & DWG_OPTS_LOGLEVEL;
+  error = read_2004_compressed_section (dat, dwg, &hdl_dat, SECTION_HANDLES);
+  if (error >= DWG_ERR_CRITICAL || !hdl_dat.chain)
+    {
+      LOG_ERROR ("Failed to read compressed %s section", "Handles");
+      if (hdl_dat.chain)
+        free (hdl_dat.chain);
+      return error;
+    }
+
+  endpos = hdl_dat.byte + hdl_dat.size;
+  do
+    {
+      size_t last_offset = 0;
+      size_t oldpos = 0;
+      size_t startpos = hdl_dat.byte;
+      size_t max_handles = hdl_dat.size * 2;
+      uint16_t crc1, crc2;
+
+      if (startpos > endpos || endpos - startpos < 2)
+        {
+          error = DWG_ERR_VALUEOUTOFBOUNDS;
+          goto done;
+        }
+      section_size = bit_read_RS_BE (&hdl_dat);
+      if (section_size > 2040)
+        {
+          error = DWG_ERR_VALUEOUTOFBOUNDS;
+          goto done;
+        }
+      if ((size_t)section_size + 2 > endpos - startpos)
+        {
+          error = DWG_ERR_VALUEOUTOFBOUNDS;
+          goto done;
+        }
+
+      while ((long)(hdl_dat.byte - startpos) < (long)section_size)
+        {
+          BITCODE_UMC handleoff;
+          BITCODE_MC offset;
+          Dwg_Stream_Object_Info info;
+          int object_error;
+
+          oldpos = hdl_dat.byte;
+          handleoff = bit_read_UMC (&hdl_dat);
+          offset = bit_read_MC (&hdl_dat);
+          if (!handleoff
+              || (last_handle <= max_handles
+                  && handleoff > max_handles - last_handle)
+              || (offset > -4 && offset < prevsize))
+            LOG_WARN ("Ignore invalid handleoff (@%" PRIuSIZE ")", oldpos);
+          object_error = dwg_stream_add_handle_value (
+              &last_handle, handleoff, (BITCODE_RLL)max_handles);
+          if (object_error)
+            {
+              error = object_error;
+              goto done;
+            }
+
+          object_error = dwg_stream_add_handle_offset (&last_offset, offset);
+          if (object_error)
+            {
+              error = object_error;
+              goto done;
+            }
+          if (hdl_dat.byte == oldpos)
+            break;
+
+          object_error = read_2004_page_cached_object_info (
+              dwg, cache, input_mode, last_offset, last_handle, &info);
+          if (object_error)
+            {
+              error |= object_error;
+              goto done;
+            }
+
+          info.index = index++;
+          prevsize = info.size + 4;
+          if (callbacks->object)
+            {
+              int emitted_error = callbacks->object (&info, user);
+
+              if (emitted_error)
+                {
+                  *callback_error = emitted_error;
+                  error = emitted_error;
+                  goto done;
+                }
+            }
+          if (callbacks->decoded_object)
+            {
+              Bit_Chain object_dat = { 0 };
+              size_t object_size;
+              bool borrowed;
+              int emitted_error;
+
+              object_error = dwg_stream_object_record_size (
+                  &info, last_offset, (size_t)cache->info->size, &object_size);
+              if (object_error)
+                {
+                  error = object_error;
+                  goto done;
+                }
+              object_error = r2004_stream_page_cache_borrow (
+                  cache, last_offset, object_size, &object_dat, &borrowed);
+              if (object_error)
+                {
+                  error = object_error;
+                  goto done;
+                }
+              if (!borrowed)
+                {
+                  if (object_size > object_capacity)
+                    {
+                      BITCODE_RC *new_object_bytes
+                          = (BITCODE_RC *)realloc (object_bytes, object_size);
+
+                      if (!new_object_bytes)
+                        {
+                          error = DWG_ERR_OUTOFMEM;
+                          goto done;
+                        }
+                      object_bytes = new_object_bytes;
+                      object_capacity = object_size;
+                    }
+                  object_error = r2004_stream_page_cache_read (
+                      cache, last_offset, object_bytes, object_size);
+                  if (object_error)
+                    {
+                      error = object_error;
+                      goto done;
+                    }
+                  object_dat = *dat;
+                  object_dat.chain = object_bytes;
+                  object_dat.byte = 0;
+                  object_dat.bit = 0;
+                  object_dat.size = object_size;
+                }
+              emitted_error = r2004_stream_emit_decoded_object (
+                  dwg, &object_dat, &info, callbacks, user, acds,
+                  callback_error);
+              if (emitted_error)
+                {
+                  error = emitted_error;
+                  goto done;
+                }
+            }
+        }
+
+      if (hdl_dat.byte == oldpos)
+        break;
+
+      crc1 = bit_calc_CRC (0xC0C1, &(hdl_dat.chain[startpos]),
+                           hdl_dat.byte - startpos);
+      crc2 = bit_read_RS_BE (&hdl_dat);
+      if (crc1 != crc2)
+        {
+          LOG_WARN ("Handles page CRC mismatch: %04X vs calc. %04X from "
+                    "%" PRIuSIZE "-%" PRIuSIZE "=%ld\n",
+                    crc2, crc1, startpos, hdl_dat.byte - 2,
+                    (long)(hdl_dat.byte - startpos - 2));
+          error |= DWG_ERR_WRONGCRC;
+        }
+
+      if (hdl_dat.byte >= endpos)
+        break;
+    }
+  while (section_size > 2);
+
+done:
+  free (object_bytes);
+  if (hdl_dat.chain)
+    free (hdl_dat.chain);
+  return error;
+}
+
+static int
 read_2004_section_handles_stream (
     Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
     const Dwg_Stream_Callbacks_Ex *restrict callbacks,
@@ -792,26 +1653,60 @@ read_2004_section_handles_stream (
   Bit_Chain hdl_dat = { 0 };
   Dwg_Section_Info *obj_info;
   R2004_Object_Stream obj_stream;
+  R2004_Stream_Page_Cache page_cache;
   R2004_Stream_Handle_Entry *entries = NULL;
   BITCODE_RS section_size = 0;
   BITCODE_RLL last_handle = 0;
   BITCODE_BL num_entries = 0;
   BITCODE_BL entries_capacity = 0;
+  BITCODE_RC *object_bytes = NULL;
+  size_t object_capacity = 0;
   size_t endpos;
+  uint64_t buffered_allocation;
+  bool buffered_safe;
+  bool entries_ordered = true;
+  bool prefer_low_memory;
   int error;
 
+  memset (&page_cache, 0, sizeof (page_cache));
   obj_info = find_2004_section_info (dwg, SECTION_OBJECTS);
   if (!obj_info || obj_info->num_sections == 0 || !obj_info->sections)
     {
       LOG_ERROR ("Failed to find streamable %s section", "AcDbObjects");
       return DWG_ERR_SECTIONNOTFOUND;
     }
-  if (obj_info->max_decomp_size
-      && obj_info->num_sections
-             <= (BITCODE_RL)(0x2f000000U / obj_info->max_decomp_size))
+  buffered_allocation
+      = (uint64_t)obj_info->num_sections * (uint64_t)obj_info->max_decomp_size;
+  buffered_safe = buffered_allocation && buffered_allocation <= 0x2f000000U;
+  prefer_low_memory = (callbacks->flags & DWG_STREAM_F_LOW_MEMORY) != 0;
+  if (!prefer_low_memory && buffered_safe
+      && (buffered_allocation <= R2004_STREAM_BUFFERED_MAX_BYTES
+          || (uint64_t)dat->size > buffered_allocation / 2U))
     return read_2004_section_handles_buffered_stream (
         dat, dwg, callbacks, input_mode, user, acds, callback_error);
+  if (!buffered_safe)
+    goto forward_backend;
+  error = r2004_stream_page_cache_init (&page_cache, dat, obj_info);
+  if (!error)
+    {
+      LOG_TRACE ("R2004 Stream Objects backend: page-cache\n");
+      error = read_2004_section_handles_page_cached_stream (
+          dat, dwg, &page_cache, callbacks, input_mode, user, acds,
+          callback_error);
+      r2004_stream_page_cache_free (&page_cache);
+      return error;
+    }
+  if (error == DWG_ERR_OUTOFMEM)
+    return error;
+  if (buffered_safe)
+    {
+      LOG_TRACE ("R2004 Stream Objects backend: buffered (cache rejected)\n");
+      return read_2004_section_handles_buffered_stream (
+          dat, dwg, callbacks, input_mode, user, acds, callback_error);
+    }
 
+forward_backend:
+  LOG_TRACE ("R2004 Stream Objects backend: forward\n");
   error = r2004_object_stream_init (&obj_stream, dat, obj_info);
   if (error)
     return error;
@@ -835,8 +1730,18 @@ read_2004_section_handles_stream (
       size_t max_handles = hdl_dat.size * 2;
       uint16_t crc1, crc2;
 
+      if (startpos > endpos || endpos - startpos < 2)
+        {
+          error = DWG_ERR_VALUEOUTOFBOUNDS;
+          goto done;
+        }
       section_size = bit_read_RS_BE (&hdl_dat);
       if (section_size > 2040)
+        {
+          error = DWG_ERR_VALUEOUTOFBOUNDS;
+          goto done;
+        }
+      if ((size_t)section_size + 2 > endpos - startpos)
         {
           error = DWG_ERR_VALUEOUTOFBOUNDS;
           goto done;
@@ -851,7 +1756,9 @@ read_2004_section_handles_stream (
           oldpos = hdl_dat.byte;
           handleoff = bit_read_UMC (&hdl_dat);
           offset = bit_read_MC (&hdl_dat);
-          if (!handleoff || handleoff > max_handles - last_handle)
+          if (!handleoff
+              || (last_handle <= max_handles
+                  && handleoff > max_handles - last_handle))
             {
               LOG_WARN ("Ignore invalid handleoff (@%" PRIuSIZE ")", oldpos);
               error |= DWG_ERR_VALUEOUTOFBOUNDS;
@@ -878,13 +1785,23 @@ read_2004_section_handles_stream (
               R2004_Stream_Handle_Entry *new_entries;
               BITCODE_BL new_capacity
                   = entries_capacity ? entries_capacity * 2 : 4096;
+              size_t allocation_size;
+
               if (new_capacity < entries_capacity)
                 {
                   error = DWG_ERR_OUTOFMEM;
                   goto done;
                 }
+              allocation_size = (size_t)new_capacity * sizeof (*entries);
+              if (new_capacity
+                  && allocation_size / (size_t)new_capacity
+                         != sizeof (*entries))
+                {
+                  error = DWG_ERR_OUTOFMEM;
+                  goto done;
+                }
               new_entries = (R2004_Stream_Handle_Entry *)realloc (
-                  entries, (size_t)new_capacity * sizeof (*entries));
+                  entries, allocation_size);
               if (!new_entries)
                 {
                   error = DWG_ERR_OUTOFMEM;
@@ -894,6 +1811,11 @@ read_2004_section_handles_stream (
               entries_capacity = new_capacity;
             }
 
+          if (num_entries
+              && (last_offset < entries[num_entries - 1].address
+                  || (last_offset == entries[num_entries - 1].address
+                      && last_handle < entries[num_entries - 1].handle)))
+            entries_ordered = false;
           entries[num_entries].address = last_offset;
           entries[num_entries].handle = last_handle;
           num_entries++;
@@ -919,13 +1841,16 @@ read_2004_section_handles_stream (
     }
   while (section_size > 2);
 
-  qsort (entries, num_entries, sizeof (*entries),
-         compare_r2004_stream_handle_entries);
+  if (!entries_ordered)
+    qsort (entries, num_entries, sizeof (*entries),
+           compare_r2004_stream_handle_entries);
 
   for (BITCODE_BL i = 0; i < num_entries; i++)
     {
       Dwg_Stream_Object_Info info;
-      int object_error = read_2004_stream_object_info (
+      int object_error;
+
+      object_error = read_2004_stream_object_info (
           dwg, &obj_stream, input_mode, entries[i].address, entries[i].handle,
           &info);
       if (object_error)
@@ -952,7 +1877,6 @@ read_2004_section_handles_stream (
         }
       if (callbacks->decoded_object)
         {
-          BITCODE_RC *object_bytes;
           Bit_Chain object_dat = { 0 };
           size_t object_size;
           int emitted_error;
@@ -964,17 +1888,22 @@ read_2004_section_handles_stream (
               error = object_error;
               goto done;
             }
-          object_bytes = (BITCODE_RC *)calloc (object_size, 1);
-          if (!object_bytes)
+          if (object_size > object_capacity)
             {
-              error = DWG_ERR_OUTOFMEM;
-              goto done;
+              BITCODE_RC *new_object_bytes
+                  = (BITCODE_RC *)realloc (object_bytes, object_size);
+              if (!new_object_bytes)
+                {
+                  error = DWG_ERR_OUTOFMEM;
+                  goto done;
+                }
+              object_bytes = new_object_bytes;
+              object_capacity = object_size;
             }
           object_error = r2004_object_stream_read (
               &obj_stream, entries[i].address, object_bytes, object_size);
           if (object_error)
             {
-              free (object_bytes);
               error = object_error;
               goto done;
             }
@@ -985,7 +1914,6 @@ read_2004_section_handles_stream (
           object_dat.size = object_size;
           emitted_error = r2004_stream_emit_decoded_object (
               dwg, &object_dat, &info, callbacks, user, acds, callback_error);
-          free (object_bytes);
           if (emitted_error)
             {
               error = emitted_error;
@@ -999,6 +1927,8 @@ done:
     free (hdl_dat.chain);
   if (entries)
     free (entries);
+  if (object_bytes)
+    free (object_bytes);
   return error;
 }
 

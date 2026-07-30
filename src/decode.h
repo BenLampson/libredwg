@@ -45,6 +45,7 @@ int dwg_decode_stream (Bit_Chain *restrict dat,
                        const Dwg_Stream_Callbacks_Ex *restrict callbacks,
                        Dwg_Stream_Input_Mode input_mode,
                        int *restrict stream_supported, void *restrict user);
+uint32_t dwg_get_max_r2004_decomp_size (void);
 int dwg_decode_unknown_bits (Bit_Chain *restrict dat,
                              Dwg_Object *restrict obj);
 int dwg_decode_unknown_rest (Bit_Chain *restrict dat,

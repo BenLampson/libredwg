@@ -50,6 +50,267 @@ test_emit_decoded_object_isolated_host_state (void)
     }
   return 0;
 }
+
+static int
+stream_callback_trace_reserve_event (Stream_Callback_Trace *restrict trace,
+                                     Stream_Callback_Event **restrict event)
+{
+  if (trace->num_events == trace->events_capacity)
+    {
+      size_t new_capacity
+          = trace->events_capacity ? trace->events_capacity * 2U : 1024U;
+      Stream_Callback_Event *new_events;
+
+      if (new_capacity < trace->events_capacity
+          || new_capacity > SIZE_MAX / sizeof (*trace->events))
+        return DWG_ERR_OUTOFMEM;
+      new_events = (Stream_Callback_Event *)realloc (
+          trace->events, new_capacity * sizeof (*trace->events));
+      if (!new_events)
+        return DWG_ERR_OUTOFMEM;
+      trace->events = new_events;
+      trace->events_capacity = new_capacity;
+    }
+  *event = &trace->events[trace->num_events++];
+  memset (*event, 0, sizeof (**event));
+  return 0;
+}
+
+static int
+stream_callback_trace_append_acds (Stream_Callback_Trace *restrict trace,
+                                   Stream_Callback_Event *restrict event,
+                                   const BITCODE_RC *restrict data,
+                                   const size_t size)
+{
+  size_t required;
+
+  if (!data || !size)
+    return 0;
+  if (size > SIZE_MAX - trace->acds_size)
+    return DWG_ERR_OUTOFMEM;
+  required = trace->acds_size + size;
+  if (required > trace->acds_capacity)
+    {
+      size_t new_capacity
+          = trace->acds_capacity ? trace->acds_capacity : 4096U;
+      BITCODE_RC *new_acds;
+
+      while (new_capacity < required)
+        {
+          if (new_capacity > SIZE_MAX / 2U)
+            {
+              new_capacity = required;
+              break;
+            }
+          new_capacity *= 2U;
+        }
+      new_acds = (BITCODE_RC *)realloc (trace->acds, new_capacity);
+      if (!new_acds)
+        return DWG_ERR_OUTOFMEM;
+      trace->acds = new_acds;
+      trace->acds_capacity = new_capacity;
+    }
+  event->acds_offset = trace->acds_size;
+  event->acds_size = size;
+  memcpy (&trace->acds[trace->acds_size], data, size);
+  trace->acds_size = required;
+  return 0;
+}
+
+static void
+stream_callback_trace_copy_info (Stream_Callback_Event *restrict event,
+                                 const Dwg_Stream_Object_Info *restrict info)
+{
+  event->index = info->index;
+  event->address = info->address;
+  event->size = info->size;
+  event->info_handle = info->handle.value;
+  event->info_handle_code = info->handle.code;
+  event->info_handle_size = info->handle.size;
+  event->type = info->type;
+  event->fixedtype = info->fixedtype;
+  event->supertype = info->supertype;
+  event->version = info->version;
+  event->decode_mode = info->decode_mode;
+  event->input_mode = info->input_mode;
+}
+
+static int
+stream_callback_trace_object (const Dwg_Stream_Object_Info *restrict info,
+                              void *restrict user)
+{
+  Stream_Callback_Trace *trace = (Stream_Callback_Trace *)user;
+  Stream_Callback_Event *event;
+  int error;
+
+  error = stream_callback_trace_reserve_event (trace, &event);
+  if (error)
+    return error;
+  event->kind = STREAM_CALLBACK_EVENT_OBJECT;
+  stream_callback_trace_copy_info (event, info);
+  return 0;
+}
+
+static int
+stream_callback_trace_decoded (const Dwg_Stream_Object_Info *restrict info,
+                               const Dwg_Object *restrict object,
+                               void *restrict user)
+{
+  Stream_Callback_Trace *trace = (Stream_Callback_Trace *)user;
+  Stream_Callback_Event *event;
+  int error;
+
+  error = stream_callback_trace_reserve_event (trace, &event);
+  if (error)
+    return error;
+  event->kind = STREAM_CALLBACK_EVENT_DECODED;
+  stream_callback_trace_copy_info (event, info);
+  event->object_index = object->index;
+  event->object_address = object->address;
+  event->object_size = object->size;
+  event->object_handle = object->handle.value;
+  event->object_type = object->type;
+  event->object_fixedtype = object->fixedtype;
+  event->object_supertype = object->supertype;
+  if (object->supertype == DWG_SUPERTYPE_ENTITY && object->tio.entity
+      && object->tio.entity->has_ds_data && dwg_obj_is_3dsolid (object))
+    {
+      const Dwg_Entity_3DSOLID *solid = object->tio.entity->tio._3DSOLID;
+
+      if (solid)
+        return stream_callback_trace_append_acds (
+            trace, event, solid->acis_data, solid->sab_size);
+    }
+  return 0;
+}
+
+static int
+stream_callback_trace_error (const Dwg_Stream_Object_Info *restrict info,
+                             const int decode_error, void *restrict user)
+{
+  Stream_Callback_Trace *trace = (Stream_Callback_Trace *)user;
+  Stream_Callback_Event *event;
+  int error;
+
+  error = stream_callback_trace_reserve_event (trace, &event);
+  if (error)
+    return error;
+  event->kind = STREAM_CALLBACK_EVENT_ERROR;
+  stream_callback_trace_copy_info (event, info);
+  event->error = decode_error;
+  return 0;
+}
+
+static void
+stream_callback_trace_free (Stream_Callback_Trace *restrict trace)
+{
+  free (trace->events);
+  free (trace->acds);
+  memset (trace, 0, sizeof (*trace));
+}
+
+static int
+stream_callback_trace_run (const char *restrict path,
+                           const unsigned int backend_flag,
+                           Stream_Callback_Trace *restrict trace)
+{
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+
+  callbacks.object = stream_callback_trace_object;
+  callbacks.decoded_object = stream_callback_trace_decoded;
+  callbacks.decode_error = stream_callback_trace_error;
+  callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK | backend_flag;
+  return dwg_stream_file_ex (path, &callbacks, trace);
+}
+
+static int
+stream_callback_traces_equal (const Stream_Callback_Trace *restrict left,
+                              const Stream_Callback_Trace *restrict right,
+                              size_t *restrict mismatch)
+{
+  size_t i;
+
+  if (left->num_events != right->num_events
+      || left->acds_size != right->acds_size)
+    return 0;
+  for (i = 0; i < left->num_events; i++)
+    if (memcmp (&left->events[i], &right->events[i], sizeof (left->events[i]))
+        != 0)
+      {
+        *mismatch = i;
+        return 0;
+      }
+  if (left->acds_size
+      && memcmp (left->acds, right->acds, left->acds_size) != 0)
+    {
+      *mismatch = left->num_events;
+      return 0;
+    }
+  return 1;
+}
+
+static int
+test_r2004_page_cache_backend_parity (void)
+{
+  const char *fixtures[]
+      = { "test/test-data/example_2004.dwg",
+          "test/test-data/2004/material.dwg",
+          "test/test-data/example_2010.dwg", "test/test-data/example_2013.dwg",
+          "test/test-data/2018/Dynblocks.dwg" };
+  size_t i;
+
+  for (i = 0; i < sizeof (fixtures) / sizeof (fixtures[0]); i++)
+    {
+      char path[1024];
+      Stream_Callback_Trace buffered = { 0 };
+      Stream_Callback_Trace page_cached = { 0 };
+      size_t mismatch = 0;
+      int buffered_error;
+      int page_cached_error;
+      int equal;
+
+      if (!stream_test_source_path (path, sizeof (path), fixtures[i]))
+        {
+          printf ("R2004 backend parity fixture path too long: %s\n",
+                  fixtures[i]);
+          return 1;
+        }
+      buffered_error = stream_callback_trace_run (path, 0, &buffered);
+      page_cached_error = stream_callback_trace_run (
+          path, DWG_STREAM_F_LOW_MEMORY, &page_cached);
+      equal
+          = stream_callback_traces_equal (&buffered, &page_cached, &mismatch);
+      if (buffered_error != page_cached_error || !buffered.num_events || !equal
+          || (strstr (fixtures[i], "example_2013.dwg") && !buffered.acds_size))
+        {
+          printf ("R2004 backend parity failed: %s errors=0x%x/0x%x "
+                  "events=%zu/%zu acds=%zu/%zu mismatch=%zu\n",
+                  fixtures[i], buffered_error, page_cached_error,
+                  buffered.num_events, page_cached.num_events,
+                  buffered.acds_size, page_cached.acds_size, mismatch);
+          if (mismatch < buffered.num_events
+              && mismatch < page_cached.num_events)
+            printf (
+                "event kinds=%d/%d indexes=%lu/%lu "
+                "addresses=%zu/%zu handles=%llu/%llu\n",
+                (int)buffered.events[mismatch].kind,
+                (int)page_cached.events[mismatch].kind,
+                (unsigned long)buffered.events[mismatch].index,
+                (unsigned long)page_cached.events[mismatch].index,
+                buffered.events[mismatch].address,
+                page_cached.events[mismatch].address,
+                (unsigned long long)buffered.events[mismatch].info_handle,
+                (unsigned long long)page_cached.events[mismatch].info_handle);
+          stream_callback_trace_free (&buffered);
+          stream_callback_trace_free (&page_cached);
+          return 1;
+        }
+      stream_callback_trace_free (&buffered);
+      stream_callback_trace_free (&page_cached);
+    }
+  return 0;
+}
+
 static int
 test_no_full_fallback (void)
 {
@@ -408,18 +669,35 @@ test_large_stream_fixture (void)
   const char *path = getenv ("LIBREDWG_STREAM_TEST_LARGE_DWG");
   Stream_Stats stats = { 0 };
   Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  const char *backend = getenv ("LIBREDWG_STREAM_TEST_R2004_BACKEND");
+  const char *expected_objects_text
+      = getenv ("LIBREDWG_STREAM_TEST_EXPECT_OBJECTS");
+  const char *expected_error_text
+      = getenv ("LIBREDWG_STREAM_TEST_EXPECT_ERROR");
+  const int large_only
+      = getenv ("LIBREDWG_STREAM_TEST_LARGE_ONLY") != NULL;
+  char *expected_end;
+  unsigned long long expected_objects;
+  unsigned long expected_error;
   FILE *fp;
+  clock_t started;
   int error;
   int decode_objects = 0;
 
   if (!path || !*path)
-    return 0;
+    {
+      if (large_only)
+        printf ("large-only stream test requires "
+                "LIBREDWG_STREAM_TEST_LARGE_DWG\n");
+      return large_only ? 1 : 0;
+    }
 
   fp = fopen (path, "rb");
   if (!fp)
     {
-      printf ("skip: cannot open large stream fixture %s\n", path);
-      return 0;
+      printf ("%s: cannot open large stream fixture %s\n",
+              large_only ? "failed" : "skip", path);
+      return large_only ? 1 : 0;
     }
   fclose (fp);
 
@@ -431,9 +709,42 @@ test_large_stream_fixture (void)
       callbacks.decode_error = stream_decode_error_callback;
     }
   callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK;
+  if (backend && strcmp (backend, "low-memory") == 0)
+    callbacks.flags |= DWG_STREAM_F_LOW_MEMORY;
+  started = clock ();
   error = dwg_stream_file_ex (path, &callbacks, &stats);
+  if (backend)
+    printf ("large stream backend timing: backend=%s cpu_ms=%.2f error=0x%x\n",
+            backend, 1000.0 * (double)(clock () - started) / CLOCKS_PER_SEC,
+            error);
+  if (expected_error_text)
+    {
+      expected_error = strtoul (expected_error_text, &expected_end, 0);
+      if (!*expected_error_text || *expected_end
+          || error != (int)expected_error)
+        {
+          printf ("large stream fixture error mismatch: got=0x%x "
+                  "expected=%s\n",
+                  error, expected_error_text);
+          return 1;
+        }
+    }
+  if (expected_objects_text)
+    {
+      expected_objects = strtoull (expected_objects_text, &expected_end, 0);
+      if (!*expected_objects_text || *expected_end
+          || (unsigned long long)stats.num_objects != expected_objects)
+        {
+          printf ("large stream fixture object mismatch: got=%lu "
+                  "expected=%s\n",
+                  (unsigned long)stats.num_objects, expected_objects_text);
+          return 1;
+        }
+    }
   if (error >= DWG_ERR_CRITICAL)
     {
+      if (expected_error_text)
+        return 0;
       printf ("large stream fixture failed: %s error=0x%x\n", path, error);
       print_stats ("large stream fixture partial", &stats);
       return 1;
@@ -545,14 +856,22 @@ static int
 stream_test_source_path (char *path, size_t size, const char *relative)
 {
   const char *file = __FILE__;
-  const char *marker = "test/unit-testing/stream_test.c";
+  const char *marker = "test/unit-testing/stream_test_api_and_file_parity.c";
   const char *pos = strstr (file, marker);
+  FILE *probe;
   size_t root_len;
   int written;
 
+  probe = fopen (relative, "rb");
+  if (probe)
+    {
+      fclose (probe);
+      written = snprintf (path, size, "%s", relative);
+      return written >= 0 && (size_t)written < size;
+    }
   if (!pos)
     {
-      marker = "test\\unit-testing\\stream_test.c";
+      marker = "test\\unit-testing\\stream_test_api_and_file_parity.c";
       pos = strstr (file, marker);
     }
   if (pos)
@@ -915,6 +1234,62 @@ test_repository_stream_sweep (int compare_refs)
                              "test/test-data/2007/RAY.dwg",
                              "test/test-data/2007/Spline.dwg",
                              "test/test-data/2007/Text.dwg",
+                             "test/test-data/2010/Arc.dwg",
+                             "test/test-data/2010/circle.dwg",
+                             "test/test-data/2010/Constraints.dwg",
+                             "test/test-data/2010/ConstructionLine.dwg",
+                             "test/test-data/2010/Donut.dwg",
+                             "test/test-data/2010/Ellipse.dwg",
+                             "test/test-data/2010/gh209_1.dwg",
+                             "test/test-data/2010/Helix.dwg",
+                             "test/test-data/2010/Leader.dwg",
+                             "test/test-data/2010/Line.dwg",
+                             "test/test-data/2010/Multiline.dwg",
+                             "test/test-data/2010/Point.dwg",
+                             "test/test-data/2010/Polygon.dwg",
+                             "test/test-data/2010/Polyline.dwg",
+                             "test/test-data/2010/PolyLine3D.dwg",
+                             "test/test-data/2010/RAY.dwg",
+                             "test/test-data/2010/Spline.dwg",
+                             "test/test-data/2010/Text.dwg",
+                             "test/test-data/2013/Arc.dwg",
+                             "test/test-data/2013/circle.dwg",
+                             "test/test-data/2013/Constraints.dwg",
+                             "test/test-data/2013/ConstructionLine.dwg",
+                             "test/test-data/2013/Donut.dwg",
+                             "test/test-data/2013/Ellipse.dwg",
+                             "test/test-data/2013/gh109_1.dwg",
+                             "test/test-data/2013/gh44-error.dwg",
+                             "test/test-data/2013/Helix.dwg",
+                             "test/test-data/2013/Leader.dwg",
+                             "test/test-data/2013/Line.dwg",
+                             "test/test-data/2013/Multiline.dwg",
+                             "test/test-data/2013/Point.dwg",
+                             "test/test-data/2013/Polygon.dwg",
+                             "test/test-data/2013/Polyline.dwg",
+                             "test/test-data/2013/PolyLine3D.dwg",
+                             "test/test-data/2013/RAY.dwg",
+                             "test/test-data/2013/Spline.dwg",
+                             "test/test-data/2013/Text.dwg",
+                             "test/test-data/2018/Arc.dwg",
+                             "test/test-data/2018/circle.dwg",
+                             "test/test-data/2018/Constraints.dwg",
+                             "test/test-data/2018/ConstructionLine.dwg",
+                             "test/test-data/2018/Donut.dwg",
+                             "test/test-data/2018/Dynblocks.dwg",
+                             "test/test-data/2018/Ellipse.dwg",
+                             "test/test-data/2018/Helix.dwg",
+                             "test/test-data/2018/Leader.dwg",
+                             "test/test-data/2018/Line.dwg",
+                             "test/test-data/2018/LiveSection1.dwg",
+                             "test/test-data/2018/Multiline.dwg",
+                             "test/test-data/2018/Point.dwg",
+                             "test/test-data/2018/Polygon.dwg",
+                             "test/test-data/2018/Polyline.dwg",
+                             "test/test-data/2018/PolyLine3D.dwg",
+                             "test/test-data/2018/RAY.dwg",
+                             "test/test-data/2018/Spline.dwg",
+                             "test/test-data/2018/Text.dwg",
                              "test/test-data/example_2000.dwg",
                              "test/test-data/example_2004.dwg",
                              "test/test-data/example_2007.dwg",
