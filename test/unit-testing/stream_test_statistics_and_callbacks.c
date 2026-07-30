@@ -397,6 +397,15 @@ hash_append_3bd (unsigned long long hash, BITCODE_3BD point)
 }
 
 static unsigned long long
+hash_append_3rd (unsigned long long hash, BITCODE_3RD point)
+{
+  hash = hash_append_double (hash, point.x);
+  hash = hash_append_double (hash, point.y);
+  hash = hash_append_double (hash, point.z);
+  return hash;
+}
+
+static unsigned long long
 hash_ref_array (BITCODE_H *refs, BITCODE_BL num_refs)
 {
   BITCODE_BL i;
@@ -1106,6 +1115,16 @@ entity_semantic_hash (const Dwg_Object *obj)
           hash = hash_append_3bd (hash, line->end);
           hash = hash_append_double (hash, line->thickness);
           hash = hash_append_3bd (hash, line->extrusion);
+        }
+      break;
+    case DWG_TYPE__3DLINE:
+      if (entity->tio._3DLINE)
+        {
+          Dwg_Entity__3DLINE *line = entity->tio._3DLINE;
+          hash = hash_append_3rd (hash, line->start);
+          hash = hash_append_3rd (hash, line->end);
+          hash = hash_append_double (hash, line->thickness);
+          hash = hash_append_3rd (hash, line->extrusion);
         }
       break;
     case DWG_TYPE_MTEXT:

@@ -889,8 +889,9 @@ test_generated_pre_r11_version_stream (void)
     { R_2_0b, "generated R2.0 beta" }, { R_2_0, "generated R2.0" },
     { R_2_21, "generated R2.21" },     { R_2_22, "generated R2.22" },
     { R_2_4, "generated R2.4" },       { R_2_5, "generated R2.5" },
-    { R_9c1, "generated R9c1" },       { R_11b1, "generated R11b1" },
-    { R_11b2, "generated R11b2" },
+    { R_9c1, "generated R9c1" },       { R_10, "generated R10" },
+    { R_11b1, "generated R11b1" },     { R_11b2, "generated R11b2" },
+    { R_11, "generated R11" },
   };
   size_t i;
 
@@ -901,11 +902,25 @@ test_generated_pre_r11_version_stream (void)
       Dwg_Data *gen;
       Dwg_Object *mspace;
       Dwg_Object_BLOCK_HEADER *hdr;
+      Dwg_Entity_LINE *line;
+      Dwg_Entity__3DLINE *line3d;
+      Dwg_Object *line_obj;
       dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
       dwg_point_3d pt2 = { 3.0, 4.0, 0.0 };
       char path[128];
+      int expect_3dline;
+      int line_error = 0;
       int error;
+      BITCODE_BL num_objects;
 
+      expect_3dline
+          = versions[i].version >= R_2_4 && versions[i].version < R_10;
+      if (expect_3dline)
+        {
+          pt1.z = 5.0;
+          pt2.z = 6.0;
+          fixture.required_fixedtype = DWG_TYPE__3DLINE;
+        }
       snprintf (path, sizeof (path), "stream_prer11_v%u_%ld_%ld.dwg",
                 (unsigned)versions[i].version, stream_test_process_id (),
                 (long)time (NULL));
@@ -924,9 +939,60 @@ test_generated_pre_r11_version_stream (void)
           return 1;
         }
       hdr = mspace->tio.object->tio.BLOCK_HEADER;
-      if (!dwg_add_LINE (hdr, &pt1, &pt2))
+      num_objects = gen->num_objects;
+      line = dwg_add_LINE (hdr, &pt1, &pt2);
+      if (expect_3dline)
+        {
+          if (line || gen->num_objects != num_objects)
+            {
+              printf ("%s accepted an unsafe LINE return for nonzero Z\n",
+                      versions[i].label);
+              dwg_free (gen);
+              return 1;
+            }
+          line3d = dwg_add_3DLINE (hdr, &pt1, &pt2);
+          if (!line3d)
+            {
+              printf ("%s failed to add 3DLINE\n", versions[i].label);
+              dwg_free (gen);
+              return 1;
+            }
+          line_obj = dwg_ent_generic_to_object (line3d, &line_error);
+        }
+      else if (!line)
         {
           printf ("%s failed to add LINE\n", versions[i].label);
+          dwg_free (gen);
+          return 1;
+        }
+      else
+        line_obj = dwg_ent_generic_to_object (line, &line_error);
+      if (expect_3dline
+          && (line_error || !line_obj
+              || line_obj->type != DWG_TYPE_3DLINE_r11
+              || line_obj->fixedtype != DWG_TYPE__3DLINE
+              || !line_obj->tio.entity
+              || !line_obj->tio.entity->tio._3DLINE
+              || line_obj->tio.entity->tio._3DLINE->start.x != pt1.x
+              || line_obj->tio.entity->tio._3DLINE->start.y != pt1.y
+              || line_obj->tio.entity->tio._3DLINE->start.z != pt1.z
+              || line_obj->tio.entity->tio._3DLINE->end.x != pt2.x
+              || line_obj->tio.entity->tio._3DLINE->end.y != pt2.y
+              || line_obj->tio.entity->tio._3DLINE->end.z != pt2.z
+              || (line_obj->tio.entity->opts_r11 & 3) != 3))
+        {
+          printf ("%s did not allocate a valid 3DLINE for nonzero Z\n",
+                  versions[i].label);
+          dwg_free (gen);
+          return 1;
+        }
+      if ((versions[i].version == R_10 || versions[i].version == R_11)
+          && (line_error || !line_obj || !line_obj->tio.entity
+              || !(line_obj->tio.entity->flag_r11
+                   & FLAG_R11_HAS_ELEVATION)))
+        {
+          printf ("%s LINE did not preserve the 2D R11 layout flag\n",
+                  versions[i].label);
           dwg_free (gen);
           return 1;
         }

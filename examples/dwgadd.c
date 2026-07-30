@@ -1131,7 +1131,7 @@ dwg_add_dat (Dwg_Data **dwgp, Bit_Chain *dat)
         LOG_TRACE ("add_3DLINE %s (%f %f %f) (%f %f %f)\n", hdr_s, pt1.x,
                    pt1.y, pt1.z, pt2.x, pt2.y, pt2.z);
         CHK_MISSING_BLOCK_HEADER
-        if (version < R_11)
+        if (version <= R_10)
           ent = (lastent_t){ .u._3dline = dwg_add_3DLINE (hdr, &pt1, &pt2),
                              .type = DWG_TYPE__3DLINE };
         else

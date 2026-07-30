@@ -141,6 +141,9 @@ dwg_api_so_version (void)
 /**
  * Return an object fieldvalue
  */
+#define DWG_API_ENTITY_NAME(OBJECT)                                           \
+  ((#OBJECT)[0] == '_' ? &(#OBJECT)[1] : #OBJECT)
+
 #ifndef HAVE_NONNULL
 #  define dwg_get_OBJECT(name, OBJECT)                                        \
     EXPORT bool dwg_get_##OBJECT (const dwg_##name *restrict name,            \
@@ -148,8 +151,9 @@ dwg_api_so_version (void)
                                   void *restrict out)                         \
     {                                                                         \
       if (name && fieldname && out)                                           \
-        return dwg_dynapi_entity_value ((void *)name, #OBJECT, fieldname,     \
-                                        out, NULL);                           \
+        return dwg_dynapi_entity_value ((void *)name,                         \
+                                        DWG_API_ENTITY_NAME (OBJECT),         \
+                                        fieldname, out, NULL);                \
       else                                                                    \
         return false;                                                         \
     }                                                                         \
@@ -158,8 +162,8 @@ dwg_api_so_version (void)
                                   void *restrict value)                       \
     {                                                                         \
       if (name && fieldname && value)                                         \
-        return dwg_dynapi_entity_set_value ((void *)name, #OBJECT, fieldname, \
-                                            value, 1);                        \
+        return dwg_dynapi_entity_set_value (                                  \
+            (void *)name, DWG_API_ENTITY_NAME (OBJECT), fieldname, value, 1); \
       else                                                                    \
         return false;                                                         \
     }
@@ -169,15 +173,16 @@ dwg_api_so_version (void)
                                   const char *restrict fieldname,             \
                                   void *restrict out)                         \
     {                                                                         \
-      return dwg_dynapi_entity_value ((void *)name, #OBJECT, fieldname, out,  \
-                                      NULL);                                  \
+      return dwg_dynapi_entity_value ((void *)name,                           \
+                                      DWG_API_ENTITY_NAME (OBJECT), fieldname, \
+                                      out, NULL);                             \
     }                                                                         \
     EXPORT bool dwg_set_##OBJECT (const dwg_##name *restrict name,            \
                                   const char *restrict fieldname,             \
                                   void *restrict value)                       \
     {                                                                         \
-      return dwg_dynapi_entity_set_value ((void *)name, #OBJECT, fieldname,   \
-                                          value, 0);                          \
+      return dwg_dynapi_entity_set_value (                                    \
+          (void *)name, DWG_API_ENTITY_NAME (OBJECT), fieldname, value, 0);   \
     }
 #endif
 
@@ -208,6 +213,7 @@ CAST_DWG_OBJECT_TO_OBJECT (BLOCK_HEADER)
 
 // clang-format: off
 dwg_get_OBJECT (ent__3dface, _3DFACE)
+dwg_get_OBJECT (ent__3dline, _3DLINE)
 dwg_get_OBJECT (ent__3dsolid, _3DSOLID)
 dwg_get_OBJECT (ent_arc, ARC)
 dwg_get_OBJECT (ent_attdef, ATTDEF)
@@ -26663,9 +26669,17 @@ dwg_add_LINE (Dwg_Object_BLOCK_HEADER *restrict blkhdr,
               const dwg_point_3d *restrict start_pt,
               const dwg_point_3d *restrict end_pt)
 {
-  API_ADD_ENTITY (LINE);
+  API_ADD_PREP (LINE);
   ADD_CHECK_3DPOINT (start_pt);
   ADD_CHECK_3DPOINT (end_pt);
+  if (dwg->header.version >= R_2_4 && dwg->header.version < R_10
+      && (start_pt->z != 0.0 || end_pt->z != 0.0))
+    {
+      LOG_ERROR ("Use dwg_add_3DLINE for nonzero Z in pre-R10 DWG");
+      return NULL;
+    }
+
+  API_ADD_ENTITY2 (LINE);
   _obj->start.x = start_pt->x;
   _obj->start.y = start_pt->y;
   _obj->start.z = start_pt->z;
@@ -26675,22 +26689,6 @@ dwg_add_LINE (Dwg_Object_BLOCK_HEADER *restrict blkhdr,
 
   if (dwg->header.version <= R_11)
     obj->type = DWG_TYPE_LINE_r11;
-  // Re-type to 3DLINE for pre-R10 versions when z != 0
-  if (dwg->header.version >= R_2_4 && dwg->header.version < R_10)
-    {
-      if (_obj->start.z != 0.0)
-        {
-          obj->type = DWG_TYPE_3DLINE_r11;
-          obj->fixedtype = DWG_TYPE__3DLINE;
-          obj->tio.entity->opts_r11 |= 1;
-        }
-      if (_obj->end.z != 0.0)
-        {
-          obj->type = DWG_TYPE_3DLINE_r11;
-          obj->fixedtype = DWG_TYPE__3DLINE;
-          obj->tio.entity->opts_r11 |= 2;
-        }
-    }
   // R_10 has 3DLINE entity but it's duplicative with LINE
   if ((dwg->header.version == R_10 || dwg->header.version == R_11)
       && _obj->start.z == 0.0 && _obj->end.z == 0.0)

@@ -1079,6 +1079,10 @@ E.g.
 @deftypefn {Function} Dwg_Entity_LINE *line = dwg_add_LINE (Dwg_Object_BLOCK_HEADER *modelspace,
                                                             dwg_point_3d *start_pt, dwg_point_3d *end_pt)
 @end deftypefn
+For R2.4 through R9 DWGs, use @code{dwg_add_3DLINE} when either Z
+coordinate is nonzero.  Those formats store such geometry as a physically
+different 3DLINE entity, so @code{dwg_add_LINE} returns @code{NULL} for that
+combination rather than returning a pointer with an incompatible entity type.
 @deftypefn {Function} Dwg_Entity_TEXT* dwg_add_TEXT (Dwg_Object_BLOCK_HEADER *restrict @var{blkhdr}, const char* restrict @var{text_value}, const dwg_point_3d *restrict @var{ins_pt}, const double {height})
 
 Adds a TEXT entity to the ModelSpace, PaperSpace or a Block. Entity specific arguments are here the text, the point (as pointer to the struct of 3 doubles), and the text height.

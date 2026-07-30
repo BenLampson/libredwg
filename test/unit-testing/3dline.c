@@ -15,4 +15,9 @@ api_process (dwg_object *obj)
   CHK_ENTITY_3RD (_3dline, 3DLINE, end);
   CHK_ENTITY_3RD (_3dline, 3DLINE, extrusion);
   CHK_ENTITY_TYPE (_3dline, 3DLINE, thickness, RD);
+
+  if (!dwg_get__3DLINE (_3dline, "thickness", &thickness))
+    fail ("dwg_get__3DLINE");
+  if (!dwg_set__3DLINE (_3dline, "thickness", &thickness))
+    fail ("dwg_set__3DLINE");
 }
