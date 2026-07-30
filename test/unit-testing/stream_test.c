@@ -228,6 +228,7 @@ static int test_invalid_version_stream_file_ex_rejects (void);
 static int test_invalid_versions_reject (void);
 static int test_generated_minsert_stream_fixture (Dwg_Version_Type version,
                                                   const char *label);
+static int test_proxy_handle_encoding_preserved (void);
 static int test_modern_header_version_stream (void);
 static int test_pre_r13_minsert_opts_stream (void);
 static int test_pre_r2_legacy_entity_stream (void);
@@ -354,6 +355,9 @@ main (void)
     return 1;
   if (test_generated_minsert_stream_fixture (
           R_2007, "generated R2007 MINSERT stream parity ok"))
+    return 1;
+  stream_trace_stage ("test_proxy_handle_encoding_preserved");
+  if (test_proxy_handle_encoding_preserved ())
     return 1;
   if (test_generated_minsert_stream_rejects (R_2010b, "R2010 beta MINSERT"))
     return 1;

@@ -4706,6 +4706,20 @@ dwg_new_ref (Dwg_Data *restrict dwg)
   return ref;
 }
 
+EXPORT Dwg_Object_Ref *
+dwg_decode_proxy_handleref (Dwg_Data *restrict dwg,
+                            const Dwg_Handle *restrict handle)
+{
+  Dwg_Object_Ref *ref = dwg_new_ref (dwg);
+  if (!ref)
+    return NULL;
+  ref->handleref = *handle;
+  ref->handleref.is_global = 1;
+  ref->absolute_ref = handle->value;
+  ref->obj = NULL;
+  return ref;
+}
+
 /* Store an object reference in a separate dwg->object_ref array
    which is the id for handles, i.e. DXF 5, 330. */
 Dwg_Object_Ref *

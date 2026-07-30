@@ -84,6 +84,9 @@ Dwg_Object_Ref *dwg_decode_handleref_with_code (Bit_Chain *restrict hdl_dat,
                                                 Dwg_Object *restrict obj,
                                                 Dwg_Data *restrict dwg,
                                                 unsigned int code);
+/* Internal PROXY_OBJECT decoder helper, exported for stream_test only. */
+EXPORT Dwg_Object_Ref *dwg_decode_proxy_handleref (
+    Dwg_Data *restrict dwg, const Dwg_Handle *restrict handle);
 int dwg_decode_header_variables (Bit_Chain *dat, Bit_Chain *hdl_dat,
                                  Bit_Chain *str_dat, Dwg_Data *restrict dwg);
 int dwg_decode_add_object (Dwg_Data *restrict dwg, Bit_Chain *dat,

@@ -119,3 +119,39 @@ The Stream improvement is 8.46%, but Stream remains slower than the blocking
 reader.  This result is not evidence that allocation tuning alone can close
 the architectural gap; downstream spool and publication costs remain separate
 work items.
+
+## 2026-07-31: preserve raw PROXY_OBJECT handle encoding
+
+Status: green without normalization on all customer DWGs smaller than 30 MiB.
+
+Root cause:
+
+- One R2007 customer drawing exposed four `PROXY_OBJECT` references whose raw
+  encoding was `code=5, size=1, value=0`.
+- Blocking decode retained `5.1.0` through its global reference pool, while an
+  isolated Stream host rebuilt the reference as canonical `5.0.0`.
+- `dwg.spec` read the complete `Dwg_Handle`, but then discarded its encoded
+  `size` by calling `dwg_add_handleref` with only `code` and `value`.
+
+Changes:
+
+- Added an internal PROXY decoder helper which creates an independent global
+  reference and copies the complete raw `Dwg_Handle`.
+- Changed `PROXY_OBJECT.objids` decode to use the raw helper and report
+  allocation failure.
+- Added a regression test for the non-canonical encodings `5.1.0` and
+  `5.3.1`; code, size, value, and absolute reference must all survive exactly.
+
+Green evidence:
+
+- The CMake `stream_test` target and its complete generated/repository run
+  pass.
+- Canonical Autotools `make check` passes all 255 unit tests; the program and
+  example suites also pass.
+- Recursive strict comparison of 14 customer DWGs (162.28 MiB and 2,897,546
+  objects) passes 14/14 with `decode_errors=0` and `full=0`.
+- The formerly failing R2007 drawing now has all 89,034 objects byte-identical
+  to blocking decode without test-side normalization.
+- A post-fix three-run warm-cache `dwgprobe -d` sweep passes all 14 files.  The
+  sum of per-file medians is 6.852 seconds versus 7.150 seconds in the prior
+  run, so no Stream-open performance regression was observed.

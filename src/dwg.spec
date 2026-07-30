@@ -5824,8 +5824,12 @@ DWG_OBJECT (PROXY_OBJECT)
         break; // error
       else
         {
-          BITCODE_H ref
-              = dwg_add_handleref (dwg, hdl.code, hdl.value, NULL);
+          BITCODE_H ref = dwg_decode_proxy_handleref (dwg, &hdl);
+          if (!ref)
+            {
+              error |= DWG_ERR_OUTOFMEM;
+              break;
+            }
           PUSH_HV (_obj, num_objids, objids, ref);
         }
     }

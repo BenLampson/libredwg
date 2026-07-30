@@ -187,6 +187,47 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
 }
 
 static int
+test_proxy_handle_encoding_preserved (void)
+{
+  static const Dwg_Handle handles[]
+      = { { 5, 1, 0, 0 }, { 5, 3, 1, 0 } };
+  Dwg_Data dwg = { 0 };
+  size_t i;
+  int failed = 0;
+
+  dwg.opts = DWG_OPTS_STREAM_DECODE;
+  for (i = 0; i < sizeof (handles) / sizeof (handles[0]); i++)
+    {
+      Dwg_Object_Ref *ref
+          = dwg_decode_proxy_handleref (&dwg, &handles[i]);
+      if (!ref)
+        {
+          printf ("failed to allocate raw PROXY_OBJECT handle %lu\n",
+                  (unsigned long)i);
+          failed = 1;
+          break;
+        }
+      if (ref->handleref.code != handles[i].code
+          || ref->handleref.size != handles[i].size
+          || ref->handleref.value != handles[i].value
+          || ref->absolute_ref != handles[i].value)
+        {
+          printf ("raw PROXY_OBJECT handle %lu changed: got " FORMAT_REF
+                  " expected (" FORMAT_H ") abs:" FORMAT_HV "\n",
+                  (unsigned long)i, ARGS_REF (ref), ARGS_H (handles[i]),
+                  handles[i].value);
+          failed = 1;
+          break;
+        }
+    }
+
+  for (i = 0; i < dwg.num_object_refs; i++)
+    free (dwg.object_ref[i]);
+  free (dwg.object_ref);
+  return failed;
+}
+
+static int
 test_generated_minsert_stream_rejects (Dwg_Version_Type version,
                                        const char *label)
 {
