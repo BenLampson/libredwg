@@ -903,14 +903,16 @@ read_data_section_page (Bit_Chain *page_dat, Bit_Chain *dat,
   decomp_end = &decomp[section_page->uncomp_size];
 
   dat->byte = page->offset;
-  if (section_page->comp_size != section_page->uncomp_size)
+  if (section_page->comp_size != section_page->uncomp_size
+      || (int64_t)page->size
+             == page_size_if_rs_coded (section_page->comp_size))
     {
       error = read_data_page (dat, decomp, page->size, section_page->comp_size,
                               section_page->uncomp_size, decomp_end);
       if (error)
         {
           free (decomp);
-          LOG_ERROR ("Failed to read compressed page");
+          LOG_ERROR ("Failed to read page");
           return error;
         }
     }

@@ -1106,6 +1106,18 @@ entity_semantic_hash (const Dwg_Object *obj)
       if (entity->tio.MINSERT)
         hash = hash_append_minsert (hash, entity->tio.MINSERT);
       break;
+    case DWG_TYPE_ARC:
+      if (entity->tio.ARC)
+        {
+          Dwg_Entity_ARC *arc = entity->tio.ARC;
+          hash = hash_append_3bd (hash, arc->center);
+          hash = hash_append_double (hash, arc->radius);
+          hash = hash_append_double (hash, arc->thickness);
+          hash = hash_append_3bd (hash, arc->extrusion);
+          hash = hash_append_double (hash, arc->start_angle);
+          hash = hash_append_double (hash, arc->end_angle);
+        }
+      break;
     case DWG_TYPE_LINE:
       if (entity->tio.LINE)
         {
@@ -1125,6 +1137,18 @@ entity_semantic_hash (const Dwg_Object *obj)
           hash = hash_append_3rd (hash, line->end);
           hash = hash_append_double (hash, line->thickness);
           hash = hash_append_3rd (hash, line->extrusion);
+        }
+      break;
+    case DWG_TYPE_POINT:
+      if (entity->tio.POINT)
+        {
+          Dwg_Entity_POINT *point = entity->tio.POINT;
+          hash = hash_append_double (hash, point->x);
+          hash = hash_append_double (hash, point->y);
+          hash = hash_append_double (hash, point->z);
+          hash = hash_append_double (hash, point->thickness);
+          hash = hash_append_3bd (hash, point->extrusion);
+          hash = hash_append_double (hash, point->x_ang);
         }
       break;
     case DWG_TYPE_MTEXT:

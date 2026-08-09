@@ -902,16 +902,27 @@ test_generated_pre_r11_version_stream (void)
       Dwg_Data *gen;
       Dwg_Object *mspace;
       Dwg_Object_BLOCK_HEADER *hdr;
+      Dwg_Entity_ARC *arc;
       Dwg_Entity_LINE *line;
       Dwg_Entity__3DLINE *line3d;
+      Dwg_Entity_POINT *point;
+      Dwg_Data decoded = { 0 };
       Dwg_Object *line_obj;
       dwg_point_3d pt1 = { 1.0, 2.0, 0.0 };
       dwg_point_3d pt2 = { 3.0, 4.0, 0.0 };
+      dwg_point_3d arc_center = { 7.0, 8.0, 9.0 };
+      dwg_point_3d elevated_point = { 1.0, 2.0, 5.0 };
+      dwg_point_3d invalid_point = { 1.0, 2.0, 3.0 };
       char path[128];
       int expect_3dline;
+      int found_arc_elevation = 0;
+      int found_point_elevation = 0;
       int line_error = 0;
       int error;
+      BITCODE_BL j;
       BITCODE_BL num_objects;
+      BITCODE_BL num_owned;
+      BITCODE_RS numentities;
 
       expect_3dline
           = versions[i].version >= R_2_4 && versions[i].version < R_10;
@@ -939,6 +950,30 @@ test_generated_pre_r11_version_stream (void)
           return 1;
         }
       hdr = mspace->tio.object->tio.BLOCK_HEADER;
+      if (versions[i].version < R_2_4)
+        {
+          num_objects = gen->num_objects;
+          num_owned = hdr->num_owned;
+          numentities = gen->header_vars.numentities;
+          point = dwg_add_POINT (hdr, &invalid_point);
+          if (point || gen->num_objects != num_objects
+              || hdr->num_owned != num_owned
+              || gen->header_vars.numentities != numentities)
+            {
+              printf ("%s retained an invalid 3D POINT\n", versions[i].label);
+              dwg_free (gen);
+              return 1;
+            }
+          point = dwg_add_POINT (hdr, &pt1);
+          if (!point)
+            {
+              printf ("%s failed to add a valid 2D POINT\n",
+                      versions[i].label);
+              dwg_free (gen);
+              return 1;
+            }
+          fixture.required_fixedtype = DWG_TYPE_POINT;
+        }
       num_objects = gen->num_objects;
       line = dwg_add_LINE (hdr, &pt1, &pt2);
       if (expect_3dline)
@@ -996,6 +1031,28 @@ test_generated_pre_r11_version_stream (void)
           dwg_free (gen);
           return 1;
         }
+      if (expect_3dline)
+        {
+          point = dwg_add_POINT (hdr, &elevated_point);
+          if (!point)
+            {
+              printf ("%s failed to add an elevated POINT\n",
+                      versions[i].label);
+              dwg_free (gen);
+              return 1;
+            }
+        }
+      if (versions[i].version >= R_10)
+        {
+          arc = dwg_add_ARC (hdr, &arc_center, 1.0, 0.0, 1.0);
+          if (!arc)
+            {
+              printf ("%s failed to add an elevated ARC\n",
+                      versions[i].label);
+              dwg_free (gen);
+              return 1;
+            }
+        }
       error = dwg_write_file (path, gen);
       dwg_free (gen);
       if (error >= DWG_ERR_CRITICAL)
@@ -1003,6 +1060,41 @@ test_generated_pre_r11_version_stream (void)
           printf ("%s write failed: error=0x%x\n", versions[i].label, error);
           remove (path);
           return 1;
+        }
+      if (expect_3dline || versions[i].version >= R_10)
+        {
+          error = dwg_read_file (path, &decoded);
+          if (error >= DWG_ERR_CRITICAL)
+            {
+              printf ("%s elevation blocking read failed: error=0x%x\n",
+                      versions[i].label, error);
+              dwg_free (&decoded);
+              remove (path);
+              return 1;
+            }
+          for (j = 0; j < decoded.num_objects; j++)
+            {
+              Dwg_Object *obj = &decoded.object[j];
+
+              if (expect_3dline && obj->fixedtype == DWG_TYPE_POINT
+                  && obj->tio.entity && obj->tio.entity->tio.POINT
+                  && obj->tio.entity->tio.POINT->z == elevated_point.z)
+                found_point_elevation = 1;
+              if (versions[i].version >= R_10
+                  && obj->fixedtype == DWG_TYPE_ARC && obj->tio.entity
+                  && obj->tio.entity->tio.ARC
+                  && obj->tio.entity->tio.ARC->center.z == arc_center.z)
+                found_arc_elevation = 1;
+            }
+          dwg_free (&decoded);
+          if ((expect_3dline && !found_point_elevation)
+              || (versions[i].version >= R_10 && !found_arc_elevation))
+            {
+              printf ("%s lost POINT/ARC elevation in blocking roundtrip\n",
+                      versions[i].label);
+              remove (path);
+              return 1;
+            }
         }
       error = test_pre_r11_fixture_path (path, &fixture);
       remove (path);

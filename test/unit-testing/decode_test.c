@@ -14,6 +14,7 @@ extern unsigned int loglevel;
 
 #define IS_DECODER
 #include <stdlib.h>
+#include "stream/stream_r2007_internal.h"
 // #include "common.h"
 // CLANG_DIAG_IGNORE (-Wpragma-pack)
 #include "decode.c"
@@ -325,6 +326,79 @@ read_data_section_tests (void)
   free (sec_dat.chain);
 }
 
+/* An R2007 data page can be Reed-Solomon coded even when its payload is not
+ * compressed.  The Stream reader decodes one page at a time through
+ * read_data_section_page(), so exercise both possible layouts: a two-block
+ * RS page, whose payload bytes are interleaved on disk, and a smaller
+ * verbatim page with the same uncompressed payload. */
+static void
+read_data_section_page_tests (void)
+{
+  enum
+  {
+    payload_size = 252,
+    rs_data_size = 251,
+    rs_block_count = 2,
+    rs_page_size = 512,
+    verbatim_page_size = 256
+  };
+  Bit_Chain dat = { 0 };
+  Bit_Chain page_dat = { 0 };
+  BITCODE_RC payload[payload_size];
+  BITCODE_RC rs_blocks[rs_data_size * rs_block_count];
+  BITCODE_RC rs_page[rs_page_size];
+  BITCODE_RC verbatim_page[verbatim_page_size];
+  r2007_page page = { 0 };
+  r2007_section_page section_page = { 0 };
+  size_t i;
+  size_t j;
+  int error;
+
+  for (i = 0; i < sizeof (payload); i++)
+    payload[i] = (BITCODE_RC)((i * 37U + 11U) & 0xffU);
+
+  memset (rs_blocks, 0, sizeof (rs_blocks));
+  memcpy (rs_blocks, payload, sizeof (payload));
+  memset (rs_page, 0xcc, sizeof (rs_page));
+  for (i = 0; i < rs_block_count; i++)
+    {
+      for (j = 0; j < rs_data_size; j++)
+        rs_page[j * rs_block_count + i] = rs_blocks[i * rs_data_size + j];
+    }
+
+  page.id = 1;
+  page.size = sizeof (rs_page);
+  section_page.id = page.id;
+  section_page.uncomp_size = sizeof (payload);
+  section_page.comp_size = sizeof (payload);
+  dat.chain = rs_page;
+  dat.size = sizeof (rs_page);
+
+  error = read_data_section_page (&page_dat, &dat, &page, &section_page);
+  if (error == 0 && page_dat.size == sizeof (payload)
+      && memcmp (page_dat.chain, payload, sizeof (payload)) == 0)
+    pass ();
+  else
+    fail ("read_data_section_page: uncompressed RS page not decoded: 0x%x",
+          error);
+  free (page_dat.chain);
+  memset (&page_dat, 0, sizeof (page_dat));
+
+  memset (verbatim_page, 0xdd, sizeof (verbatim_page));
+  memcpy (verbatim_page, payload, sizeof (payload));
+  page.size = sizeof (verbatim_page);
+  dat.chain = verbatim_page;
+  dat.size = sizeof (verbatim_page);
+
+  error = read_data_section_page (&page_dat, &dat, &page, &section_page);
+  if (error == 0 && page_dat.size == sizeof (payload)
+      && memcmp (page_dat.chain, payload, sizeof (payload)) == 0)
+    ok ("read_data_section_page: uncompressed RS and verbatim pages");
+  else
+    fail ("read_data_section_page: verbatim page not copied: 0x%x", error);
+  free (page_dat.chain);
+}
+
 /* Regression test for GHSA-2m5x-9p64-6m3f: read_2004_compressed_section()
  * computed
  *   max_decomp_size = info->num_sections * info->max_decomp_size;
@@ -432,6 +506,7 @@ main (int argc, char const *argv[])
   decompress_R2004_section_tests ();
   decompress_r2007_tests ();
   read_data_section_tests ();
+  read_data_section_page_tests ();
   read_2004_compressed_section_tests ();
   decode_3dsolid_tests ();
 

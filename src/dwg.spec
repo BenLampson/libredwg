@@ -1471,6 +1471,10 @@ DWG_ENTITY (ARC)
       FIELD_3RD (extrusion, 210);
     if (R11OPTS (2))
       FIELD_RD (center.z, 30);
+    DECODER {
+      if (R11FLAG (FLAG_R11_HAS_ELEVATION))
+        _obj->center.z = _ent->elevation_r11;
+    }
   }
   LATER_VERSIONS {
     FIELD_3BD (center, 10);
@@ -2040,6 +2044,10 @@ DWG_ENTITY (POINT)
       FIELD_3RD (extrusion, 210);
     if (R11OPTS (2))
       FIELD_RD (x_ang, 50);
+    DECODER {
+      if (R11FLAG (FLAG_R11_HAS_ELEVATION))
+        _obj->z = _ent->elevation_r11;
+    }
   } LATER_VERSIONS {
     FIELD_BD (x, 10);
     FIELD_BD (y, 20);
