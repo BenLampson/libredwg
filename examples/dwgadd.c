@@ -602,6 +602,14 @@ next_line (char *restrict p, const char *restrict end)
   return p;
 }
 
+static int
+match_line_cmd (const char *restrict p, const char *restrict cmd)
+{
+  const size_t len = strlen (cmd);
+  return memBEGIN (p, cmd, len)
+         && (p[len] == '\n' || p[len] == '\r' || p[len] == '\0');
+}
+
 static ATTRIBUTE_NORETURN void
 fn_error (const char *msg)
 {
@@ -632,6 +640,7 @@ dwg_add_dat (Dwg_Data **dwgp, Bit_Chain *dat)
   int i = 0;
   int initial = 1;
   int imperial = 0;
+  int repeat_open = 0;
   BITCODE_BL orig_num = 0;
   typedef struct
   {
@@ -661,6 +670,8 @@ dwg_add_dat (Dwg_Data **dwgp, Bit_Chain *dat)
       Dwg_Entity_DIMENSION_ANG3PT *dimang3pt;
       Dwg_Entity_BLOCK *block;
       Dwg_Entity_ENDBLK *endblk;
+      Dwg_Entity_REPEAT *repeat;
+      Dwg_Entity_ENDREP *endrep;
       Dwg_Entity__3DFACE *_3dface;
       Dwg_Entity__3DSOLID *_3dsolid;
       Dwg_Entity_SOLID *solid;
@@ -1050,7 +1061,7 @@ dwg_add_dat (Dwg_Data **dwgp, Bit_Chain *dat)
       }                                                                       \
     }
 
-      if (memBEGINc (p, "pspace\n"))
+      if (match_line_cmd (p, "pspace"))
         {
           Dwg_Object *pspace = dwg_paper_space_object (dwg);
           if (pspace)
@@ -1062,7 +1073,7 @@ dwg_add_dat (Dwg_Data **dwgp, Bit_Chain *dat)
           else
             fn_error ("Empty pspace object\n");
         }
-      else if (memBEGINc (p, "mspace\n"))
+      else if (match_line_cmd (p, "mspace"))
         {
           if (mspace)
             {
@@ -1243,7 +1254,7 @@ dwg_add_dat (Dwg_Data **dwgp, Bit_Chain *dat)
           // clang-format off
         SET_ENT (block, BLOCK)
       // clang-format on
-      else if (memBEGINc (p, "endblk\n"))
+      else if (match_line_cmd (p, "endblk"))
       {
         LOG_TRACE ("add_ENDBLK\n");
         dwg_add_ENDBLK (hdr);
@@ -1251,6 +1262,41 @@ dwg_add_dat (Dwg_Data **dwgp, Bit_Chain *dat)
       else
           // clang-format off
         SET_ENT (endblk, ENDBLK)
+      // clang-format on
+      else if (match_line_cmd (p, "repeat"))
+      {
+        Dwg_Entity_REPEAT *_repeat;
+        if (repeat_open)
+          fn_error ("Nested REPEAT not allowed\n");
+        LOG_TRACE ("add_REPEAT %s\n", hdr_s);
+        CHK_MISSING_BLOCK_HEADER
+        _repeat = dwg_add_REPEAT (hdr);
+        if (!_repeat)
+          return 1;
+        ent = (lastent_t){ .u.repeat = _repeat, .type = DWG_TYPE_REPEAT };
+        repeat_open = 1;
+      }
+      else
+          // clang-format off
+        SET_ENT (repeat, REPEAT)
+      // clang-format on
+      else if (4
+               == SSCANF_S (p, "endrep %d %d %lf %lf", &i1, &i2, &f1, &f2))
+      {
+        Dwg_Entity_ENDREP *_endrep;
+        if (!repeat_open)
+          fn_error ("Missing REPEAT for ENDREP\n");
+        LOG_TRACE ("add_ENDREP %s %d %d %f %f\n", hdr_s, i1, i2, f1, f2);
+        CHK_MISSING_BLOCK_HEADER
+        _endrep = dwg_add_ENDREP (hdr, i1, i2, f1, f2);
+        if (!_endrep)
+          return 1;
+        ent = (lastent_t){ .u.endrep = _endrep, .type = DWG_TYPE_ENDREP };
+        repeat_open = 0;
+      }
+      else
+          // clang-format off
+        SET_ENT (endrep, ENDREP)
       // clang-format on
       else if (8
                == SSCANF_S (p,
@@ -2218,6 +2264,8 @@ dwg_add_dat (Dwg_Data **dwgp, Bit_Chain *dat)
 
       p = next_line (p, end);
     }
+  if (repeat_open)
+    fn_error ("Missing ENDREP for REPEAT\n");
   // if we added at least one object
   return (dwg->num_objects - orig_num > 0 ? 0 : 1);
 }
