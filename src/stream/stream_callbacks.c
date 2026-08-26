@@ -39,8 +39,8 @@ dwg_stream_emit_decoded_object_ex (
      valid for the callback.  Expose it read-only with the temporary object. */
   stream_dwg.filedeplist = dwg->filedeplist;
   stream_dwg.layout_type = dwg->layout_type;
-  stream_dwg.num_acis_sab_hdl = dwg->num_acis_sab_hdl;
-  stream_dwg.acis_sab_hdl = dwg->acis_sab_hdl;
+  stream_dwg.num_acis_sab_hdl = 0;
+  stream_dwg.acis_sab_hdl = NULL;
   stream_dwg.num_objects = 0;
   stream_dwg.num_object_refs = 0;
   stream_dwg.num_alloced_objects = 1;
@@ -85,6 +85,14 @@ done:
       stream_dwg.object_ref[i] = NULL;
     }
   free (stream_dwg.object_ref);
+  /* These are non-global refs from dwg_add_handleref_free.  Neither the
+     decoded object nor object_ref owns them. */
+  for (i = 0; i < stream_dwg.num_acis_sab_hdl; i++)
+    {
+      free (stream_dwg.acis_sab_hdl[i]);
+      stream_dwg.acis_sab_hdl[i] = NULL;
+    }
+  free (stream_dwg.acis_sab_hdl);
   if (emitted_error)
     {
       if (callback_error)

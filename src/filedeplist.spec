@@ -27,10 +27,19 @@
     FIELD_T32 (files[rcount1].filepath, 0);
     FIELD_T32 (files[rcount1].fingerprint, 0);
     FIELD_T32 (files[rcount1].version, 0);
-    FIELD_RL (files[rcount1].feature_index, 0);
-    FIELD_RL (files[rcount1].timestamp, 0);
-    FIELD_RL (files[rcount1].filesize, 0);
-    FIELD_RS (files[rcount1].affects_graphics, 0);
-    FIELD_RL (files[rcount1].refcount, 0);
+    PRE (R_2007) {
+      FIELD_RL (files[rcount1].feature_index, 0);
+      FIELD_RL (files[rcount1].timestamp, 0);
+      FIELD_RL (files[rcount1].filesize, 0);
+      FIELD_RS (files[rcount1].affects_graphics, 0);
+      FIELD_RL (files[rcount1].refcount, 0);
+    }
+    SINCE (R_2007) {
+      FIELD_RL (files[rcount1].timestamp, 0);
+      FIELD_RL (files[rcount1].filesize, 0);
+      FIELD_RS (files[rcount1].affects_graphics, 0);
+      FIELD_RL (files[rcount1].refcount, 0);
+      FIELD_RL (files[rcount1].feature_index, 0);
+    }
   END_REPEAT_BLOCK
   END_REPEAT (files)

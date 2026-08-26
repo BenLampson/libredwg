@@ -1,3 +1,153 @@
+typedef struct _emit_acis_isolation_stats
+{
+  const Dwg_Data *host;
+  BITCODE_BL calls;
+  int isolated;
+} Emit_Acis_Isolation_Stats;
+
+static int
+emit_acis_isolation_decoded_object_callback (
+    const Dwg_Stream_Object_Info *restrict info,
+    const Dwg_Object *restrict object, void *restrict user)
+{
+  Emit_Acis_Isolation_Stats *stats = (Emit_Acis_Isolation_Stats *)user;
+
+  (void)info;
+  stats->calls++;
+  stats->isolated = object && object->parent && object->parent != stats->host
+                    && !object->parent->num_acis_sab_hdl
+                    && !object->parent->acis_sab_hdl;
+  return stats->isolated ? 0 : DWG_ERR_INTERNALERROR;
+}
+
+static int
+test_emit_decoded_object_acis_queue_isolated (void)
+{
+  Dwg_Data blocking = { 0 };
+  Dwg_Data host = { 0 };
+  Bit_Chain object_dat = { 0 };
+  Dwg_Stream_Object_Info info = { 0 };
+  Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+  Emit_Acis_Isolation_Stats stats = { 0 };
+  Dwg_Object *source_object = NULL;
+  Dwg_Object_Ref *host_ref = NULL;
+  BITCODE_H *host_queue = NULL;
+  char path[1024];
+  FILE *fp = NULL;
+  size_t prefix_size;
+  size_t object_start;
+  size_t record_size;
+  BITCODE_BL i;
+  int error;
+  int failed = 0;
+
+  if (!stream_test_source_path (path, sizeof (path),
+                                "test/test-data/example_2000.dwg"))
+    return 1;
+  error = dwg_read_file (path, &blocking);
+  if (error >= DWG_ERR_CRITICAL)
+    {
+      printf ("failed to read ACIS isolation fixture: error=0x%x\n", error);
+      dwg_free (&blocking);
+      return 1;
+    }
+  for (i = 0; i < blocking.num_objects; i++)
+    if (blocking.object[i].fixedtype == DWG_TYPE_LINE)
+      {
+        source_object = &blocking.object[i];
+        break;
+      }
+  if (!source_object)
+    {
+      printf ("ACIS isolation fixture has no LINE object\n");
+      dwg_free (&blocking);
+      return 1;
+    }
+
+  prefix_size = source_object->size > 0x7fffU ? 4U : 2U;
+  if (source_object->address < prefix_size
+      || (size_t)source_object->size > SIZE_MAX - prefix_size - 2U)
+    {
+      printf ("invalid ACIS isolation object span\n");
+      dwg_free (&blocking);
+      return 1;
+    }
+  object_start = source_object->address - prefix_size;
+  record_size = prefix_size + (size_t)source_object->size + 2U;
+  if (object_start > LONG_MAX)
+    {
+      printf ("ACIS isolation object address is too large\n");
+      dwg_free (&blocking);
+      return 1;
+    }
+  object_dat.chain = (unsigned char *)malloc (record_size);
+  fp = fopen (path, "rb");
+  if (!object_dat.chain || !fp || fseek (fp, (long)object_start, SEEK_SET) != 0
+      || fread (object_dat.chain, 1, record_size, fp) != record_size)
+    {
+      printf ("failed to load ACIS isolation object record\n");
+      failed = 1;
+      goto done;
+    }
+  fclose (fp);
+  fp = NULL;
+  object_dat.size = record_size;
+  object_dat.version = blocking.header.version;
+  object_dat.from_version = blocking.header.from_version;
+
+  host.header = blocking.header;
+  host.num_classes = blocking.num_classes;
+  host.dwg_class = blocking.dwg_class;
+  host.opts = blocking.opts;
+  host.header_vars = blocking.header_vars;
+  host.filedeplist = blocking.filedeplist;
+  host.layout_type = blocking.layout_type;
+  host_ref = dwg_add_handleref_free (5, 0x1234);
+  host_queue = (BITCODE_H *)malloc (sizeof (*host_queue));
+  if (!host_ref || !host_queue)
+    {
+      printf ("failed to allocate ACIS isolation host queue\n");
+      failed = 1;
+      goto done;
+    }
+  host_queue[0] = host_ref;
+  host.num_acis_sab_hdl = 1;
+  host.acis_sab_hdl = host_queue;
+
+  info.address = source_object->address;
+  info.size = source_object->size;
+  info.handle = source_object->handle;
+  info.type = source_object->type;
+  info.fixedtype = source_object->fixedtype;
+  info.supertype = source_object->supertype;
+  info.version = blocking.header.from_version;
+  callbacks.decoded_object = emit_acis_isolation_decoded_object_callback;
+  stats.host = &host;
+  error = dwg_stream_emit_decoded_object (&host, &object_dat, &info,
+                                          &callbacks, &stats);
+  if (error || stats.calls != 1 || !stats.isolated
+      || host.num_acis_sab_hdl != 1 || host.acis_sab_hdl != host_queue
+      || host.acis_sab_hdl[0] != host_ref)
+    {
+      printf ("emit decoded ACIS queue isolation failed: error=0x%x "
+              "calls=%lu isolated=%d host_count=%u host_unchanged=%d\n",
+              error, (unsigned long)stats.calls, stats.isolated,
+              host.num_acis_sab_hdl,
+              host.acis_sab_hdl == host_queue
+                  && host.acis_sab_hdl[0] == host_ref);
+      failed = 1;
+    }
+
+done:
+  if (fp)
+    fclose (fp);
+  free (object_dat.chain);
+  free (host_ref);
+  free (host_queue);
+  dwg_free (&blocking);
+  return failed;
+}
+
 static int
 test_emit_decoded_object_isolated_host_state (void)
 {
@@ -48,7 +198,7 @@ test_emit_decoded_object_isolated_host_state (void)
                   && dwg.dirty_refs == old_dirty_refs && !dwg.object_map);
       return 1;
     }
-  return 0;
+  return test_emit_decoded_object_acis_queue_isolated ();
 }
 
 static int

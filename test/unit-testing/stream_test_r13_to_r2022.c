@@ -6,8 +6,10 @@ typedef struct _stream_header_capture
 
 typedef struct _stream_filedeplist_capture
 {
+  const Dwg_Data *baseline;
   const char *feature;
   const char *filename;
+  int compare_full;
   BITCODE_BL calls;
   BITCODE_BL matches;
 } Stream_FileDepList_Capture;
@@ -34,6 +36,79 @@ stream_filedeplist_text_equal (const Dwg_Data *restrict dwg,
 }
 
 static int
+stream_filedeplist_text_fields_equal (const Dwg_Data *restrict left_dwg,
+                                      const BITCODE_T32 left,
+                                      const Dwg_Data *restrict right_dwg,
+                                      const BITCODE_T32 right)
+{
+  char *left_utf8;
+  char *right_utf8;
+  int equal;
+
+  if (!left || !right)
+    return left == right;
+  if ((left_dwg->header.from_version < R_2007)
+      != (right_dwg->header.from_version < R_2007))
+    return 0;
+  if (left_dwg->header.from_version < R_2007)
+    return strcmp (left, right) == 0;
+
+  left_utf8 = bit_convert_TU ((BITCODE_TU)left);
+  right_utf8 = bit_convert_TU ((BITCODE_TU)right);
+  if (!left_utf8 || !right_utf8)
+    {
+      free (left_utf8);
+      free (right_utf8);
+      return 0;
+    }
+  equal = strcmp (left_utf8, right_utf8) == 0;
+  free (left_utf8);
+  free (right_utf8);
+  return equal;
+}
+
+static int
+stream_filedeplists_equal (const Dwg_Data *restrict streamed,
+                           const Dwg_Data *restrict baseline)
+{
+  const Dwg_FileDepList *left = &streamed->filedeplist;
+  const Dwg_FileDepList *right = &baseline->filedeplist;
+  BITCODE_RL i;
+
+  if (left->num_features != right->num_features
+      || left->num_files != right->num_files
+      || (left->num_features && (!left->features || !right->features))
+      || (left->num_files && (!left->files || !right->files)))
+    return 0;
+  for (i = 0; i < left->num_features; i++)
+    if (!stream_filedeplist_text_fields_equal (streamed, left->features[i],
+                                               baseline, right->features[i]))
+      return 0;
+  for (i = 0; i < left->num_files; i++)
+    {
+      const Dwg_FileDepList_Files *left_file = &left->files[i];
+      const Dwg_FileDepList_Files *right_file = &right->files[i];
+
+      if (!stream_filedeplist_text_fields_equal (
+              streamed, left_file->filename, baseline, right_file->filename)
+          || !stream_filedeplist_text_fields_equal (
+              streamed, left_file->filepath, baseline, right_file->filepath)
+          || !stream_filedeplist_text_fields_equal (
+              streamed, left_file->fingerprint, baseline,
+              right_file->fingerprint)
+          || !stream_filedeplist_text_fields_equal (
+              streamed, left_file->version, baseline, right_file->version)
+          || left_file->feature_index != right_file->feature_index
+          || left_file->timestamp != right_file->timestamp
+          || left_file->filesize != right_file->filesize
+          || left_file->affects_graphics != right_file->affects_graphics
+          || left_file->refcount != right_file->refcount)
+        return 0;
+    }
+  return 1;
+}
+
+static int
 capture_stream_filedeplist (const Dwg_Stream_Object_Info *restrict info,
                             const Dwg_Object *restrict object,
                             void *restrict user)
@@ -49,12 +124,15 @@ capture_stream_filedeplist (const Dwg_Stream_Object_Info *restrict info,
     return 0;
   filedeplist = &object->parent->filedeplist;
   capture->matches
-      = filedeplist->num_features && filedeplist->features
+      = (!capture->compare_full || capture->baseline)
+        && filedeplist->num_features && filedeplist->features
         && filedeplist->num_files && filedeplist->files
         && stream_filedeplist_text_equal (
             object->parent, filedeplist->features[0], capture->feature)
         && stream_filedeplist_text_equal (
-            object->parent, filedeplist->files[0].filename, capture->filename);
+            object->parent, filedeplist->files[0].filename, capture->filename)
+        && (!capture->compare_full
+            || stream_filedeplists_equal (object->parent, capture->baseline));
   return 0;
 }
 
@@ -248,13 +326,24 @@ test_stream_filedeplist_metadata (void)
     const char *path;
     const char *feature;
     const char *filename;
+    BITCODE_RL feature_index;
+    BITCODE_RL timestamp;
+    BITCODE_RL filesize;
+    BITCODE_RS affects_graphics;
+    BITCODE_RL refcount;
+    int compare_full;
   } fixtures[] = {
-    { "test/test-data/2007/Line.dwg", "Acad:Text", "arial.ttf" },
-    { "test/test-data/2010/Line.dwg", "Acad:Text", "arial.ttf" },
+    { "test/test-data/2007/Line.dwg", "Acad:Text", "arial.ttf", 0, 995532864,
+      772192, 1, 2, 1 },
+    { "test/test-data/2010/Line.dwg", "Acad:Text", "arial.ttf", 0, 995532864,
+      772192, 1, 2, 1 },
+    { "test/test-data/2013/Line.dwg", "Acad:Text", "arial.ttf", 0, 995532864,
+      772192, 1, 2, 1 },
     { "test/test-data/2013/gh44-error.dwg", "Acad:XRef",
       "N:\\2017\\Royal Wharf Phase 3\\3. Design\\BS9251 (RS)\\"
       "Incoming-Client\\Architectural\\RCP's\\Plot 20.01\\"
-      "Latest 22-08-18\\C1203-TCL-ME-20.01-011_iss2_revC2.dwg" },
+      "Latest 22-08-18\\C1203-TCL-ME-20.01-011_iss2_revC2.dwg",
+      0, 0, 0, 0, 0, 0 },
   };
   size_t i;
 
@@ -262,6 +351,7 @@ test_stream_filedeplist_metadata (void)
     {
       Dwg_Stream_Callbacks_Ex callbacks = { 0 };
       Stream_FileDepList_Capture capture = { 0 };
+      Dwg_Data blocking = { 0 };
       char path[1024];
       int error;
 
@@ -270,8 +360,35 @@ test_stream_filedeplist_metadata (void)
           printf ("FileDepList fixture path too long: %s\n", fixtures[i].path);
           return 1;
         }
+      error = dwg_read_file (path, &blocking);
+      if (error >= DWG_ERR_CRITICAL)
+        {
+          printf ("Blocking FileDepList metadata failed: %s error=0x%x\n",
+                  fixtures[i].path, error);
+          dwg_free (&blocking);
+          return 1;
+        }
+      if (fixtures[i].compare_full
+          && (!blocking.filedeplist.num_files || !blocking.filedeplist.files
+              || blocking.filedeplist.files[0].feature_index
+                     != fixtures[i].feature_index
+              || blocking.filedeplist.files[0].timestamp
+                     != fixtures[i].timestamp
+              || blocking.filedeplist.files[0].filesize != fixtures[i].filesize
+              || blocking.filedeplist.files[0].affects_graphics
+                     != fixtures[i].affects_graphics
+              || blocking.filedeplist.files[0].refcount
+                     != fixtures[i].refcount))
+        {
+          printf ("Blocking FileDepList numeric metadata failed: %s\n",
+                  fixtures[i].path);
+          dwg_free (&blocking);
+          return 1;
+        }
+      capture.baseline = &blocking;
       capture.feature = fixtures[i].feature;
       capture.filename = fixtures[i].filename;
+      capture.compare_full = fixtures[i].compare_full;
       callbacks.decoded_object = capture_stream_filedeplist;
       callbacks.flags
           = DWG_STREAM_F_NO_FULL_FALLBACK | DWG_STREAM_F_LOW_MEMORY;
@@ -282,8 +399,10 @@ test_stream_filedeplist_metadata (void)
                   "calls=%lu matches=%lu\n",
                   fixtures[i].path, error, (unsigned long)capture.calls,
                   (unsigned long)capture.matches);
+          dwg_free (&blocking);
           return 1;
         }
+      dwg_free (&blocking);
     }
   return 0;
 }
