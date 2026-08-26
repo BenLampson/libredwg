@@ -1460,17 +1460,307 @@ ref_snapshots_equal (const Stream_Ref_Snapshot *a,
 }
 
 static int
+stream_compare_tmpfiles (FILE *restrict baseline_fp,
+                         FILE *restrict streamed_fp,
+                         const char *restrict label)
+{
+  unsigned char baseline_buf[4096];
+  unsigned char streamed_buf[4096];
+  size_t baseline_size;
+  size_t streamed_size;
+  size_t offset = 0;
+
+  if (fflush (baseline_fp) != 0 || fflush (streamed_fp) != 0
+      || fseek (baseline_fp, 0, SEEK_SET) != 0
+      || fseek (streamed_fp, 0, SEEK_SET) != 0)
+    return -1;
+  for (;;)
+    {
+      baseline_size
+          = fread (baseline_buf, 1, sizeof (baseline_buf), baseline_fp);
+      streamed_size
+          = fread (streamed_buf, 1, sizeof (streamed_buf), streamed_fp);
+      if (baseline_size != streamed_size
+          || (baseline_size
+              && memcmp (baseline_buf, streamed_buf, baseline_size) != 0))
+        {
+          size_t shown_baseline
+              = baseline_size < 512 ? baseline_size : (size_t)512;
+          size_t shown_streamed
+              = streamed_size < 512 ? streamed_size : (size_t)512;
+
+          printf ("%s bytes differ at chunk offset=%zu "
+                  "baseline_size=%zu streamed_size=%zu\nbaseline: ",
+                  label, offset, baseline_size, streamed_size);
+          fwrite (baseline_buf, 1, shown_baseline, stdout);
+          printf ("\nstreamed: ");
+          fwrite (streamed_buf, 1, shown_streamed, stdout);
+          printf ("\n");
+          return 0;
+        }
+      if (!baseline_size)
+        break;
+      offset += baseline_size;
+    }
+  return ferror (baseline_fp) || ferror (streamed_fp) ? -1 : 1;
+}
+
+static int
+stream_section_equal (const Dwg_Section *restrict a,
+                      const Dwg_Section *restrict b)
+{
+  return a->number == b->number && a->size == b->size
+         && a->address == b->address && a->objid_r11 == b->objid_r11
+         && a->parent == b->parent && a->left == b->left
+         && a->right == b->right && a->x00 == b->x00 && a->type == b->type
+         && memcmp (a->name, b->name, sizeof (a->name)) == 0
+         && a->section_type == b->section_type
+         && a->decomp_data_size == b->decomp_data_size
+         && a->comp_data_size == b->comp_data_size
+         && a->compression_type == b->compression_type
+         && a->checksum == b->checksum && a->flags_r11 == b->flags_r11;
+}
+
+static int
+stream_header_structures_equal (const Dwg_Header *restrict a,
+                                const Dwg_Header *restrict b)
+{
+  BITCODE_RL i;
+
+  if (memcmp (a, b, offsetof (Dwg_Header, section)) != 0
+      || memcmp (&a->section_infohdr, &b->section_infohdr,
+                 sizeof (a->section_infohdr))
+             != 0)
+    return 0;
+  if ((!a->section) != (!b->section)
+      || (!a->section_info) != (!b->section_info))
+    return 0;
+  if ((a->num_sections && !a->section)
+      || (a->section_infohdr.num_desc && !a->section_info))
+    return 0;
+  for (i = 0; i < a->num_sections; i++)
+    if (!stream_section_equal (&a->section[i], &b->section[i]))
+      return 0;
+  for (i = 0; i < a->section_infohdr.num_desc; i++)
+    {
+      const Dwg_Section_Info *ia = &a->section_info[i];
+      const Dwg_Section_Info *ib = &b->section_info[i];
+      BITCODE_RL j;
+
+      if (memcmp (ia, ib, offsetof (Dwg_Section_Info, sections)) != 0
+          || (!ia->sections) != (!ib->sections))
+        return 0;
+      for (j = 0; j < ia->num_sections; j++)
+        {
+          if ((!ia->sections[j]) != (!ib->sections[j]))
+            return 0;
+          if (ia->sections[j]
+              && !stream_section_equal (ia->sections[j], ib->sections[j]))
+            return 0;
+        }
+    }
+  return 1;
+}
+
+static int
+stream_classes_extra_fields_equal (const Dwg_Data *restrict baseline,
+                                   const Dwg_Data *restrict streamed)
+{
+  BITCODE_BS i;
+
+  if (baseline->num_classes != streamed->num_classes)
+    return 0;
+  for (i = 0; i < baseline->num_classes; i++)
+    {
+      const Dwg_Class *a = &baseline->dwg_class[i];
+      const Dwg_Class *b = &streamed->dwg_class[i];
+      size_t a_dxfname_u_len = a->dxfname_u ? bit_wcs2len (a->dxfname_u) : 0;
+      size_t b_dxfname_u_len = b->dxfname_u ? bit_wcs2len (b->dxfname_u) : 0;
+
+      if (a->unknown_1 != b->unknown_1 || a->unknown_2 != b->unknown_2
+          || (!a->dxfname_u) != (!b->dxfname_u)
+          || a_dxfname_u_len != b_dxfname_u_len
+          || (a->dxfname_u
+              && memcmp (a->dxfname_u, b->dxfname_u,
+                         (a_dxfname_u_len + 1) * sizeof (*a->dxfname_u))
+                     != 0))
+        return 0;
+    }
+  return 1;
+}
+
+static int
+stream_metadata_trace_fields_equal (const Dwg_Data *restrict baseline,
+                                    const Dwg_Data *restrict streamed)
+{
+  const Dwg_Header_Variables *a = &baseline->header_vars;
+  const Dwg_Header_Variables *b = &streamed->header_vars;
+
+  return a->CELWEIGHT == b->CELWEIGHT && a->ENDCAPS == b->ENDCAPS
+         && a->JOINSTYLE == b->JOINSTYLE && a->LWDISPLAY == b->LWDISPLAY
+         && a->XEDIT == b->XEDIT && a->EXTNAMES == b->EXTNAMES
+         && a->PSTYLEMODE == b->PSTYLEMODE && a->OLESTARTUP == b->OLESTARTUP;
+}
+
+static int
+canonical_stream_metadata_equal (const Dwg_Data *restrict baseline,
+                                 const Dwg_Data *restrict streamed)
+{
+  Bit_Chain baseline_dat = { 0 };
+  Bit_Chain streamed_dat = { 0 };
+  int baseline_error;
+  int streamed_error;
+  int equal;
+
+  if (!stream_header_structures_equal (&baseline->header, &streamed->header))
+    {
+      printf ("stream metadata Dwg_Header structures differ\n");
+      return 0;
+    }
+  if (!stream_classes_extra_fields_equal (baseline, streamed))
+    {
+      printf ("stream metadata extra class fields differ\n");
+      return 0;
+    }
+  if (!stream_metadata_trace_fields_equal (baseline, streamed))
+    {
+      printf ("stream metadata derived HEADER fields differ\n");
+      return 0;
+    }
+  baseline_dat.fh = tmpfile ();
+  streamed_dat.fh = tmpfile ();
+  if (!baseline_dat.fh || !streamed_dat.fh)
+    {
+      if (baseline_dat.fh)
+        fclose (baseline_dat.fh);
+      if (streamed_dat.fh)
+        fclose (streamed_dat.fh);
+      return -1;
+    }
+  baseline_dat.opts = DWG_OPTS_MINIMAL;
+  streamed_dat.opts = DWG_OPTS_MINIMAL;
+  baseline_error
+      = dwg_write_json_stream_metadata (&baseline_dat, (Dwg_Data *)baseline);
+  streamed_error
+      = dwg_write_json_stream_metadata (&streamed_dat, (Dwg_Data *)streamed);
+  if (baseline_error >= DWG_ERR_CRITICAL || streamed_error >= DWG_ERR_CRITICAL)
+    equal = -1;
+  else
+    equal = stream_compare_tmpfiles (baseline_dat.fh, streamed_dat.fh,
+                                     "stream metadata");
+  fclose (baseline_dat.fh);
+  fclose (streamed_dat.fh);
+  return equal;
+}
+
+static int
+dynapi_scalar_fields_equal (const void *restrict baseline,
+                            const void *restrict streamed,
+                            const Dwg_DYNAPI_field *restrict fields,
+                            const char *restrict group, const int common)
+{
+  const Dwg_DYNAPI_field *field;
+
+  if (!fields)
+    return 1;
+  for (field = fields; field->name; field++)
+    {
+      const unsigned char *a;
+      const unsigned char *b;
+
+      if (field->is_indirect || field->is_malloc || !field->size
+          || field->size > sizeof (BITCODE_RLL)
+          || (common && strcmp (field->name, "objid") == 0))
+        continue;
+      a = (const unsigned char *)baseline + field->offset;
+      b = (const unsigned char *)streamed + field->offset;
+      if (memcmp (a, b, field->size) != 0)
+        {
+          printf ("dynapi scalar field differs: %s.%s type=%s size=%u\n",
+                  group, field->name, field->type, (unsigned)field->size);
+          return 0;
+        }
+    }
+  return 1;
+}
+
+static void *
+stream_object_specific_data (const Dwg_Object *restrict object)
+{
+  void *specific = NULL;
+
+  if (object->supertype == DWG_SUPERTYPE_ENTITY && object->tio.entity)
+    memcpy (&specific, &object->tio.entity->tio, sizeof (specific));
+  else if (object->supertype == DWG_SUPERTYPE_OBJECT && object->tio.object)
+    memcpy (&specific, &object->tio.object->tio, sizeof (specific));
+  return specific;
+}
+
+static int
+canonical_object_scalar_fields_equal (const Dwg_Object *restrict baseline,
+                                      const Dwg_Object *restrict streamed)
+{
+  const Dwg_DYNAPI_field *common_fields;
+  const Dwg_DYNAPI_field *specific_fields;
+  const void *baseline_common;
+  const void *streamed_common;
+  void *baseline_specific;
+  void *streamed_specific;
+
+  if (baseline->hdlpos != streamed->hdlpos
+      || baseline->has_strings != streamed->has_strings
+      || baseline->stringstream_size != streamed->stringstream_size
+      || baseline->handlestream_size != streamed->handlestream_size
+      || baseline->common_size != streamed->common_size)
+    {
+      printf ("object stream bookkeeping differs: handle=%llu "
+              "hdlpos=%zu/%zu strings=%u/%u strsize=%lu/%lu "
+              "hdlsize=%llu/%llu common=%zu/%zu\n",
+              (unsigned long long)baseline->handle.value, baseline->hdlpos,
+              streamed->hdlpos, (unsigned)baseline->has_strings,
+              (unsigned)streamed->has_strings,
+              (unsigned long)baseline->stringstream_size,
+              (unsigned long)streamed->stringstream_size,
+              (unsigned long long)baseline->handlestream_size,
+              (unsigned long long)streamed->handlestream_size,
+              baseline->common_size, streamed->common_size);
+      return 0;
+    }
+  if (baseline->supertype == DWG_SUPERTYPE_ENTITY)
+    {
+      baseline_common = baseline->tio.entity;
+      streamed_common = streamed->tio.entity;
+      common_fields = dwg_dynapi_common_entity_fields ();
+    }
+  else
+    {
+      baseline_common = baseline->tio.object;
+      streamed_common = streamed->tio.object;
+      common_fields = dwg_dynapi_common_object_fields ();
+    }
+  if (!baseline_common || !streamed_common
+      || !dynapi_scalar_fields_equal (baseline_common, streamed_common,
+                                      common_fields, "common", 1))
+    return 0;
+
+  baseline_specific = stream_object_specific_data (baseline);
+  streamed_specific = stream_object_specific_data (streamed);
+  if (!baseline_specific || !streamed_specific)
+    return baseline_specific == streamed_specific;
+  specific_fields
+      = baseline->name ? dwg_dynapi_entity_fields (baseline->name) : NULL;
+  return dynapi_scalar_fields_equal (
+      baseline_specific, streamed_specific, specific_fields,
+      baseline->name ? baseline->name : "unknown", 0);
+}
+
+static int
 canonical_objects_equal (const Dwg_Object *baseline,
                          const Dwg_Object *streamed)
 {
   Dwg_Object normalized_streamed;
   Bit_Chain baseline_dat = { 0 };
   Bit_Chain streamed_dat = { 0 };
-  unsigned char baseline_buf[4096];
-  unsigned char streamed_buf[4096];
-  size_t baseline_size;
-  size_t streamed_size;
-  size_t offset = 0;
   int equal = 1;
   int baseline_error;
   int streamed_error;
@@ -1491,46 +1781,13 @@ canonical_objects_equal (const Dwg_Object *baseline,
   streamed_dat.opts = DWG_OPTS_MINIMAL;
   baseline_error
       = dwg_write_json_object (&baseline_dat, (Dwg_Object *)baseline);
-  streamed_error
-      = dwg_write_json_object (&streamed_dat, &normalized_streamed);
-  if (baseline_error >= DWG_ERR_CRITICAL
-      || streamed_error >= DWG_ERR_CRITICAL
-      || fflush (baseline_dat.fh) != 0 || fflush (streamed_dat.fh) != 0
-      || fseek (baseline_dat.fh, 0, SEEK_SET) != 0
-      || fseek (streamed_dat.fh, 0, SEEK_SET) != 0)
+  streamed_error = dwg_write_json_object (&streamed_dat, &normalized_streamed);
+  if (baseline_error >= DWG_ERR_CRITICAL || streamed_error >= DWG_ERR_CRITICAL)
     equal = -1;
 
-  while (equal > 0)
-    {
-      baseline_size
-          = fread (baseline_buf, 1, sizeof (baseline_buf), baseline_dat.fh);
-      streamed_size
-          = fread (streamed_buf, 1, sizeof (streamed_buf), streamed_dat.fh);
-      if (baseline_size != streamed_size
-          || (baseline_size
-              && memcmp (baseline_buf, streamed_buf, baseline_size) != 0))
-        {
-          size_t shown_baseline
-              = baseline_size < 512 ? baseline_size : (size_t)512;
-          size_t shown_streamed
-              = streamed_size < 512 ? streamed_size : (size_t)512;
-
-          printf ("canonical bytes differ at chunk offset=%zu "
-                  "baseline_size=%zu streamed_size=%zu\nbaseline: ",
-                  offset, baseline_size, streamed_size);
-          fwrite (baseline_buf, 1, shown_baseline, stdout);
-          printf ("\nstreamed: ");
-          fwrite (streamed_buf, 1, shown_streamed, stdout);
-          printf ("\n");
-          equal = 0;
-          break;
-        }
-      if (!baseline_size)
-        break;
-      offset += baseline_size;
-    }
-  if (ferror (baseline_dat.fh) || ferror (streamed_dat.fh))
-    equal = -1;
+  if (equal > 0)
+    equal = stream_compare_tmpfiles (baseline_dat.fh, streamed_dat.fh,
+                                     "canonical object");
   fclose (baseline_dat.fh);
   fclose (streamed_dat.fh);
   return equal;
@@ -1549,8 +1806,8 @@ find_unmatched_baseline_object (Stream_Stats *stats,
     return NULL;
   if (streamed->handle.value)
     {
-      baseline = dwg_resolve_handle_silent (
-          stats->baseline_dwg, streamed->handle.value);
+      baseline = dwg_resolve_handle_silent (stats->baseline_dwg,
+                                            streamed->handle.value);
       if (!baseline || baseline->index >= stats->baseline_dwg->num_objects
           || stats->baseline_objects_matched[baseline->index]
           || baseline->type != streamed->type
@@ -1570,8 +1827,7 @@ find_unmatched_baseline_object (Stream_Stats *stats,
           || baseline->type != streamed->type
           || baseline->fixedtype != streamed->fixedtype
           || baseline->supertype != streamed->supertype
-          || baseline->size != info->size
-          || baseline->address != info->address
+          || baseline->size != info->size || baseline->address != info->address
           || baseline->handle.value)
         continue;
       stats->baseline_objects_matched[i] = 1;
@@ -1694,6 +1950,34 @@ stream_decoded_object_callback (const Dwg_Stream_Object_Info *info,
                   (unsigned)object->fixedtype,
                   canonical_equal < 0 ? "failed" : "different");
           return DWG_ERR_INTERNALERROR;
+        }
+      canonical_equal
+          = canonical_object_scalar_fields_equal (baseline_object, object);
+      stats->scalar_field_objects_checked++;
+      if (canonical_equal != 1)
+        {
+          stats->scalar_field_object_mismatches++;
+          printf ("scalar field mismatch blocking_index=%lu "
+                  "stream_index=%lu handle=%llu type=%u\n",
+                  (unsigned long)baseline_object->index,
+                  (unsigned long)object->index,
+                  (unsigned long long)object->handle.value,
+                  (unsigned)object->fixedtype);
+          return DWG_ERR_INTERNALERROR;
+        }
+      if (!stats->stream_metadata_checked)
+        {
+          canonical_equal = canonical_stream_metadata_equal (
+              stats->baseline_dwg, object->parent);
+          stats->stream_metadata_checked++;
+          if (canonical_equal != 1)
+            {
+              stats->stream_metadata_mismatches++;
+              printf ("stream callback metadata mismatch: %s\n",
+                      canonical_equal < 0 ? "serialization failed"
+                                          : "fields differ");
+              return DWG_ERR_INTERNALERROR;
+            }
         }
     }
   if (stats->baseline_refs && object->handle.value)

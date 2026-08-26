@@ -8,6 +8,8 @@
 #define DWG_R13_MAX_HEADER_SIZE 2048
 
 int dwg_add_Document (Dwg_Data *restrict dwg, const int imperial);
+void dwg_stream_fixup_decoded_object (Dwg_Data *restrict dwg,
+                                      Dwg_Object *restrict obj);
 
 #define DWG_STREAM_PRE_R13_DECODER(token)                                    \
   int dwg_stream_decode_pre_r13_##token (Bit_Chain *restrict dat,             \

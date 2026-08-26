@@ -947,6 +947,7 @@ print_stats (const char *label, const Stream_Stats *stats)
       "lightweight=%lu decoded=%lu decoded_entities=%lu "
       "decoded_non_entities=%lu max_host_entities=%lu "
       "decoded_handle_mix=%llu decode_errors=%lu "
+      "canonical=%lu scalar_fields=%lu metadata=%lu "
       "decode_error_entities=%lu decode_error_non_entities=%lu "
       "first_decode_error=0x%x decode_error_handle_mix=%llu r2007=%lu "
       "r2004=%lu r13=%lu prer13=%lu full=%lu file_map=%lu heap=%lu "
@@ -962,6 +963,9 @@ print_stats (const char *label, const Stream_Stats *stats)
       (unsigned long)stats->decoded_non_entities,
       (unsigned long)stats->max_host_entities, stats->decoded_handle_mix,
       (unsigned long)stats->decode_error_objects,
+      (unsigned long)stats->canonical_objects_checked,
+      (unsigned long)stats->scalar_field_objects_checked,
+      (unsigned long)stats->stream_metadata_checked,
       (unsigned long)stats->decode_error_entities,
       (unsigned long)stats->decode_error_non_entities,
       stats->first_decode_error, stats->decode_error_handle_mix,
@@ -1153,7 +1157,11 @@ test_stream_file_parity (const char *path, int compare_refs,
       || streamed.decoded_handle_mix != baseline.handle_mix
       || streamed.decode_error_objects
       || streamed.canonical_objects_checked != baseline.num_objects
-      || streamed.canonical_object_mismatches)
+      || streamed.canonical_object_mismatches
+      || streamed.scalar_field_objects_checked != baseline.num_objects
+      || streamed.scalar_field_object_mismatches
+      || streamed.stream_metadata_checked != 1
+      || streamed.stream_metadata_mismatches)
     {
       print_stats ("baseline", &baseline);
       print_stats ("streamed decoded object mismatch", &streamed);
@@ -1199,6 +1207,10 @@ test_stream_file_parity (const char *path, int compare_refs,
           || decoded_only.decode_error_objects
           || decoded_only.canonical_objects_checked != baseline.num_objects
           || decoded_only.canonical_object_mismatches
+          || decoded_only.scalar_field_objects_checked != baseline.num_objects
+          || decoded_only.scalar_field_object_mismatches
+          || decoded_only.stream_metadata_checked != 1
+          || decoded_only.stream_metadata_mismatches
           || (compare_refs
               && (decoded_only.decoded_ref_missing
                   || decoded_only.decoded_ref_mismatches)))

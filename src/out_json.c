@@ -2625,6 +2625,38 @@ json_section_2ndheader (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
   return 0;
 }
 
+/* Write the metadata which is available through a decoded Stream callback.
+   Keep this representation beside the normal JSON writers so parity tests use
+   the same field specifications as the public JSON output. */
+EXPORT int
+dwg_write_json_stream_metadata (Bit_Chain *restrict dat,
+                                Dwg_Data *restrict dwg)
+{
+  int error = 0;
+
+  if (!dat || !dat->fh || !dwg)
+    return DWG_ERR_INTERNALERROR;
+  if (!dat->version)
+    dat->version = dwg->header.version;
+  if (!dat->from_version)
+    dat->from_version = dwg->header.from_version;
+  if (!dat->codepage)
+    dat->codepage = dwg->header.codepage;
+
+  fprintf (dat->fh, "{%s%s%s\"stream_metadata\":%strue", JSON_NL,
+           JSON_SPC, JSON_SPC, JSON_SPC);
+  dat->bit++;
+  error |= json_fileheader_write (dat, dwg);
+  error |= json_header_write (dat, dwg);
+  if (dat->version >= R_13b1)
+    error |= json_classes_write (dat, dwg);
+  if (dat->version >= R_2004)
+    error |= json_section_filedeplist (dat, dwg);
+  dat->bit--;
+  fprintf (dat->fh, "}%s", JSON_NL);
+  return error;
+}
+
 EXPORT int
 dwg_write_json (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
 {

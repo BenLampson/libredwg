@@ -267,6 +267,7 @@ emit_pre_r13_existing_table_objects_stream (
         }
       if (callbacks->decoded_object)
         {
+          dwg_stream_fixup_decoded_object (dwg, obj);
           callback_error = callbacks->decoded_object (&info, obj, user);
           if (callback_error)
             return callback_error;
@@ -734,6 +735,7 @@ read_pre_r13_entity_section_stream (
         }
       if (callbacks->decoded_object)
         {
+          dwg_stream_fixup_decoded_object (dwg, obj);
           callback_error = callbacks->decoded_object (&info, obj, user);
           if (callback_error)
             {

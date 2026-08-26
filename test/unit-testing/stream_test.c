@@ -111,6 +111,10 @@ typedef struct _stream_stats
   unsigned char *baseline_objects_matched;
   BITCODE_BL canonical_objects_checked;
   BITCODE_BL canonical_object_mismatches;
+  BITCODE_BL scalar_field_objects_checked;
+  BITCODE_BL scalar_field_object_mismatches;
+  BITCODE_BL stream_metadata_checked;
+  BITCODE_BL stream_metadata_mismatches;
   BITCODE_BL decode_error_objects;
   BITCODE_BL decode_error_entities;
   BITCODE_BL decode_error_non_entities;
