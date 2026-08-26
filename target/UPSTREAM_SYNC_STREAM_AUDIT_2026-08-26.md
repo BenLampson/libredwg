@@ -17,13 +17,18 @@
 - 本轮还修复了 decoded-object callback 临时 `Dwg_Data` 借用宿主 ACIS SAB
   handle queue 的所有权错误。临时解码现在使用自己的空队列，并释放解码期间
   创建的全部 non-global handle refs 及队列，不会 `realloc`、悬空或破坏宿主队列。
+- 追加的全字段审计把原有 canonical object / ref 对照扩展到每个对象的全部直接
+  dynapi 标量、对象流 bookkeeping，以及 callback 可见的完整 Header、Classes、
+  FileDepList 元数据。它实际发现并修复了阻塞式后处理才填写的 `VIEWPORT.on_off`
+  / `id` 差异，同时不再从临时 callback parent 隐藏 `HANDSEED`。
 - CMake、Autotools、默认 Stream 回归、123 文件 refs sweep，以及 R2000、
   R2004、R2007、R2010、R2013、R2018 和大型 R2004 共 7 个真实文件均通过严格
   无 full fallback 验证。
 - `origin` 只有 `ben/stream-page-cache-optimization` 一个远端分支；远端 `HEAD`
   也指向该分支，没有多余的有效主分支。
 
-**本轮代码提交：`db4e97a22fd95bbb389613b4901cd2c05f7130a4`**
+**本轮代码提交：`db4e97a22fd95bbb389613b4901cd2c05f7130a4`、
+`f11df5f2`**
 
 ## 同步事实
 
@@ -113,6 +118,40 @@ Stream 的 ACDS section 仍由 R2004-family 页面路径读取并直接为对应
 数据；上述临时 queue 只属于共享对象 decoder 的中间关联状态，隔离和清理不会
 移除 callback 对最终对象 ACDS 数据的访问。
 
+### decoded-object 全字段与元数据同步
+
+本轮把“Stream 模式同步”的可执行证明边界对齐到公开 callback 契约：callback
+对象只在调用期间有效，读取是增量的，调用者不能依赖已经完整物化的全图。因而
+需要一致的是 callback 对象本身，以及明确承诺只读可见的 Header、Classes、
+FileDepList；完整 `Dwg_Data.object[]`、全局 handle map 和 `ref->obj` 图指针不属于
+增量接口。所有 handle code、size 和 absolute reference 仍逐一比较，未因为不
+物化 `ref->obj` 而跳过引用语义。
+
+严格 verifier 现在对每一个 callback 对象执行四层对照：
+
+- 用生产 JSON writer 的同一套 `dwg.spec` / `dwg2.spec` 字段定义比较对象全部
+  canonical 内容，包括字符串、数组、子结构和 handle 值；
+- 另外遍历 common 与具体类型的 dynapi 字段，比较所有直接标量，覆盖 JSON
+  输出刻意省略的派生字段；
+- 比较 `hdlpos`、string/handle stream size、`common_size` 等对象流 bookkeeping；
+- 每个文件比较完整 `Dwg_Header` section 结构、Header variables、Classes 的
+  非 JSON 字段和 FileDepList。
+
+该检查首先在 synthetic R2000i fixture 上报告 `VIEWPORT.on_off` 不一致。原因是
+`dwg_read_file()` 解码完成后统一调用 `dwg_fixup_viewport_ids()`，旧 Stream 路径
+在 callback 前没有等价处理，而且这两个字段不在 canonical JSON 的二进制输出
+分支内。现 Stream 保留一个增量 viewport counter，在 R13+ 临时对象路径和 R1-R11
+直接 callback 路径中都于回调前应用相同规则，不需要物化对象图。
+
+临时 parent 还曾主动把已借用的 `header_vars.HANDSEED` 清空，导致 callback 可见
+Header 不完整。现在保留只读借用；对象清理只释放临时对象、临时全局 refs 和
+临时 ACIS queue，不释放宿主 Header，因此不会产生所有权冲突。
+
+共享 decoder 的静态上下文审计同时确认：会改变对象字段解释的 `dwg->...` 读取
+仅依赖版本、Classes、Header 和 FileDepList，均已复制或只读借用。阻塞式末尾的
+其余工作是把 absolute refs 解析为全图 `ref->obj` 指针，或对损坏的完整实体链做
+跨对象修复，属于增量 callback 明确排除的完整图状态。
+
 ## 验证结果
 
 | 验证项 | 结果 |
@@ -122,7 +161,7 @@ Stream 的 ACDS section 仍由 R2004-family 页面路径读取并直接为对应
 | Autotools 静态 `libredwg.la` | 通过，exit 0，满足 C99 严格构建 |
 | Autotools `stream_test.exe` | 通过，exit 0 |
 | canonical Autotools `make check` | 通过；programs 3/3、examples 2/2、unit tests 255/255 |
-| 仓库 DWG + refs 完整 sweep | 123 files、91,206 objects；全部 decoded，`decode_errors=0`、`full=0`、exit 0 |
+| 仓库 DWG + refs 完整 sweep | 123 files、91,206 objects；canonical、全部直接标量、元数据和 refs 全部一致，`decode_errors=0`、`full=0`、exit 0 |
 | FileDepList 三代精确值与完整 parity | R2007、R2010、R2013 均通过 |
 | callback ACIS queue 隔离回归 | 通过；非空宿主 queue 保持不变 |
 
@@ -185,10 +224,12 @@ Stream 的 ACDS section 仍由 R2004-family 页面路径读取并直接为对应
 - [x] FileDepList 共享 parser 的版本字段布局已修正。
 - [x] Stream callback 的完整 FileDepList parity 与三代精确值回归已补齐。
 - [x] Stream 临时 ACIS SAB handle queue 的隔离、清理和宿主不变回归已补齐。
+- [x] 每对象 canonical、全部直接 dynapi 标量、stream bookkeeping 与 callback
+      元数据 parity 已补齐，并据此修复 VIEWPORT 派生字段和 HANDSEED 可见性。
 - [x] CMake、Autotools、默认 Stream、123 文件 refs sweep 已通过。
 - [x] 六代现代真实样本和大型 R2004 样本均完成严格无回退验证。
 - [x] `origin` 仅有一个分支，且远端 `HEAD` 指向该分支。
-- [x] 代码提交 `db4e97a2` 已推送；代码推送检查点本地/远端为 `0 0`。
+- [x] 代码提交 `db4e97a2`、`f11df5f2` 已完成；推送后再次核对本地/远端。
 
 按照仓库 GNU 约定，本轮不直接编辑顶层 `ChangeLog`，也不提交构建目录、日志、
 私有 DWG、下载文件或 Autotools 生成物。
