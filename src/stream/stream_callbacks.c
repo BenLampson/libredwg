@@ -35,6 +35,9 @@ dwg_stream_emit_decoded_object_ex (
   stream_dwg.dwg_class = dwg->dwg_class;
   stream_dwg.opts = dwg->opts | DWG_OPTS_STREAM_DECODE;
   stream_dwg.header_vars = dwg->header_vars;
+  /* File dependency metadata is owned by the parent stream DWG and remains
+     valid for the callback.  Expose it read-only with the temporary object. */
+  stream_dwg.filedeplist = dwg->filedeplist;
   stream_dwg.layout_type = dwg->layout_type;
   stream_dwg.num_acis_sab_hdl = dwg->num_acis_sab_hdl;
   stream_dwg.acis_sab_hdl = dwg->acis_sab_hdl;

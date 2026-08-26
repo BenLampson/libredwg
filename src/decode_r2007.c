@@ -2188,7 +2188,7 @@ read_2007_section_template (Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
 
 /* r21 FileDepList Section
  */
-static int
+int
 read_2007_section_filedeplist (Bit_Chain *restrict dat, Dwg_Data *restrict dwg,
                                r2007_section *restrict sections_map,
                                r2007_page *restrict pages_map)

@@ -2965,7 +2965,7 @@ filedeplist_private (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
 
 /* r18 FileDepList Section
  */
-static int
+int
 read_2004_section_filedeplist (Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
 {
   Bit_Chain old_dat, sec_dat = { 0 };

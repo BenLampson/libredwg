@@ -74,6 +74,7 @@ int read_2004_compressed_section (Bit_Chain *dat, Dwg_Data *dwg,
                                   Dwg_Section_Type type);
 int read_2004_section_header (Bit_Chain *dat, Dwg_Data *dwg);
 int read_2004_section_classes (Bit_Chain *dat, Dwg_Data *dwg);
+int read_2004_section_filedeplist (Bit_Chain *dat, Dwg_Data *dwg);
 unsigned int read_literal_length (Bit_Chain *dat, unsigned char opcode);
 int read_compressed_bytes (Bit_Chain *dat, unsigned char opcode,
                            unsigned int bits);

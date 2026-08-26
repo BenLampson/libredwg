@@ -24,5 +24,8 @@ int read_2007_section_header (Bit_Chain *dat, Bit_Chain *hdl_dat,
 int read_2007_section_classes (Bit_Chain *dat, Dwg_Data *dwg,
                                r2007_section *sections_map,
                                r2007_page *pages_map);
+int read_2007_section_filedeplist (Bit_Chain *dat, Dwg_Data *dwg,
+                                   r2007_section *sections_map,
+                                   r2007_page *pages_map);
 
 #endif

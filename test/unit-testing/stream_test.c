@@ -13,6 +13,7 @@
 
 #include "dwg.h"
 #include "dwg_api.h"
+#include "bits.h"
 #include "decode.h"
 #include "out_json.h"
 
@@ -226,6 +227,7 @@ static int test_repository_stream_sweep (int compare_refs);
 static int test_r2004_page_cache_backend_parity (void);
 static int test_invalid_version_stream_file_ex_rejects (void);
 static int test_invalid_versions_reject (void);
+static int test_stream_filedeplist_metadata (void);
 static int test_generated_minsert_stream_fixture (Dwg_Version_Type version,
                                                   const char *label);
 static int test_proxy_handle_encoding_preserved (void);
@@ -371,6 +373,9 @@ main (void)
   stream_trace_stage ("test_generated_r2022_minsert_stream_fixture");
   if (test_generated_minsert_stream_fixture (
           R_2022b, "generated R2022 MINSERT stream parity ok"))
+    return 1;
+  stream_trace_stage ("test_stream_filedeplist_metadata");
+  if (test_stream_filedeplist_metadata ())
     return 1;
   stream_trace_stage ("test_callback_abort_preserves_error");
   if (test_callback_abort_preserves_error ())

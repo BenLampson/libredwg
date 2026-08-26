@@ -789,6 +789,8 @@ dwg_stream_read_r2007 (Bit_Chain *dat, Bit_Chain *hdl_dat,
       = read_2007_section_header (dat, hdl_dat, dwg, sections_map, pages_map);
   if (error < DWG_ERR_CRITICAL)
     error |= read_2007_section_classes (dat, dwg, sections_map, pages_map);
+  if (error < DWG_ERR_CRITICAL && callbacks->decoded_object)
+    error |= read_2007_section_filedeplist (dat, dwg, sections_map, pages_map);
   if (error < DWG_ERR_CRITICAL)
     {
       stream_error = read_2007_section_handles_stream (

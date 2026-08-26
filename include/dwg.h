@@ -11509,7 +11509,8 @@ typedef int (*Dwg_Stream_Object_Callback)
 /* Called after the stream path decodes one object. The object pointer is valid
    only for the duration of the callback; callers must copy any data they need.
    This callback is incremental and must not rely on a fully materialized DWG
-   object graph. */
+   object graph. The temporary parent provides read-only header, class and file
+   dependency metadata that must not be modified or retained. */
 typedef int (*Dwg_Stream_Decoded_Object_Callback)
     (const Dwg_Stream_Object_Info *restrict info,
      const Dwg_Object *restrict object, void *restrict user);

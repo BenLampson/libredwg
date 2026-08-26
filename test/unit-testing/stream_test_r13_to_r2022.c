@@ -4,6 +4,60 @@ typedef struct _stream_header_capture
   BITCODE_BL calls;
 } Stream_Header_Capture;
 
+typedef struct _stream_filedeplist_capture
+{
+  const char *feature;
+  const char *filename;
+  BITCODE_BL calls;
+  BITCODE_BL matches;
+} Stream_FileDepList_Capture;
+
+static int
+stream_filedeplist_text_equal (const Dwg_Data *restrict dwg,
+                               const BITCODE_T32 value,
+                               const char *restrict expected)
+{
+  char *utf8;
+  int equal;
+
+  if (!value)
+    return 0;
+  if (dwg->header.from_version < R_2007)
+    return strcmp (value, expected) == 0;
+
+  utf8 = bit_convert_TU ((BITCODE_TU)value);
+  if (!utf8)
+    return 0;
+  equal = strcmp (utf8, expected) == 0;
+  free (utf8);
+  return equal;
+}
+
+static int
+capture_stream_filedeplist (const Dwg_Stream_Object_Info *restrict info,
+                            const Dwg_Object *restrict object,
+                            void *restrict user)
+{
+  Stream_FileDepList_Capture *capture = (Stream_FileDepList_Capture *)user;
+  const Dwg_FileDepList *filedeplist;
+
+  (void)info;
+  capture->calls++;
+  if (!object || !object->parent)
+    return DWG_ERR_INTERNALERROR;
+  if (capture->matches)
+    return 0;
+  filedeplist = &object->parent->filedeplist;
+  capture->matches
+      = filedeplist->num_features && filedeplist->features
+        && filedeplist->num_files && filedeplist->files
+        && stream_filedeplist_text_equal (
+            object->parent, filedeplist->features[0], capture->feature)
+        && stream_filedeplist_text_equal (
+            object->parent, filedeplist->files[0].filename, capture->filename);
+  return 0;
+}
+
 static int
 capture_stream_header (const Dwg_Stream_Object_Info *info,
                        const Dwg_Object *object, void *user)
@@ -182,6 +236,54 @@ test_generated_minsert_stream_fixture (Dwg_Version_Type version,
           label, (unsigned long)coverage.block_owned_entities,
           (unsigned long)coverage.entmode3_entities);
       return 1;
+    }
+  return 0;
+}
+
+static int
+test_stream_filedeplist_metadata (void)
+{
+  const struct
+  {
+    const char *path;
+    const char *feature;
+    const char *filename;
+  } fixtures[] = {
+    { "test/test-data/2007/Line.dwg", "Acad:Text", "arial.ttf" },
+    { "test/test-data/2010/Line.dwg", "Acad:Text", "arial.ttf" },
+    { "test/test-data/2013/gh44-error.dwg", "Acad:XRef",
+      "N:\\2017\\Royal Wharf Phase 3\\3. Design\\BS9251 (RS)\\"
+      "Incoming-Client\\Architectural\\RCP's\\Plot 20.01\\"
+      "Latest 22-08-18\\C1203-TCL-ME-20.01-011_iss2_revC2.dwg" },
+  };
+  size_t i;
+
+  for (i = 0; i < sizeof (fixtures) / sizeof (fixtures[0]); i++)
+    {
+      Dwg_Stream_Callbacks_Ex callbacks = { 0 };
+      Stream_FileDepList_Capture capture = { 0 };
+      char path[1024];
+      int error;
+
+      if (!stream_test_source_path (path, sizeof (path), fixtures[i].path))
+        {
+          printf ("FileDepList fixture path too long: %s\n", fixtures[i].path);
+          return 1;
+        }
+      capture.feature = fixtures[i].feature;
+      capture.filename = fixtures[i].filename;
+      callbacks.decoded_object = capture_stream_filedeplist;
+      callbacks.flags
+          = DWG_STREAM_F_NO_FULL_FALLBACK | DWG_STREAM_F_LOW_MEMORY;
+      error = dwg_stream_file_ex (path, &callbacks, &capture);
+      if (error >= DWG_ERR_CRITICAL || !capture.calls || !capture.matches)
+        {
+          printf ("Stream FileDepList metadata failed: %s error=0x%x "
+                  "calls=%lu matches=%lu\n",
+                  fixtures[i].path, error, (unsigned long)capture.calls,
+                  (unsigned long)capture.matches);
+          return 1;
+        }
     }
   return 0;
 }
