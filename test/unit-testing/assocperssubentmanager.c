@@ -18,7 +18,7 @@ api_process (dwg_object *obj)
   BITCODE_BL num_subents;
   BITCODE_BL *subents;
   BITCODE_BL unknown_bl3;
-  BITCODE_B unknown_b1;
+  BITCODE_B unknown_b4;
 
 #ifdef DEBUG_CLASSES
   dwg_obj_assocperssubentmanager *_obj
@@ -39,6 +39,6 @@ api_process (dwg_object *obj)
   CHK_ENTITY_VECTOR_TYPE (_obj, ASSOCPERSSUBENTMANAGER, subents, num_subents,
                           BL);
   CHK_ENTITY_TYPE (_obj, ASSOCPERSSUBENTMANAGER, unknown_bl3, BL);
-  CHK_ENTITY_TYPE (_obj, ASSOCPERSSUBENTMANAGER, unknown_b1, B);
+  CHK_ENTITY_TYPE (_obj, ASSOCPERSSUBENTMANAGER, unknown_b4, B);
 #endif
 }

@@ -6847,45 +6847,58 @@ decode_preR13_sentinel (const Dwg_Sentinel sentinel,
                         const char *restrict sentinel_name,
                         Bit_Chain *restrict dat, Dwg_Data *restrict dwg)
 {
+  const size_t sentinel_size = 16;
+  const size_t expected_pos = dat->byte;
   int error = 0;
   const unsigned char *const wanted = dwg_sentinel (sentinel);
   BITCODE_TF r11_sentinel;
 
-  if (dat->byte + 16 > dat->size)
+  if (expected_pos > dat->size
+      || dat->size - expected_pos < sentinel_size)
     {
-      LOG_ERROR ("%s buffer overflow at pos %" PRIuSIZE " > size %" PRIuSIZE,
-                 __FUNCTION__, dat->byte + 16, dat->size);
+      LOG_ERROR ("%s needs 16 bytes at pos %" PRIuSIZE ", size is %" PRIuSIZE,
+                 __FUNCTION__, expected_pos, dat->size);
       return DWG_ERR_INVALIDDWG;
     }
-  r11_sentinel = bit_read_TF (dat, 16U);
+  r11_sentinel = bit_read_TF (dat, sentinel_size);
   if (!r11_sentinel)
     return DWG_ERR_INVALIDDWG;
   LOG_TRACE ("%s: ", sentinel_name);
   LOG_RPOS;
-  LOG_TRACE_TF (r11_sentinel, 16);
-  if (memcmp (r11_sentinel, wanted, 16))
+  LOG_TRACE_TF (r11_sentinel, sentinel_size);
+  if (memcmp (r11_sentinel, wanted, sentinel_size))
     {
+      const size_t window = 1000;
+      const size_t max_start = dat->size - sentinel_size;
+      const size_t pos
+          = expected_pos > window ? expected_pos - window : 0;
+      const size_t right
+          = max_start - expected_pos > window ? window
+                                              : max_start - expected_pos;
+      const size_t last_start = expected_pos + right;
+      const size_t len = last_start - pos + sentinel_size;
+      char *found;
+
       /* Search +- 1000 bytes around, as the comment always said. It was
          actually +-200 (pos = byte - 200, len = 400), which misses real files:
          a r11 drawing here has every table sentinel displaced from where the
          header's table address puts it, LAYER_BEGIN by -300 and VIEW_BEGIN by
          -608, so this recovery never fired and the whole file was rejected. */
-      const size_t window = 1000;
-      size_t pos = dat->byte > window ? dat->byte - window : 0;
-      size_t len = MIN (dat->size - pos, 2 * window);
-      char *found = (char *)memmem (&dat->chain[pos], len, wanted, 16);
+      found = (char *)memmem (&dat->chain[pos], len, wanted, sentinel_size);
       if (!found)
         {
           LOG_ERROR ("%s not found at %" PRIuSIZE, sentinel_name,
-                     dat->byte - 16);
+                     expected_pos);
           error = DWG_ERR_SECTIONNOTFOUND;
         }
       else
         {
-          pos = (ptrdiff_t)found - (ptrdiff_t)&dat->chain[0];
+          const size_t found_pos
+              = (size_t)(found - (char *)&dat->chain[0]);
+
           LOG_WARN ("%s not found at %" PRIuSIZE ", but at %" PRIuSIZE,
-                    sentinel_name, dat->byte - 16, pos);
-          dat->byte = pos + 16;
+                    sentinel_name, expected_pos, found_pos);
+          dat->byte = found_pos + sentinel_size;
           error = DWG_ERR_WRONGCRC;
         }
     }

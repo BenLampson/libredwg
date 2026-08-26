@@ -495,6 +495,101 @@ decode_3dsolid_tests (void)
   bitfree (&dat);
 }
 
+static void
+decode_preR13_sentinel_tests (void)
+{
+  struct _test
+  {
+    int displacement;
+    size_t expected_pos;
+    size_t size;
+    int expected_error;
+  } tests[] = {
+    { -300, 2500, 5016, DWG_ERR_WRONGCRC },
+    { -608, 2500, 5016, DWG_ERR_WRONGCRC },
+    { -1000, 1000, 3016, DWG_ERR_WRONGCRC },
+    { 1000, 1000, 3016, DWG_ERR_WRONGCRC },
+    { -1001, 2000, 5016, DWG_ERR_SECTIONNOTFOUND },
+    { 1001, 2000, 5016, DWG_ERR_SECTIONNOTFOUND },
+  };
+  const unsigned char *const wanted
+      = dwg_sentinel (DWG_SENTINEL_R11_LAYER_BEGIN);
+  size_t i;
+
+  for (i = 0; i < ARRAY_SIZE (tests); i++)
+    {
+      Bit_Chain dat = { 0 };
+      Dwg_Data dwg;
+      size_t actual_pos;
+      int error;
+
+      actual_pos = tests[i].displacement < 0
+                       ? tests[i].expected_pos - (size_t)-tests[i].displacement
+                       : tests[i].expected_pos + (size_t)tests[i].displacement;
+      dat.chain = (BITCODE_RC *)calloc (tests[i].size, 1);
+      if (!dat.chain)
+        {
+          fail ("decode_preR13_sentinel: allocation failed");
+          continue;
+        }
+      dat.size = tests[i].size;
+      dat.byte = tests[i].expected_pos;
+      memcpy (&dat.chain[actual_pos], wanted, 16);
+      memset (&dwg, 0, sizeof (dwg));
+
+      error = decode_preR13_sentinel (DWG_SENTINEL_R11_LAYER_BEGIN,
+                                      "DWG_SENTINEL_R11_LAYER_BEGIN", &dat,
+                                      &dwg);
+      if (error == tests[i].expected_error
+          && dat.byte
+                 == (error == (int)DWG_ERR_WRONGCRC
+                         ? actual_pos + 16
+                         : tests[i].expected_pos + 16))
+        {
+          pass ();
+        }
+      else
+        fail ("decode_preR13_sentinel: displacement %d: err=0x%x "
+              "pos=%" PRIuSIZE,
+              tests[i].displacement, error, dat.byte);
+      free (dat.chain);
+    }
+
+  {
+    Bit_Chain dat = { 0 };
+    Dwg_Data dwg;
+    int error;
+
+    dat.chain = (BITCODE_RC *)calloc (16, 1);
+    if (!dat.chain)
+      {
+        fail ("decode_preR13_sentinel: allocation failed");
+        return;
+      }
+    memset (&dwg, 0, sizeof (dwg));
+    dat.size = 15;
+    error
+        = decode_preR13_sentinel (DWG_SENTINEL_R11_LAYER_BEGIN,
+                                  "DWG_SENTINEL_R11_LAYER_BEGIN", &dat, &dwg);
+    if (error == (int)DWG_ERR_INVALIDDWG)
+      pass ();
+    else
+      fail ("decode_preR13_sentinel: short buffer accepted: err=0x%x", error);
+
+    dat.size = 16;
+    dat.byte = 17;
+    error
+        = decode_preR13_sentinel (DWG_SENTINEL_R11_LAYER_BEGIN,
+                                  "DWG_SENTINEL_R11_LAYER_BEGIN", &dat, &dwg);
+    if (error == (int)DWG_ERR_INVALIDDWG)
+      ok ("decode_preR13_sentinel: exact window and buffer bounds");
+    else
+      fail ("decode_preR13_sentinel: out-of-range offset accepted: err=0x%x",
+            error);
+    free (dat.chain);
+  }
+}
+
 int
 main (int argc, char const *argv[])
 {
@@ -509,6 +604,7 @@ main (int argc, char const *argv[])
   read_data_section_page_tests ();
   read_2004_compressed_section_tests ();
   decode_3dsolid_tests ();
+  decode_preR13_sentinel_tests ();
 
   return numfailed () ? 1 : 0;
 }

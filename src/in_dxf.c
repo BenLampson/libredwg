@@ -6866,8 +6866,8 @@ add_ASSOCPERSSUBENTMANAGER (Dwg_Object *restrict obj, Bit_Chain *restrict dat,
   FIELD_BL (unknown_0, 90);
   FIELD_BL (unknown_2, 90);
 
-  FIELD_BL (numassocsteps, 90);
-  FIELD_BL (numassocsubents, 90);
+  FIELD_BL (unknown_bl1, 90);
+  FIELD_BL (unknown_bl2, 90);
   FIELD_BL (num_steps, 90);
   free (o->steps);
   o->steps = NULL;

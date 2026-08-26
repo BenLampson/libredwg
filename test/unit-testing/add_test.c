@@ -1479,6 +1479,60 @@ test_mlinestyle_obj_realloc (void)
 }
 
 #ifndef DISABLE_DXF
+static int
+test_assocperssubentmanager_dxf_fields (void)
+{
+  char dxf[] = "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1024\n"
+               "  0\nENDSEC\n  0\nSECTION\n  2\nCLASSES\n  0\nCLASS\n"
+               "  1\nACDBASSOCPERSSUBENTMANAGER\n"
+               "  2\nAcDbAssocPersSubentManager\n"
+               "  3\nObjectDBX Classes\n 90\n1024\n 91\n1\n280\n0\n281\n0\n"
+               "  0\nENDSEC\n  0\nSECTION\n  2\nOBJECTS\n"
+               "  0\nACDBASSOCPERSSUBENTMANAGER\n  5\n10\n"
+               "100\nAcDbAssocPersSubentManager\n"
+               " 90\n1\n 90\n3\n 90\n0\n 90\n2\n"
+               " 90\n17\n 90\n23\n 90\n0\n 90\n0\n 90\n29\n290\n1\n"
+               "  0\nENDSEC\n  0\nEOF\n";
+  Dwg_Data dwg;
+  Bit_Chain dat;
+  Dwg_Object_ASSOCPERSSUBENTMANAGER *assoc = NULL;
+  BITCODE_BL i;
+  int error;
+
+  failed = 0;
+  memset (&dwg, 0, sizeof (dwg));
+  memset (&dat, 0, sizeof (dat));
+  dat.chain = (unsigned char *)dxf;
+  dat.size = sizeof (dxf) - 1;
+
+  error = dwg_read_dxf (&dat, &dwg);
+  if (error >= DWG_ERR_CRITICAL)
+    fail ("assocperssubentmanager_dxf_fields: dwg_read_dxf failed with 0x%x",
+          error);
+  else
+    {
+      for (i = 0; i < dwg.num_objects; i++)
+        {
+          Dwg_Object *obj = &dwg.object[i];
+          if (obj->fixedtype == DWG_TYPE_ASSOCPERSSUBENTMANAGER)
+            {
+              assoc = obj->tio.object->tio.ASSOCPERSSUBENTMANAGER;
+              break;
+            }
+        }
+      if (!assoc)
+        fail ("assocperssubentmanager_dxf_fields: object not imported");
+      else if (assoc->unknown_bl1 != 17 || assoc->unknown_bl2 != 23
+               || assoc->unknown_b4 != 1)
+        fail ("assocperssubentmanager_dxf_fields: fields %u, %u, %u",
+              assoc->unknown_bl1, assoc->unknown_bl2, assoc->unknown_b4);
+      else
+        ok ("assocperssubentmanager_dxf_fields: imported fields");
+    }
+  dwg_free (&dwg);
+  return numfailed ();
+}
+
 // GHSA-qcxp-m6vj-h5h8: importing a pre-R2004 DXF VIEWPORT entity makes
 // new_object() call dwg_add_VX() to create its VX_TABLE_RECORD. That may
 // grow and realloc dwg->object[], but new_object() kept dereferencing (and
@@ -1549,11 +1603,13 @@ main (int argc, char *argv[])
     debug = 0;
 
 #if !defined(_WIN32) && !defined(DISABLE_DXF)
-  error = test_viewport_vx_realloc ();
+  error = test_assocperssubentmanager_dxf_fields ();
+  error += test_viewport_vx_realloc ();
   error += test_mlinestyle_obj_realloc ();
   error += test_mlinestyle_nonfinite_angle ();
 #elif !defined(DISABLE_DXF)
-  error = test_viewport_vx_realloc ();
+  error = test_assocperssubentmanager_dxf_fields ();
+  error += test_viewport_vx_realloc ();
   error += test_mlinestyle_obj_realloc ();
 #else
   error = test_mlinestyle_obj_realloc ();
