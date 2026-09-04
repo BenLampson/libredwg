@@ -11531,6 +11531,12 @@ typedef enum DWG_STREAM_FLAGS
      backends are available. This lowers peak memory and may trade throughput
      on densely populated, weakly compressed files. */
   DWG_STREAM_F_LOW_MEMORY = 1u << 1,
+  /* Do not decode the optional AcDb:FileDepList section into the temporary
+     parent exposed to decoded-object callbacks. Consumers which derive file
+     dependencies from decoded symbol/entity objects can use this to keep a
+     malformed optional dependency list from contaminating the object stream
+     result. Header, class, handle-map and object validation are unchanged. */
+  DWG_STREAM_F_SKIP_FILEDEPLIST = 1u << 2,
 } Dwg_Stream_Flags;
 
 typedef struct _dwg_stream_callbacks

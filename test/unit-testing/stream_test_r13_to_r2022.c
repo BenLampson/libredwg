@@ -14,6 +14,12 @@ typedef struct _stream_filedeplist_capture
   BITCODE_BL matches;
 } Stream_FileDepList_Capture;
 
+typedef struct _stream_skipped_filedeplist_capture
+{
+  BITCODE_BL calls;
+  BITCODE_BL empty;
+} Stream_Skipped_FileDepList_Capture;
+
 static int
 stream_filedeplist_text_equal (const Dwg_Data *restrict dwg,
                                const BITCODE_T32 value,
@@ -133,6 +139,26 @@ capture_stream_filedeplist (const Dwg_Stream_Object_Info *restrict info,
             object->parent, filedeplist->files[0].filename, capture->filename)
         && (!capture->compare_full
             || stream_filedeplists_equal (object->parent, capture->baseline));
+  return 0;
+}
+
+static int
+capture_stream_skipped_filedeplist (
+    const Dwg_Stream_Object_Info *restrict info,
+    const Dwg_Object *restrict object, void *restrict user)
+{
+  Stream_Skipped_FileDepList_Capture *capture
+      = (Stream_Skipped_FileDepList_Capture *)user;
+
+  (void)info;
+  capture->calls++;
+  if (!object || !object->parent)
+    return DWG_ERR_INTERNALERROR;
+  if (!object->parent->filedeplist.num_features
+      && !object->parent->filedeplist.features
+      && !object->parent->filedeplist.num_files
+      && !object->parent->filedeplist.files)
+    capture->empty++;
   return 0;
 }
 
@@ -351,6 +377,7 @@ test_stream_filedeplist_metadata (void)
     {
       Dwg_Stream_Callbacks_Ex callbacks = { 0 };
       Stream_FileDepList_Capture capture = { 0 };
+      Stream_Skipped_FileDepList_Capture skipped = { 0 };
       Dwg_Data blocking = { 0 };
       char path[1024];
       int error;
@@ -399,6 +426,22 @@ test_stream_filedeplist_metadata (void)
                   "calls=%lu matches=%lu\n",
                   fixtures[i].path, error, (unsigned long)capture.calls,
                   (unsigned long)capture.matches);
+          dwg_free (&blocking);
+          return 1;
+        }
+      memset (&callbacks, 0, sizeof (callbacks));
+      callbacks.decoded_object = capture_stream_skipped_filedeplist;
+      callbacks.flags = DWG_STREAM_F_NO_FULL_FALLBACK
+                        | DWG_STREAM_F_LOW_MEMORY
+                        | DWG_STREAM_F_SKIP_FILEDEPLIST;
+      error = dwg_stream_file_ex (path, &callbacks, &skipped);
+      if (error >= DWG_ERR_CRITICAL || !skipped.calls
+          || skipped.empty != skipped.calls)
+        {
+          printf ("Stream skipped FileDepList failed: %s error=0x%x "
+                  "calls=%lu empty=%lu\n",
+                  fixtures[i].path, error, (unsigned long)skipped.calls,
+                  (unsigned long)skipped.empty);
           dwg_free (&blocking);
           return 1;
         }

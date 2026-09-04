@@ -1986,7 +1986,8 @@ dwg_stream_read_r2004_to_r2006_and_r2010_to_r2022 (
   error |= read_2004_section_header (dat, dwg);
   if (error < DWG_ERR_CRITICAL)
     error |= read_2004_section_classes (dat, dwg);
-  if (error < DWG_ERR_CRITICAL && callbacks->decoded_object)
+  if (error < DWG_ERR_CRITICAL && callbacks->decoded_object
+      && !(callbacks->flags & DWG_STREAM_F_SKIP_FILEDEPLIST))
     error |= read_2004_section_filedeplist (dat, dwg);
   if (error < DWG_ERR_CRITICAL && callbacks->decoded_object)
     error |= r2004_stream_acds_init (dat, dwg, &acds);
