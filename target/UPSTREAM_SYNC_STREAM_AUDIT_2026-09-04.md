@@ -9,8 +9,8 @@ section 修复按当前 Stream 代码净移植。CMake Stream 回归、Autotools
 完整 `make check`、六代现代真实文件、大型 R2004 和高压缩 R2007 实样均通过。
 
 BenLampson fork 和本地仓库最终都只保留一个命名分支：
-`ben/stream-page-cache-optimization`。旧 worktree 仅改为 detached，未删除目录、
-构建产物或可恢复历史。
+`ben/stream-page-cache-optimization`。后续清理已删除全部 7 个非主 worktree 及其
+目录，最终只保留 `D:\Codes\libredwg` 主 worktree。
 
 ## 同步基线
 
@@ -128,9 +128,11 @@ CMake 的非必需独立 `decode_test` 目标仍有既存 Windows 链接配置�
 已删除本地命名分支 `ben/r2007-nominal-page-size`、
 `ben/r2007-section-budget`，以及 fork 远端的
 `ben/r2007-high-compression-guard`、`ben/r2007-nominal-page-size`、
-`ben/r2007-section-budget`。两个关联 worktree 在确认干净后转为 detached，仍分别
-保留在 `51ce08c7` 和 `5987a50b`，因此实验历史仍可恢复。`git ls-remote --heads
-origin` 最终仅返回 `ben/stream-page-cache-optimization`。
+`ben/r2007-section-budget`。随后删除全部 7 个非主 worktree；其中唯一含未提交
+内容的 mtext oracle worktree 已先确认其 `CMakeLists.txt` 和 `stream_oracle.c`
+与主 Stream 中保留的副本 SHA-256 完全一致。最终 `git worktree list` 只返回
+`D:\Codes\libredwg`，`git ls-remote --heads origin` 只返回
+`ben/stream-page-cache-optimization`。
 
 本轮没有改变 Stream 支持版本、严格无回退策略或开发优先级，因此无需同步修改
 根 `README`、`target/README.md` 或 `target/STREAM_BLOCKING_PARITY.md`。
