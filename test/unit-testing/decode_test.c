@@ -326,6 +326,48 @@ read_data_section_tests (void)
   free (sec_dat.chain);
 }
 
+static void
+r2007_section_map_entry_tests (void)
+{
+  r2007_section section = { 0 };
+  const size_t file_size = 18625504;
+
+  section.data_size = 231554810;
+  section.max_size = 63488;
+  section.name_length = 28;
+  section.num_pages = 3653;
+  if (is_valid_r2007_section_map_entry (&section, file_size))
+    pass ();
+  else
+    fail ("R2007 section map: rejects bounded high-compression section");
+
+  section.data_size = 0x2f000000ULL + 1;
+  if (!is_valid_r2007_section_map_entry (&section, file_size))
+    pass ();
+  else
+    fail ("R2007 section map: accepts section above decompression ceiling");
+
+  section.data_size = 231554810;
+  section.num_pages = 3647;
+  if (is_valid_r2007_section_map_entry (&section, file_size))
+    pass ();
+  else
+    fail ("R2007 section map: treats nominal max_size as page capacity");
+
+  section.max_size = 0;
+  if (!is_valid_r2007_section_map_entry (&section, file_size))
+    pass ();
+  else
+    fail ("R2007 section map: accepts a non-empty section without page size");
+
+  section.max_size = 63488;
+  section.num_pages = 0;
+  if (!is_valid_r2007_section_map_entry (&section, file_size))
+    ok ("R2007 section map structural bounds");
+  else
+    fail ("R2007 section map: accepts a non-empty section without pages");
+}
+
 /* An R2007 data page can be Reed-Solomon coded even when its payload is not
  * compressed.  The Stream reader decodes one page at a time through
  * read_data_section_page(), so exercise both possible layouts: a two-block
@@ -601,6 +643,7 @@ main (int argc, char const *argv[])
   decompress_R2004_section_tests ();
   decompress_r2007_tests ();
   read_data_section_tests ();
+  r2007_section_map_entry_tests ();
   read_data_section_page_tests ();
   read_2004_compressed_section_tests ();
   decode_3dsolid_tests ();

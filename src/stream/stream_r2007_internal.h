@@ -10,6 +10,8 @@ r2007_section *get_section (r2007_section *sections_map,
 r2007_page *get_page (r2007_page *pages_map, int64_t id);
 void pages_destroy (r2007_page *page);
 void sections_destroy (r2007_section *section);
+int is_valid_r2007_section_map_entry (const r2007_section *section,
+                                      size_t file_size);
 r2007_section *read_sections_map (Bit_Chain *dat, int64_t size_comp,
                                   int64_t size_uncomp, int64_t correction);
 r2007_page *read_pages_map (Bit_Chain *dat, int64_t size_comp,

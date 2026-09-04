@@ -50,6 +50,7 @@ static unsigned int cur_ver = 0;
 // should be a bit larger then the filesize.
 #define DBG_MAX_COUNT 0x100000
 #define DBG_MAX_SIZE 0xff0000 /* should be dat->size */
+#define R2007_MAX_DECOMP_SIZE 0x2f000000ULL
 
 /* imported */
 int rs_decode_block (BITCODE_RC *blk, int fix);
@@ -760,7 +761,7 @@ read_data_section (Bit_Chain *sec_dat, Bit_Chain *dat,
     }
 
   max_decomp_size = section->data_size;
-  if (max_decomp_size > 0x2f000000) // 790Mb
+  if (max_decomp_size > R2007_MAX_DECOMP_SIZE) // 790Mb
     {
       LOG_ERROR ("Invalid max decompression size %" PRIu64, max_decomp_size);
       return DWG_ERR_INVALIDDWG;
@@ -941,6 +942,26 @@ read_data_section_page (Bit_Chain *page_dat, Bit_Chain *dat,
   LOG_INSANE (" @%" PRIuSIZE ".%u", (dat)->byte, (dat)->bit);                 \
   LOG_TRACE ("\n");
 
+int
+is_valid_r2007_section_map_entry (const r2007_section *section,
+                                  size_t file_size)
+{
+  if (!section || section->data_size > R2007_MAX_DECOMP_SIZE
+      || section->name_length < 0 || section->name_length >= (int64_t)file_size
+      || section->name_length >= 48)
+    return 0;
+
+  if (!section->data_size)
+    return 1;
+  /* max_size is the nominal page target, not a strict upper bound.  DWG
+     writers may keep an object intact by emitting a page slightly larger
+     than max_size.  The actual page offsets and sizes are validated while
+     reading the page map and data; keep this header check to allocation and
+     structural bounds only. */
+  return section->max_size > 0 && section->num_pages > 0
+         && section->num_pages <= 0xf0000;
+}
+
 r2007_section *
 read_sections_map (Bit_Chain *dat, int64_t size_comp, int64_t size_uncomp,
                    int64_t correction)
@@ -984,12 +1005,10 @@ read_sections_map (Bit_Chain *dat, int64_t size_comp, int64_t size_uncomp,
       LOG_TRACE ("  encoding:      %" PRId64 "\n", section->encoded);
       LOG_TRACE ("  num pages:     %" PRId64, section->num_pages);
       LOG_POS_DAT (&page);
-      // debugging sanity
-#if 1
-      /* compressed */
-      if (section->data_size > 10 * dat->size
-          || section->name_length >= (int64_t)dat->size
-          || section->name_length >= 48)
+      /* A section can legitimately decompress to more than ten times the
+         DWG file size, and an object-boundary page may exceed max_size.
+         Bound the allocation here; actual page ranges are checked below. */
+      if (!is_valid_r2007_section_map_entry (section, dat->size))
         {
           LOG_ERROR ("Invalid System Section");
           free (section);
@@ -997,10 +1016,6 @@ read_sections_map (Bit_Chain *dat, int64_t size_comp, int64_t size_uncomp,
           sections_destroy (sections); // the root
           return NULL;
         }
-        // assert(section->data_size < dat->size + 0x100000);
-        // assert(section->max_size  < dat->size + 0x100000);
-        // assert(section->num_pages < DBG_MAX_COUNT);
-#endif
       // section->next = NULL;
       // section->pages = NULL;
       // section->name = NULL;
