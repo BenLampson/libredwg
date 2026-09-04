@@ -1589,6 +1589,19 @@ bit_read_MC_tests (void)
 }
 
 static void
+codepage_bounds_tests (void)
+{
+  /* out-of-range header.codepage (valid 0..CP_ANSI_1258) must be rejected,
+     not used to index the 46-entry codepage tables. */
+  const Dwg_Codepage bad = (Dwg_Codepage)5000;
+  if (dwg_codepage_uc (bad, 0xA0) == 0 && dwg_codepage_wc (bad, 0xA0) == 0
+      && !dwg_codepage_isalnum (bad, 0xA0))
+    ok ("out-of-range codepage rejected");
+  else
+    fail ("out-of-range codepage rejected");
+}
+
+static void
 in_hexbin_tests (void)
 {
   Bit_Chain dat = { 0 };
@@ -1702,6 +1715,7 @@ main (int argc, char const *argv[])
   bit_utf8_to_TV_tests ();
   bit_utf8_to_TU_tests ();
   bit_TV_to_utf8_tests ();
+  codepage_bounds_tests ();
   bit_read_H_tests ();
   bit_write_H_tests ();
   bit_UMC_bug_tests ();
