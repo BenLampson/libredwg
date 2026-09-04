@@ -81,6 +81,10 @@ dwg_stream_emit_decoded_object_ex (
       = sizeof (stream_object_buckets) / sizeof (stream_object_buckets[0]);
   stream_object_map.elems = 0;
   stream_dwg.object_map = &stream_object_map;
+  /* HANDSEED belongs to the parent object graph.  dwg_new_ref sizes the first
+     object_ref allocation from it, so copying it here would allocate for the
+     whole drawing while decoding every temporary one-object graph. */
+  stream_dwg.header_vars.HANDSEED = NULL;
   stream_dwg.dirty_refs = 0;
   stream_dwg.num_object_ordered_refs = (BITCODE_BL)-1;
 
@@ -96,7 +100,11 @@ dwg_stream_emit_decoded_object_ex (
     {
       Dwg_Object *obj = &stream_dwg.object[0];
       dwg_stream_fixup_decoded_object (dwg, obj);
+      /* Preserve the callback header view without exposing HANDSEED to the
+         temporary graph's decode and cleanup paths. */
+      stream_dwg.header_vars.HANDSEED = dwg->header_vars.HANDSEED;
       emitted_error = callbacks->decoded_object (info, obj, user);
+      stream_dwg.header_vars.HANDSEED = NULL;
     }
   else if (error < DWG_ERR_CRITICAL && callbacks->decode_error)
     emitted_error = callbacks->decode_error (
