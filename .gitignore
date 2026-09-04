@@ -39,6 +39,7 @@ compile_commands.json
 /doc/latex/
 /doc/manual/
 /doc/refman/
+/oracle-work/
 /src/infer-out/
 /test/issues/
 /test/patch/

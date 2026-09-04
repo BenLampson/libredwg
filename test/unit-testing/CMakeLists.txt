@@ -65,6 +65,14 @@ if(WIN32)
     SKIP_RETURN_CODE 77)
 endif()
 
+if(NOT LIBREDWG_DISABLE_JSON)
+  add_executable(stream_oracle stream_oracle.c)
+  target_link_libraries(stream_oracle ${redwg})
+  if(WIN32)
+    target_link_libraries(stream_oracle psapi)
+  endif()
+endif()
+
 add_executable(decode_test
   decode_test.c
   ../../src/dwg.c
