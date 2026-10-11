@@ -1393,6 +1393,12 @@ cquote (char *restrict dest, const size_t len, const char *restrict src)
       else
         *dest++ = c;
     }
+  // Terminate after the LAST BYTE WRITTEN. Callers strlen() this buffer, so
+  // a NUL only at its end makes every byte the quoting did not reach part of
+  // the string -- uninitialized heap, for a buffer sized 2x the input.
+  if (dest >= dend)
+    dest = d + len - 1;
+  *dest = '\0';
   d[len - 1] = '\0'; // add final delim, skipped above
   return d;
 }
@@ -1472,6 +1478,14 @@ static void
 dxf_write_chunked (Bit_Chain *restrict dat, const char *restrict str,
                    size_t len, const int dxf)
 {
+  // A value that quoted away to nothing still needs its group written.
+  // Emitting no code at all shifts every following tag in the file.
+  if (!len)
+    {
+      GROUP (dxf);
+      fputs ("\r\n", dat->fh);
+      return;
+    }
   while (len > 0)
     {
       size_t chunk = len > 250 ? 250 : len;
