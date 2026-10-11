@@ -240,10 +240,8 @@ customize the installation dirs.  Other options recognized by configure are:
 
 See the following scripts how we build on Windows:
 
-* .github/workflows/main.yml: via msys/autotools, or cmake. gcc, clang-cl or VS2019.
 * build-aux/smoke.sh: cross-compilation recipes
 * build-aux/msys2.bat: msys2 deps
-* .appveyor.yml: windows smoker
 
 We do support mingw, clang-cl and Visual Studio >= 2019 via cmake.
 stdint.h and inttypes.h must be available.

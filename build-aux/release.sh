@@ -24,10 +24,6 @@ if ! head -n 10 "$srcdir/NEWS" | grep -Eq "[Vv]ersion[[:space:]]+$VERSION([[:spa
   echo "NEWS first 10 lines must contain version $VERSION" >&2
   exit 1
 fi
-if ! head -n 1 "$srcdir/.appveyor.yml" | grep -Eq "^[[:space:]]*version:[[:space:]]*$VERSION([[:space:]]|$$|[.][{]build[}])"; then
-  echo ".appveyor.yml first line must contain version: $VERSION" >&2
-  exit 1
-fi
 if ! grep -Eq "^Version:[[:space:]]*$VERSION|$$)" "$srcdir/libredwg.spec"; then
   echo "libredwg.spec Version: must be $VERSION" >&2
   exit 1

@@ -14,8 +14,7 @@ someone should probably think about and resolve them!
 
   Aside from the the autotools (see "regen", above),
   you will also need GNU Texinfo to build the manual.
-  See e.g. the github action for recipes, or .appveyor.yml
-  for another Mingw recipe.
+  See build-aux/msys2.bat for a Mingw dependency recipe.
   The compiler needs to support C99, but even MSVC can also be used
   since 0.12.5
   The recommended development compiler is tinycc, as compilation times are
@@ -65,8 +64,7 @@ someone should probably think about and resolve them!
   So a released version will be 2 or 3 numbers, a development version will also
   carry the 4-digit build number, and if it's a branch also two more elements.
 
-  Version numbers are generated manually for a release by pushing a 2-3 number tag,
-  and automatically by bumping the version in .appveyor.yml.
+  Version numbers are generated manually for a release by pushing a 2-3 number tag.
 
 * make regen-dynapi
 
@@ -161,12 +159,11 @@ someone should probably think about and resolve them!
   It needs all the optional tools and libs.
 
   Before a release:
-  - update NEWS, .appveyor.yml, libredwg.spec manually
+  - update NEWS and libredwg.spec manually
   - generate the missing ChangeLog entries
     e.g. via build-aux/gitlog-to-changelog --since='2018-11-05' >x
   - make distcheck
-  - push a smoke/ branch to check the CI results for linux, darwin, freebsd, msvc,
-    mingw and cygwin.
+  - build and test locally for linux, darwin, freebsd, msvc, mingw and cygwin.
   - create a temp. tag with the correct version number (see above):
     e.g. git tag -s -m 'release 0.6.2' 0.6.2
   - sh autogen.sh to update the version
@@ -180,10 +177,10 @@ someone should probably think about and resolve them!
   - make dist to create the source tarballs. if separate build dirs, in a
     config with --enable-release only.
   - check if the source tarballs compile
-  - push master and tags to run the CI and create the windows binaries on appveyor
+  - push master and tags
   - upload the dist tarballs
     build-aux/gnupload --to ftp.gnu.org:libredwg libredwg-0.6.2.tar.?z
-  - download the appveyor artifacts and sha256sum and sign it
+  - package the windows binaries, compute sha256sum and sign them
     gpg -b -a libredwg-0.6.2-win32.zip; mv libredwg-0.6.2-win32.asc libredwg-0.6.2-win32.sig
     sha256sum libredwg-0.6.2*
   - edit the github release, copy from the previous and fix up the text with the
